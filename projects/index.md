@@ -1,5 +1,0 @@
-# Projects
-
-    huawei
-    sohu
-    Hisense
