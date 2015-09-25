@@ -1,0 +1,18 @@
+---
+layout: post
+title: Slab Allocator
+date: 2020-10-25 20:38
+categories:
+  - Linux
+typora-root-url: ../../layamon.github.io
+---
+* TOC
+{:toc}
+![image-20201025203905534](/image/linux-slab/object-construct.png)
+
+
+
+
+
+![img](/image/linux-slab/slab-arch.png)
+

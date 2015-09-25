@@ -1,0 +1,271 @@
+---
+layout: post
+title: Linux AIO
+date: 2016-03-23 16:11
+categories: 
+    - Linux
+typora-root-url: ../../layamon.github.io
+---
+
+* TOC
+{:toc}
+我们知道在数据库对于内存和外存之间的读写速度差异，通过bufferpool的方式进行调和。bufferpool的实现相对复杂，那么在实现bufferpool不合算，但是又希望减小内外读写差异对性能的影响，可以通过mmap/msync**将文件的page cache直接映射到进程的地址空间，通过写内存的方式修改文件**，这其实是借用操作系统对内存的管理来获得一个bufferpool。而除了bufferpool这个思路，还可以通过异步（Async）的思想减少block的时间。
+
+![image-20200207145938692](/image/linux-io/20200207-linuxIO.png)
+
+在Linux中，目前所知有三种异步的思路：signal，MSG_ERRQUEUE和io_getevents。io_getevents就是Linux的异步IO（**A**sync **IO**），本文从blocking概念开始说起，希望读到这篇文章的同学能对Linux的IO有个大致的了解。
+
+# VFS
+
+> 注意：VFS是Virtual Filesystem Switch 的缩写。
+
+FileType：
+
+- regular file
+- directories
+- symbolic link
+- （Device file）
+- （pipe）
+
+VFS定义了文件系统需要提供的接口与对象，当Process访问一个文件时，通过定义的Objects，进行操作，这些对象可以看做是各个抽象层次的元信息（控制信息）。
+
+- SuperBlock：filesystem control block（FileSystem MetaData）；
+- inode：file control block（File MetaData），表示一个具体FileSystem中的文件，但是不包括filename信息。
+- dentry：当Process访问一个文件时，Kernel将filepath相关的所有目录的dentry都创建出来，比如/tmp/test创建三个dentry，并将其Cache起来。该结构维护了filename和inode之间的关系；创建hard link就是创建一个指向同一个inode的一个dentry。
+- File ：当Process访问文件时，Kernel创建File对象，保存访问时需要信息，其中持有一个dentry的指针。
+- Memory region：mmap方式访问文件时，需要维护的内存区域信息。
+
+> Q1：底层具体文件系统不需要维护目录树信息，目录树都是VFS中维护的？
+
+## 进程与文件
+
+每个进程运行时，保存的文件相关信息有：
+
+- fs_：root 与 pwd信息
+- files：所有打开的File，不超过NR_OPEN个；
+  - 通常我们用到的fd，就是这个数组的下标；可能不同的fd指向同一个file，这就是重定向(2 > &1)。
+    - 0：stdin
+    - 1：stdout
+    - 2：stderr
+  - 
+
+# Caches
+
+> Disk Cache vs Swap
+>
+> Disk caches enhance system performance at the expense of free RAM, while swapping extends the amount of addressable memory at the expense of access speed. Thus, disk caches are "good" and desirable, while swapping should be regarded as some sort of last resort to be used whenever the amount of free RAM becomes too scarce.
+
+> 1. Disk-based filesystems do not directly use the page cache for writing to a regular file. This is a heritage from older versions of Linux, in which the only disk cache was the buffer cache. However, network-based filesystems always use the page cache for writing to a regular file.
+> 2. The approach used in Linux 2.2, bypassing the page cache, leads to a synchronization problem. When writing takes place, the valid data is in the buffer cache but not in the page cache; 因此，disk based fs的write call，通过调用update_vm_cache来确保page_cache最新。
+
+- Dentry cache：FilePathName -> inode
+- Buffer Cache（BC)：是DiskBlock的Buffer；Buffer Cache的大小不固定，当BC中没有空闲Buffer时且有写的Buffer请求到来，才会分配新的Buffer；存储的单元是disk block，每个Buffer的Header中维护了该Buffer的信息，比如dirty bit，flush timestamp等；以及一个HashTable，维护了<deviceid, blockid> -> buffer header的关系。
+- Page Cache（PC）：是某个具体文件的page 缓存，其大小与物理disk block无关。HashTable存储的是<inode, offset> -> page descriptor的关系。
+
+同一份数据可能存在page cache和buffer cache中，在2.4之前需要两者的同步；而在之后，有了file address space的概念，其直接指向了一个inode或者block device的具体block，现在page cache就是 <file address space , offset>作为key，现在对于file data，page cache可以直接存下本应放在buffer cache中的block，而有些不是file data的block，依然还是放在buffer cache中；page cache和buffer cache之间的数据同步就没有必要了，但是还是各司其职。
+
+再后来，BufferCache就消失了， 只剩了Page Cache。
+
+# blocking vs non-blocking
+
+在Linux中，一切皆文件。数据都是通过fd标识进行交互；默认情况下，fd读取时如果没有数据，那么需要等待有数据了，**此时当前进程状态变为sleep**，那么称这个fd为blocking file descripter。这对于需要高吞吐的的应用是不适用的；为解决这个问题，我们可以将该fd变为非阻塞的：
+
+```c
+/* set O_NONBLOCK on fd */
+int flags = fcntl(fd, F_GETFL, 0);
+fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+```
+
+这时对于这个fd，读取立即返回（如果没有读取到数据，则返回一个错误信息），这就是non-blocking file descripter；进程不会sleep，但是我们需要不断检查是否准备好。
+
+在实际情况中，通常我们需要管理多个fd（比如C/S架构中，server与client就有多个socket fd）。如果fd是blocking，那么需要多个线程（进程太重，在这里不太适用）分别管理每个blocking fd，这就是**阻塞性同步IO**，存在线程间信息同步的代价。
+
+而将各个fd设置为non-blocking的，那么可以通过一个线程对各个non-blocking fd进行轮询，这就是**非阻塞同步IO**，但是这样浪费了CPU资源。
+
+这时通常可结合IO multiplexing接口——select/poll/epoll，来对多个fd进行管理，当然这些fd中可以有阻塞，也可以有非阻塞的，只是实际应用中更多结合non-blocking fd使用。
+
+> epoll与select/poll的区别：
+>
+> 后者是各维护一个列表，采用轮询的方式进行事件触发管理，对系统内任何类型操作符都有效。
+>
+> epoll是通过中断信号触发的方式管理，但是epoll只对流设备有效。
+>
+> ```c
+> struct epoll_event {
+> __uint32_t events;  /* Epoll events */
+> epoll_data_t data;  /* User data variable */
+> };
+> #include <sys/epoll.h>
+> int epoll_create(int size);
+> int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event);
+> int epoll_wait(int epfd, struct epoll_event * events, int maxevents, int timeout);
+> ```
+
+epoll对文件描述符的操作有两种模式：LT（level trigger）和ET（edge trigger）。LT模式是默认模式，LT模式与ET模式的区别如下：
+LT模式：当epoll_wait检测到描述符事件发生并将此事件通知应用程序，应用程序可以不立即处理该事件。下次调用epoll_wait时，会再次响应应用程序并通知此事件。
+ET模式：当epoll_wait检测到描述符事件发生并将此事件通知应用程序，应用程序必须立即处理该事件。如果不处理，下次调用epoll_wait时，不会再次响应应用程序并通知此事件。
+ET模式在很大程度上减少了epoll事件被重复触发的次数，因此效率要比LT模式高。epoll工作在ET模式的时候，必须使用非阻塞套接口，以避免由于一个文件句柄的阻塞读/阻塞写操作把处理多个文件描述符的任务饿死。
+
+注意通过多路复用的方式进行IO同样是**同步IO**，因为epoll只是监听了数据是否准备好，具体的处理程序还是需要将数据从系统空间拷贝到用户空间，这里需要同步等待。而异步IO是进程告知操作系统我需要哪些数据，操作系统在将数据直接拷贝到用户空间后才通知用户，这是根本区别。
+
+有些操作系统并没有真正在内核层面支持异步IO，只是对该逻辑在系统库中进行了封装；在Linux中内核层面支持了，见下节。
+
+# Linux AIO介绍
+
+Linux在2.6版的内核中支持了AIO特性，启用AIO特性需要以下前提：
+
++ 在裸块设备上的读写（raw (and O_DIRECT on blockdev)）。
+
++ 或者，要求ext2, ext3, jfs, xfs文件系统的文件以O_DIRECT的方式打开。
+
+在使用AIO进行读写时，需要按照如下框架进行调用：
+
+1. `io_setup`**初始化**一个`io_context_t`。
+
+2. 创建若干个IO请求（iocb）并**设置**好该请求相关的内容。
+
+   ```c
+   struct iocb {
+       void *data;
+       short aio_lio_opcode;
+       int aio_fildes;
+   
+       union {
+           struct {
+               void *buf;
+               unsigned long nbytes;
+               long long offset;
+           } c;
+       } u;
+   };
+   ```
+
+3. `io_submit`：将创建好的IO请求**提交**到相应的`io_context_t`中；相应请求就被内核转发到driver中进行处理。
+
+4. `io_getevents`：调用该函数，**获取**发起的IO请求的**结果**。根据性能的需要，可调整传入的参数。
+
+5. 重复以上操作可以进行文件的异步读写，最后通过`io_cancel`,`io_destory`退出或销毁。
+
+注意，在glibc中没有对上述系统调用进行封装，而是在libaio中进行了封装，如果使用了libaio中的函数，在编译的时候需要加上-laio；比如可通过libaio中的函数`io_set_eventfd`将iocb与eventfd绑定，这样可通过epoll进行触发调用`io_getevents`，而不是主动调用`io_getevents`确认结果。
+
+> 在libaio中，在系统调用的基础上封装了多个函数如下，有兴趣可以了解一下。
+>
+> ```c
+> static inline void io_prep_pread(struct iocb *iocb, int fd, void *buf, size_t count, long long offset)
+> static inline void io_prep_pwrite(struct iocb *iocb, int fd, void *buf, size_t count, long long offset)
+> static inline void io_prep_preadv(struct iocb *iocb, int fd, const struct iovec *iov, int iovcnt, long long offset)
+> static inline void io_prep_pwritev(struct iocb *iocb, int fd, const struct iovec *iov, int iovcnt, long long offset)
+> 
+> static inline void io_prep_poll(struct iocb *iocb, int fd, int events)
+> static inline void io_prep_fsync(struct iocb *iocb, int fd)
+> static inline void io_prep_fdsync(struct iocb *iocb, int fd)
+> 
+> static inline int io_poll(io_context_t ctx, struct iocb *iocb, io_callback_t cb, int fd, int events)
+> static inline int io_fsync(io_context_t ctx, struct iocb *iocb, io_callback_t cb, int fd)
+> static inline int io_fdsync(io_context_t ctx, struct iocb *iocb, io_callback_t cb, int fd)
+> 
+> static inline void io_set_eventfd(struct iocb *iocb, int eventfd);
+> ```
+
+# 小结
+
+在日常工作中，涉及的IO一般就包括两种：磁盘的读写、网络的读写。对于磁盘文件的读写通常，目前想到的有以下几个方案：
+
+1. 通过专门的IO工作线程池来做这个工作，可以调用*glibc POSIX AIO*接口，其就是对这个逻辑的封装。
+2. 通过`posix_fadvise`对一段磁盘文件进行预热。
+3. 使用mmap将磁盘文件映射进内存
+4. 使用Linux AIO，文件需要以`O_DIRECT`的方式打开。
+
+这些方法都不是完美的，即使是Linux AIO，如果使用不恰当，也会阻塞在`io_submit`中。那么具体使用什么方案，可以具体情况进行分析。而对于网络IO通常是epoll监听非阻塞socket fd，转给线程池进行处理的方式。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```mermaid
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+**参考**
+
+[如何调用LinuxAIO](https://github.com/littledan/linux-aio)
+
+[阻塞fd、非阻塞fd和epoll](https://eklitzke.org/blocking-io-nonblocking-io-and-epoll)
+
+[vfs objects](https://unix.stackexchange.com/questions/4402/what-is-a-superblock-inode-dentry-and-a-file)
