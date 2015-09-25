@@ -11,3 +11,4 @@ categories: jekyll update
 反映了信息熵的问题，但是具体求解又是另一个问题
 见[毒药问题][dfouban]
 
+[douban]: http://www.guokr.com/question/581356/
