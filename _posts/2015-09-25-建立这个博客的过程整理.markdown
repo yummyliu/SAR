@@ -1,0 +1,20 @@
+---
+layout: post
+title:  "建jekyll+github博客(to be continue...)"
+date:   2015-09-25 18:00
+categories: jekyll update
+---
+
+#### 关于github pages
+    + 创建一个库 username.github.io 
+    + 在setting中找到github pages就知道怎么做了
+
+#### 用jekyll 丰富这个库
+    刚开始创建的库是没有任何文件的，而jekyll可以初始化一个文件夹作为自己的blog服务
+    + git clone 到本地目录 username.gi~
+    + jekyll new username.gi~ ,得到初始的blog
+
+#### 修改初始模板 上传库
+    + 修改 `_config.yml` 文件 
+    + 其他的，如果你懂HTML CSS js 等,修改就行了
+
