@@ -4,22 +4,21 @@ title:  "Welcome to me!"
 date:   2015-09-25 16:04:29
 categories: jekyll update
 ---
-You’ll find this post in your `_posts` directory. Go ahead and edit it and re-build the site to see your changes. You can rebuild the site in many different ways, but the most common way is to run `jekyll serve`, which launches a web server and auto-regenerates your site when a file is updated.
 
-To add new posts, simply add a file in the `_posts` directory that follows the convention `YYYY-MM-DD-name-of-post.ext` and includes the necessary front matter. Take a look at the source for this post to get an idea about how it works.
+在sohu实习最近没事做，实验室刚开始，上一期的项目基本结项了，下一期项目还没开始做;
+差不多用了一天的时间，简单的搞了这个博客，使用的是[jekyll][jekyll],这个框架支持[markdown语法][markdown];
+同时学习了一下git,还是有所收获滴。。。
 
-Jekyll also offers powerful support for code snippets:
+界面相当简单，就是jekyll自动生成的——[jekyll-new][jn]
 
-{% highlight ruby %}
-def print_hi(name)
-  puts "Hi, #{name}"
-end
-print_hi('Tom')
-#=> prints 'Hi, Tom' to STDOUT.
+> 代码高亮。。。。
+{% highlight c++ %}
+int main(){
+
+    return 0;
+}
 {% endhighlight %}
 
-Check out the [Jekyll docs][jekyll] for more info on how to get the most out of Jekyll. File all bugs/feature requests at [Jekyll’s GitHub repo][jekyll-gh]. If you have questions, you can ask them on [Jekyll’s dedicated Help repository][jekyll-help].
-
 [jekyll]:      http://jekyllrb.com
-[jekyll-gh]:   https://github.com/jekyll/jekyll
-[jekyll-help]: https://github.com/jekyll/jekyll-help
+[jn]: https://github.com/jglovier/jekyll-new
+[markdown]: http://wowubuntu.com/markdown/
