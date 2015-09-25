@@ -1,0 +1,13 @@
+# Site settings
+title: 刘阳明的个人博客，其实只是笔记o(╯□╰)o
+email: sdwhlym@gmail.com
+description: 小镇青年 心怀远方
+#Write an awesome description for your new site here. You can edit this
+#line in _config.yml. It will appear in your document head meta (for
+#Google search results) and in your feed.xml site description.
+baseurl: "" # the subpath of your site, e.g. /blog/
+url: "http://youth92.github.io" # the base hostname & protocol for your site
+github_username: yummyliu
+
+# Build settings
+markdown: kramdown
