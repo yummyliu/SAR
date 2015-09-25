@@ -9,6 +9,6 @@ categories: jekyll update
 > 13瓶奶，一瓶有毒，若干小白鼠，做一次实验，用最少的小白鼠，测出那瓶奶有毒
 
 反映了信息熵的问题，但是具体求解又是另一个问题
-见[毒药问题][dfouban]
+见[毒药问题][douban]
 
 [douban]: http://www.guokr.com/question/581356/
