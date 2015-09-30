@@ -1,4 +1,11 @@
 # 创建一个新的博客文件，按照 yyyy-mm-dd-title.markdown创建
+if [ $# != 1 ]
+then
+    echo "missing blogname"
+    echo "usage: go \$blogname"
+    echo "e.g.: go 我的博文"
+    exit 1
+fi
 mydate=$(date +%Y-%m-%d | tr -d "\n") #Assign Output of Shell command to var
 mytime=$(date +%H:%M | tr -d "\n")
 blogname=$(echo -n $1)

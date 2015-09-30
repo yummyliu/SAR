@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "fist blog!"
+title:  "fist blog!试试markdown语法"
 date:   2015-09-25 16:04:29
 categories: jekyll update
 ---
