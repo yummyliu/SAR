@@ -11,3 +11,8 @@ github_username: yummyliu
 
 # Build settings
 markdown: kramdown
+
+comments: 
+    provider: duoshuo
+    duoshuo:
+        short_name: yummyliu
