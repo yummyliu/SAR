@@ -7,4 +7,4 @@ categories: jekyll update
 
 ##整理了一下分布式存储系统的一些问题
 
-![distributed](/image/dis.png)
+![distributed](/image/dis.jpg)
