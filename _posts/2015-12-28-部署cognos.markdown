@@ -19,6 +19,7 @@ rpm 安装64位之后，在/usr/java/下创建了一个目录，各种软连接�
 
 ## 使用iso作为yum源
 
+[这里写的挺清楚的][isoyum]
 
 ## 硬链接 软连接
 
@@ -37,3 +38,6 @@ rpm 安装64位之后，在/usr/java/下创建了一个目录，各种软连接�
     linux的Oracle client 没有 创建 network/admin文件夹，我们创建一个文件夹，里面添加好tnsname.ora文件即可
     在 /etc/profile中配好 TNS_ADMIN环境变量 指向存有tnsname的文件的目录
     添加连接字符串
+
+    
+[isoyum]:      http://jekyllrb.com
