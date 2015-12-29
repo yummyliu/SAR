@@ -1,0 +1,39 @@
+---
+layout: post
+title: 部署cognos
+date: 2015-12-28 20:44
+categories: jekyll update
+---
+
+> 介于部署这个系统花了我好多时间，其中装了一次又一次，为了我付出的时间，我觉得应该认真记下来了
+> 整个安装的步骤就不详述了，针对其中有几个以后可能会重用的点
+
+## 在linux上卸载Openjdk，安装sun的 jdk32和jdk64 给不同的用户
+
+rpm 安装之后并不是创建环境变量，而是在PATH中的/usr/bin中添加软连接指向java
+rpm 安装64位之后，在/usr/java/下创建了一个目录，各种软连接都指向这
+
++ 把这个目录重命名一下，这样rpm卸载的时候就就不会删除这个文件夹
++ rpm -qa | grep jdk ;rpm -qa | grep java ; rpm -e 。。。
++ 再安装其他jdk.rpm.bin
+
+## 使用iso作为yum源
+
+
+## 硬链接 软连接
+
+硬链接只能连接文件，
+软连接可以连接文件夹，然后删除的时候注意不要自动补全加了/成了文件夹，rm *** 就删不了了
+
+## 安装配置Oracle client
+
++ rpm安装Oracle client 到官网上找到合适的rpm包 
+    rpm -ivh 装
++ 配 /etc/profile (全局都用在这配)
+    export LD_LIBRARY_PATH=/usr/lib/oracle/11.2/client64/lib:$LD_LIBRARY_PATH
+    配好了这个之后，可以使用 sqlplus COG/COG@10.77.20.29:1521/cogdb 这种方式连接
+    注意**/etc/hosts中的 127.0.0.1 后面的名称应该和 hostname相同（在命令行输入hostname)**，
++ 配tnsnames.ora :
+    linux的Oracle client 没有 创建 network/admin文件夹，我们创建一个文件夹，里面添加好tnsname.ora文件即可
+    在 /etc/profile中配好 TNS_ADMIN环境变量 指向存有tnsname的文件的目录
+    添加连接字符串
