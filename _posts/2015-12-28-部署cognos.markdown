@@ -40,4 +40,4 @@ rpm 安装64位之后，在/usr/java/下创建了一个目录，各种软连接�
     添加连接字符串
 
     
-[isoyum]:      http://jekyllrb.com
+[isoyum]:http://blog.csdn.net/houqd2012/article/details/8604083
