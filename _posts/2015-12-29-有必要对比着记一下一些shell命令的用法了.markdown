@@ -1,0 +1,11 @@
+---
+layout: post
+title: 有必要记一下一些shell命令的用法了
+date: 2015-12-29 15:41
+categories: jekyll update
+---
+
+# cmp diff
+
+
+# find whereis which grep
