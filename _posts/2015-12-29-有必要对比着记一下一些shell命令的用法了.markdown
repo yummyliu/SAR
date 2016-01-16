@@ -9,3 +9,17 @@ categories: jekyll update
 
 
 # find whereis which grep
+
+
+# for 
+    for 循环括号两层
+
+
+# shell 变量
+    $a可以引用a这个变量 这样**${a}** 也可以
+    但是要引用shell数组中的元素的话 就必须要用${a[1]}
+    shell数组是这样定义的array_name=(value0 value1 value2 value3)
+    那么想知道一个以空格分隔的字符串str里有多少个单词
+    构造数组 tmp=(str)
+    len=${#tmp[@]}
+    len=${#tmp[*]}

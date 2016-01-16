@@ -1,0 +1,15 @@
+---
+layout: post
+title: 各种树
+date: 2016-01-07 23:36
+categories: jekyll update
+---
+
+
+### 并查集
+
+### 线段树 树状数组
+
+## 笛卡尔树
+
+## Trie树，又叫字典树、前缀树（Prefix Tree）、单词查找树 或 键树
