@@ -1,0 +1,8 @@
+---
+layout: post
+title: cognos10.2.2架构
+date: 2016-01-18 14:14
+categories: jekyll update
+---
+
+

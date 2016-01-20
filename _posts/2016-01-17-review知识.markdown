@@ -1,0 +1,48 @@
+---
+layout: post
+title: review知识
+date: 2016-01-17 13:34
+categories: jekyll update
+---
+
+> 基于最近出去找实习，面试的时候，简历上的实习经历 感觉并没有关注多少，而是对在学校做的项目感兴趣，所以要整理一下自己在学校做的东西才好
+
+## 数据库实现原理与数据库demo及pg源码
+
+> 标题有点大,感觉做的事情是偏存储的，但是并发事物的处理也应该看看
+
+### 查询处理 
+    
+##### 四个数据结构
+    1. sql query
+    2. relational-algebra expression or a parse tree
+    3. execution plan
+    4. query output
+##### 三个转换过程
+    1. parser and translator
+    2. optimizer
+    3. execution engine
+
+##### 操作符们
+    1. selection operation
+
+> 主要考虑 磁盘io的开销，分为 ts : 定位磁盘块的时间，tt : 传输磁盘块的时间，并且定位的时间远大于传输的时间,基于定位时间远大于传输时间，我们在表的主键上一般有聚集索引，这样扫描表的时候，就按照顺序扫描，设表文件有 br 块
+
+    + linear search ts+br*tt
+    + binary search log2(br)*(ts+tt)
+    + index scan , 主要是B树索引 又按照索引文件中的顺序和物理存储是否相同的分为 primary index(also referred to as a clustering index) ,secondary index; 这里分为 单个或者较小范围的查询，大范围的查询；如果是在primary index中那么就这样就可以了，如果是次级索引，因为其中只是存了record的指针，每次取的时候 都要去进行一次磁盘io，这个时候还不如用linear search 来的方便
+    + complex selection : 就是where 后面有好多表达式，最后就可以表示成一个析取范式(conjunction) 或者 合取范式(disjunction)；对于conjunction来说，如果其中一个或多个属性上有单个或复合索引，那么就按照这个索引先找出符合这些索引上属性的记录，然后再由其他的条件来筛选；
+    另外若是存在针对 record pointer 和 record identifiers 的索引,可以利用这个索引 来找到单个条件的记录，最后做交集(intersection)
+    若是合取范式，如果每个条件的属性上都有索引，那么每个都找，否则有一个没有就要linear scan，这时候其他的索引也不要用了，就直接全表扫描就行了
+    
+    2. sorting
+> 这里主要关注的是外排序,内排序quick sort等
+    + 最著名的外排序算法就是 external sort-merge:
+        1. 挨个读取关系表文件M块，在内存中将这M块拍好序之后，写到外存临时文件Ri
+        2. 假设外存的临时文件数小于内存块数，并且还要留一个块作为输出，那么一块块的读取这些临时文件到内存，然后做merge
+
+    3. join
+
+## 华为项目
+
+## 中汇项目
