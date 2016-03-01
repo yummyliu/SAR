@@ -1,0 +1,8 @@
+---
+layout: post
+title: cognos10.2.2安装问题
+date: 2016-02-29 10:53
+categories: jekyll update
+---
+
+#### server接收不到服务启动成功的响应消息，但是top看到扔有进程再跑，cpu满负荷运转

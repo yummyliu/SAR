@@ -1,0 +1,47 @@
+---
+layout: post
+title: 一个括号引发的『血案』
+date: 2016-03-01 16:02
+categories: jekyll update
+---
+
+> 出差中汇，工作进展太慢，抽出时间刷刷题
+> 如下是leetcode的Max Points on a Line 
+> 感觉并没有错，也看了网上的答案，感觉是一样的，结果最后发现原来是double()的问题，是以记之！！！
+{% highlight c++ %}
+class Solution {
+public:
+    int maxPoints(vector<Point>& points) {
+        unordered_map<double,int> pmap;
+        if(points.size() < 3)
+            return points.size();
+        int maxans = 2;
+        for(int p1 = 0;p1<points.size();++p1){
+            pmap.clear();
+            pmap[INT_MIN]=0;
+            int tmpans = 1;
+            for(int p2=p1+1;p2<points.size();++p2){
+                if(points[p2].x==points[p1].x){
+                    if(points[p1].y==points[p2].y){
+                        tmpans++;
+                    }else{
+                        pmap[INT_MAX]++;
+                    }
+                }else{
+                    double k = double((points[p2].y-points[p1].y)/(points[p2].x-points[p1].x));
+                    pmap[k]++;
+                }
+              
+            }
+            unordered_map<double,int>::iterator it;
+            for(it=pmap.begin();it!=pmap.end();++it){
+                maxans = max(tmpans+it->second,maxans);
+            }
+        }
+
+        return maxans;
+    }
+};
+{% endhighlight %}
+
+**double((a)/(b)) 最后的结果和 (double)(a)/(b)是不一样的，这样导致一些斜率的计算其实是不同的，但是取整了，放到一块去了**
