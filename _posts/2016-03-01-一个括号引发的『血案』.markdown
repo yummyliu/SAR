@@ -8,7 +8,9 @@ categories: jekyll update
 > 出差中汇，工作进展太慢，抽出时间刷刷题
 > 如下是leetcode的Max Points on a Line 
 > 感觉并没有错，也看了网上的答案，感觉是一样的，结果最后发现原来是double()的问题，是以记之！！！
+
 {% highlight c++ %}
+
 class Solution {
 public:
     int maxPoints(vector<Point>& points) {
@@ -42,6 +44,7 @@ public:
         return maxans;
     }
 };
+
 {% endhighlight %}
 
 **double((a)/(b)) 最后的结果和 (double)(a)/(b)是不一样的，这样导致一些斜率的计算其实是不同的，但是取整了，放到一块去了**
