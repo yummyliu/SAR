@@ -1,0 +1,12 @@
+---
+layout: post
+title: 管道与标准流里的buffer
+date: 2016-03-15 17:12
+categories: jekyll update
+---
+
+** tail -f access.log | awk '{print $2}' | uniq **
+
+如上三个命令之间用管道连接起来了，结果是并没有输出任何数据，而是在等待什么？
+
+tail在stdin和stdout都有缓冲区，每个命令都是一个进程，同理其他两个命令也有缓冲区，并且管道中也有缓冲区

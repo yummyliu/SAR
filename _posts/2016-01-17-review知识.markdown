@@ -87,9 +87,3 @@ categories: jekyll update
             2). Both inputs to the join are pipelined
                 同样如果有序就好说
                 否则有个pipeline-join 的算法，存好两个表所有元组在队列中，然后需要建立索引
-
-        
-
-## 华为项目
-
-## 中汇项目
