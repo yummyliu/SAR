@@ -28,7 +28,7 @@ categories: jekyll update
 
 4. I/O多路转接:调用一个函数,告诉内核我们关心的描述符的列表，以及我们关心其IO的那种状态（读/写/异常）,届时函数返回告诉我们
 
-
+使用轮询的方式的系统调用:
 + select/pselect
     准备好的描述符 select(最大描述符+1,read状态组，write状态组，exception状态组，可等待时间,(pselect:信号屏蔽字))
 
@@ -40,6 +40,27 @@ categories: jekyll update
     }
     int poll(fdarray[],nfds(fd数)，timeout)
     同样是告诉系统相关信息，只是形式不同，这个不用对三种状态，各维护一个列表
+
+采用中断信号驱动的方式:
+模式：reactor/proactor
+    个人从IO操作的分工来理解这两个模式，用户进程接收的是什么信号，dispatcher 是位于操作系统内核中 还是个人用户进程实现的
+    IO多路转接中，涉及到三个角色，hander(用户进程的处理模块),dispatcher(调度模块，接收数据),demultiplexer(类似于计组里的多路信号选择器)
+    reactor:dispatcher是用户进程中的，demultiplexer通知用户进程的是准备IO的信号
+    proactor: 首先使用这个模式需要 操作系统层面支持异步io，dispatcher就是操作系统里的一个线程whatever，demultiplexer通知用户进程的是IO完成的信号
+    既然这样的区别，那么我们在reactor的基础上，自己实现一个dispatcher,就可以自己实现一个proactive的io接口
+
++ epoll (linux)  reactor
+    以linux2.6.27之后 epoll_create1(int flag) flag:0 和epoll_create相同，不过之前设定size，现在内核可以动态分配，所以现在一般使用 EPOLL_CLOEXEC,因为create 时候也会占用一个系统fd，应及时close（） 或者像这样 
+    epoll_ctl(int eptd(create 返回的epoll 实例),
+            int op(添加 删除 修改操作),
+            int fd(描述符),
+            struct epoll_event*(关心的事件)) 
+    epoll_wait(int epfd(epoll实例),struct epoll_event* events,int maxevents,int timeout)
+
+    from linux 手册: **The epoll interface, when used with the EPOLLET flag ( Edge Triggered ) should use non-blocking file descriptors to avoid having a blocking read or write starve the task that is handling multiple file descriptors**
++ kqueue (BSD ~mac) reactor
+
++ iocp (window) proactor
 
 **linux中异步i/o只对，streams设备和streams管道起作用，select poll对任何操作符都起作用**
 
