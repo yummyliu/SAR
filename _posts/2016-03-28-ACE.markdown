@@ -1,0 +1,32 @@
+---
+layout: post
+title: ACE
+date: 2016-03-28 09:08
+categories: jekyll update
+---
+
+关键词：网络协议，事件多路分离，并发体系，wrapper facade
+
+#### 面向对象中间件方案
+
+在 端对端应用的功能需求和底层操作系统，网络协议栈和硬件设备之间架设了桥梁；
+
+层次：
+
+    + ACE OS Adaptation (10%) : ACE_OS类，封装原始基于C的OS API
+    + ACE C++ Wrapper Facade (50%) ： 将上者的函数，封装成c++类
+    + ACE framework (40%) : 扩充上者，具体化ACE中多组相关类之间的标准控制流程和合作
+
+ACE framework,其中使用了各个领域的一些模式:
+    + 事件多路分离和分发 ： Reactor,Proactor
+    + 连接建立和服务初始化：Acceptor-Connector
+    + 并发：Tack
+    + 服务配置：Component Configuror
+    + 流 ： Pipes and Filters
+    
+> 关于socket的api，使用繁琐，不同平台兼容性差，使得开发网络应用程序充满了多余的复杂性
+
+使用ACE Socket wrapper facade类将"非面向对象"的API的函数和数据封装到了简明，健壮，可移植可维护，一致的"面向对象"的类接口中。
+使用了内联函数，提高了软件质量的基础上，且没有牺牲性能
+
+
