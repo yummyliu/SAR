@@ -1,0 +1,83 @@
+---
+layout: post
+title: 数据仓库与大数据（关于当前火热大数据各种组件的思考或者说是想象）
+date: 2016-04-10 16:53
+categories: jekyll update
+---
+
+
+### BI
+	
+BI中主要涉及到以下六个方面：
+
++ portal ：权限认证
++ Metadata layer ： 元数据模型（星型雪花型。。。）
++ ad-hoc reporting ：即席查询的报表
++ standard reporting ： 固定报表
++ OLAP ：cube ，MOLAP，ROLAP
++ Visualizations ：数据可视化 
+
+关于现有的BI工具，国内比较火的当属 cognos，不过目前也受到冲击有下降的趋势，cognos采用的OLAP方式
+是 MOLAP 方式
+1、预先将结果集聚集在一个pc的文件中，首先这个文件大小就有限制（没记错的话最大2G），
+2、面临大数据环境下这种方式预先生成的速度太慢了
+以两个原因为主，导致这种方式已经不适用了
+故想改变现在的状况，要从这两个方面下手
+1、解决MOLAP文件大小的限制，当下火热的分布式存储就是一个良好的解决方案，相应的Hadoop生态中的新成员 Apache Kylin 是一个解决方案
+2、数据量大，预先生成的慢这是MOLAP方式的必然缺点，相应cognos推出的基于ROLAP方式的动态cube是一个发展方向，其要求大内存的机器可用来做缓存
+
+而个人认为，分别针对其中一点做的解决方案，必然存在另一点的弊端，所以我觉得会有一个产品：
+	**基于分布式数据库的ROLAP方案**
+而这个方案必然要与底层的datasource的查询性能相关，这就到了Hadoop 和 Newsql
+
+### Newsql 与 Hadoop
+
+> 当时觉得数据库是不会淘汰的，并且其中技术含量挺大的，数据库性能的好坏往往会影响一个产品的性能，
+> 故选择数据库作为自己的研究方向；
+> 然而，就在上了研究生这两年，大数据火的一塌糊涂，围着Hadoop生态圈团团转，似乎感觉自己当时选错了
+> 吓得我赶紧看看这个 Hadoop神兽是个什么东东
+> 传统IT以IOE为常见的解决方案，现在以互联网公司为首的起义军似乎要革了IOE的命，宣告IT解决方案的
+> 变革
+> 传统数据库大家 Oracle 似乎要被 各种 Nosql Newsql 的淹没了
+> 经过一段时间对Hadoop生态的学习了解，除了上层的数据分析的机器学习组件
+> Hadoop生态中的各个组件，就是将数据库实现原理中SQL解析到执行的各个模块分离出来单独作为一个项目
+> 而解决是 OLAP 问题 而非 OLTP （有待进一步考证）
+
+关于Newsql，一些个公司已经有了自己产品，Newsql就是分布式数据库，不仅仅是查询还有事务管理
+关于Hadoop，现在Hadoop中，大家都想做的是 SQL on Hadoop，主要是想让不会写 mr，spark的人使用hadoop
+hadoop中的各个组件组合在一起就完成了一个sql查询执行的功能
+
+##### 各个组价项目
+
+SQL查询解析：HIVE
+查询执行引擎：mapreduce
+存储引擎：Hbase
+文件系统：HDFS
+数据格式：avro/parquet
+
+hadoop中的如上，而其实有很多项目与上述项目解决的是同一问题
+
+SQL查询解析：HIVE,Impala
+查询执行引擎：mapreduce,spark,tez
+存储引擎：cassandra,mongodb,riak,Hbase,kudu,
+文件系统：HDFS,gfs
+数据格式：avro/parquet
+
+其中存储引擎分别是面向不同类型的数据
+
+//TODO 面向什么数据，什么架构
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
