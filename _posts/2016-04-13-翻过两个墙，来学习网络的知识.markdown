@@ -31,4 +31,4 @@ categories: jekyll update
 
 6、	就在百愁莫展的准备放弃翻墙的时候，就这么研究了一下ssh协议，原来这么强大
 
-7、		
+7、 利用ssh在本地建一个sock代理，一个命令搞定，-qTfnN -D 7070		
