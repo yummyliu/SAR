@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 数据仓库与大数据（关于当前火热大数据各种组件的思考或者说是想象）
+title: 数据仓库与大数据
 date: 2016-04-10 16:53
 categories: jekyll update
 ---
