@@ -16,5 +16,6 @@ echo "---" >> $name
 echo "layout: post" >> $name
 echo "title: $blogname" >> $name
 echo "date: $mydate $mytime" >> $name
+echo "header-img: \"img/head.jpg\"" >> $name 
 echo "categories: jekyll update" >> $name
 echo "---" >> $name

@@ -2,7 +2,9 @@
 layout: post
 title: 抓虫记
 date: 2016-07-10 09:45
-categories: jekyll update
+header-img: "img/head.jpg"
+tags:
+    - PG
 ---
 
 > 实际第一次参与开源社区代码的实践，其中遇到了一个功能性的bug

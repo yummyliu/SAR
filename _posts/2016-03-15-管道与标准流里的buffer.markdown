@@ -3,6 +3,8 @@ layout: post
 title: 管道与标准流里的buffer
 date: 2016-03-15 17:12
 categories: jekyll update
+tags:
+    - Linux
 ---
 
 ** tail -f access.log | awk '{print $2}' | uniq **

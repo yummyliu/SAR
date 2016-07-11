@@ -3,6 +3,8 @@ layout: post
 title: cognos10.2.2安装问题
 date: 2016-02-29 10:53
 categories: jekyll update
+tags:
+    - 数据仓库
 ---
 
 #### 前端展示页面太粗糙了，然后把web contetn 拷到 p2pd下面，但是还是没有用 并且这次biserver居然启动不了了

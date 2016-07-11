@@ -2,7 +2,7 @@
 layout: post
 title: 学习postgresql过程的碎片知识(持续添加)
 date: 2016-07-09 23:25
-categories: jekyll update
+header-img: "img/head.jpg"
 ---
 
 
@@ -31,4 +31,29 @@ execute plan 函数参数中有一个numberTuple 每次执行返回结果就是�
 ### oom
 
 执行tpcds99个查询的时候，部分查询出现oom，起初希望性能好一点，所以把work_mem和share_buffer设置的比较大，现在将share_buffer调小了，部分oom消失了，可是还是有部分查询存在oom的问题，绕了一圈，发现，work_mem是针对操作符级别的用来作为 sort，hash_table的内存空间，这样我把work_mem调大了，当有操作符需要work_mem的时候就申请不到空间了
+
+### 生成倾斜测试数据
+
+``` sql
+
+CREATE TABLE frequency(keys integer, frequency integer);
+INSERT INTO frequency VALUES
+(1, 70), (2,10), (3, 5), (4, 3),(5,1),(6,1),
+    (7,1),(8,1),(9,1),(10,1),(11,1),(12,1),(13,1),(14,1),(15,1),(16,1);
+
+
+
+CREATE TABLE CONSECUTIVE_NUMBER(NUM INT NOT NULL);
+INSERT INTO CONSECUTIVE_NUMBER
+SELECT ROW_NUMBER() OVER() AS NUM FROM SYSCAT.COLUMNS;
+```
+
+### ERROR:  failed to find conversion function from unknown to text
+
+``` sql
+SELECT 'string'::text AS rowname, data FROM tbl1
+
+UNION ALL
+SELECT 'string2', data FROM tbl2
+```
 

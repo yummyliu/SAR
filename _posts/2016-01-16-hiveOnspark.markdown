@@ -3,6 +3,9 @@ layout: post
 title: hiveOnspark
 date: 2016-01-16 08:42
 categories: jekyll update
+tags:
+    - 分布式
+    - 数据仓库
 ---
 
 > 介于学校的云平台要升级 原先的虚拟机 用不了了，现在找了个三个闲置的破电脑，搭建了一个小集群试试（2g双核4个物理线程），然而本来我找了这几个电脑是打算搭建一些openstack的，结果发现openstack的搭建环境略高，这几个机器根本满足不了啊！

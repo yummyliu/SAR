@@ -3,6 +3,8 @@ layout: post
 title: cube
 date: 2015-11-13 14:09
 categories: jekyll update
+tags:
+    - 数据仓库
 ---
 维：概念分层
 度量：一个数值函数，可以对数据立方体的每个点求值

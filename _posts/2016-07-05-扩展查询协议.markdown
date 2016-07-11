@@ -2,7 +2,9 @@
 layout: post
 title: pg的查询查询协议
 date: 2016-07-05 20:29
-categories: jekyll update
+header-img: "img/head.jpg"
+tags:
+    - PG
 ---
 
 
