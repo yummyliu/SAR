@@ -1,0 +1,89 @@
+---
+layout: page
+title: "About"
+description: "Hey, this is YummyLiu."
+header-img: "img/about-bg.jpg"
+---
+
+
+<!-- Chinese Version -->
+<div class="zh post-container">
+    <blockquote>
+    社会与人文科学院校里面的一枚程序猿，目标做数据库相关的架构师 <br><br>
+    </blockquote>
+    
+    一碗鸡汤，与君共勉 <br><br>
+
+    原料：百年栗园有机金牌老母鸡1只，去皮姜3片 <br><br>
+
+    做法：<br><br>
+    1）把老母鸡洗净，去掉头尾。<br><br>
+    2）将老母鸡整只放入锅中，大火烧开后，用勺子撇去浮沫，撇沫的时候要搅动一下锅底，把下面的血沫也翻上来撇掉。<br><br>
+    3）姜去皮，切成厚片，放入锅中。盖上锅盖，用中小火煲大约两小时。然后打开盖子，改成大火在汤面沸腾的状态下，煮5分钟，这样会让汤的味道更佳浓郁。<br><br>
+    4）喝前撒入盐调味即可。<br><br>
+
+</div>
+
+
+
+{% if site.duoshuo_username %}
+<!-- 多说评论框 start -->
+<div class="comment">
+    <div class="ds-thread"
+    {% if site.duoshuo_username == "huxblog" %}
+        data-thread-id="1187623191091085319"
+    {% else %}
+        data-thread-key="{{site.duoshuo_username}}/about"
+    {% endif %}
+
+    data-title="{{page.title}}"
+    data-url="{{site.url}}/about/"></div>
+</div>
+<!-- 多说评论框 end -->
+
+<!-- Duoshuo hacking -->
+<input id="dsUser" type="hidden" value="{{site.duoshuo_username}}"  />
+
+<!-- 多说公共JS代码 start (一个网页只需插入一次) -->
+<script type="text/javascript">
+    // dynamic User hacking by Hux
+    var _user = document.getElementById('dsUser').value;
+    // duoshuo comment query.
+    var duoshuoQuery = {short_name: _user };
+    (function() {
+        var ds = document.createElement('script');
+        ds.type = 'text/javascript';ds.async = true;
+        ds.src = (document.location.protocol == 'https:' ? 'https:' : 'http:') + '//static.duoshuo.com/embed.js';
+        ds.charset = 'UTF-8';
+        (document.getElementsByTagName('head')[0]
+         || document.getElementsByTagName('body')[0]).appendChild(ds);
+    })();
+</script>
+<!-- 多说公共JS代码 end -->
+{% endif %}
+
+
+{% if site.disqus_username %}
+<!-- disqus 评论框 start -->
+<div class="comment">
+    <div id="disqus_thread" class="disqus-thread">
+
+    </div>
+</div>
+<!-- disqus 评论框 end -->
+
+<!-- disqus 公共JS代码 start (一个网页只需插入一次) -->
+<script type="text/javascript">
+    /* * * CONFIGURATION VARIABLES * * */
+    var disqus_shortname = "{{site.disqus_username}}";
+    var disqus_identifier = "{{site.disqus_username}}/{{page.url}}";
+    var disqus_url = "{{site.url}}{{page.url}}";
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<!-- disqus 公共JS代码 end -->
+{% endif %}

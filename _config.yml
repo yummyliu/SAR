@@ -1,18 +1,91 @@
 # Site settings
-title: 一些笔记
+title: Yummy Blog
+SEOTitle: 刘阳明的博客 | Yummy Blog
+header-img: img/home-bg.jpg
 email: sdwhlym@ruc.edu.cn
-description: 保持冷静 动动脑子
-#Write an awesome description for your new site here. You can edit this
-#line in _config.yml. It will appear in your document head meta (for
-#Google search results) and in your feed.xml site description.
-baseurl: "" # the subpath of your site, e.g. /blog/
-url: "http://youth92.github.io" # the base hostname & protocol for your site
-github_username: yummyliu
+description: "Do more with less"
+keyword: ""
+url: "http://yummyliu.github.io"              # your host, for absolute URL
+# baseurl: "/blogtest"         # for example, '/blog' if your blog hosted on 'host/blog'
+
+
+
+# SNS settings
+RSS: false
+weibo_username:     yummmyliu
+zhihu_username:     ljl-d-d-d-d-d
+github_username:    yummyliu
+#twitter_username:  huxpro
+facebook_username:  
+
+
 
 # Build settings
-markdown: kramdown
+# from 2016, 'pygments' is unsupported on GitHub Pages. Use 'rouge' for highlighting instead.
+highlighter: rouge
+permalink: pretty
+paginate: 6
+exclude: ["less","node_modules","Gruntfile.js","package.json","README.md"]
+anchorjs: true                          # if you want to customize anchor. check out line:181 of `post.html`
 
-comments: 
-    provider: duoshuo
-    duoshuo:
-        short_name: yummyliu
+
+
+# Gems
+# from PR#40, to support local preview for Jekyll 3.0
+gems: [jekyll-paginate]
+
+
+
+# Markdown settings
+# replace redcarpet to kramdown,
+# although redcarpet can auto highlight code, the lack of header-id make the catalog impossible, so I switch to kramdown
+# document: http://jekyllrb.com/docs/configuration/#kramdown
+markdown: kramdown
+kramdown:
+  input: GFM                            # use Github Flavored Markdown !important
+
+
+
+# Disqus settings
+#disqus_username: _your_disqus_short_name_
+
+# Duoshuo settings
+duoshuo_username: huxblog
+# Share component is depend on Comment so we can NOT use share only.
+duoshuo_share: true                     # set to false if you want to use Comment without Sharing
+
+
+
+
+# Analytics settings
+# Baidu Analytics
+ba_track_id: 4cc1f2d8f3067386cc5cdb626a202900
+# Google Analytics
+ga_track_id: 'UA-49627206-1'            # Format: UA-xxxxxx-xx
+ga_domain: huangxuan.me
+
+
+
+# Sidebar settings
+sidebar: true                          # whether or not using Sidebar.
+sidebar-about-description: "coding to debuging ，入定的游戏"
+sidebar-avatar: img/me.jpg     # use absolute URL, seeing it's used in both `/` and `/about/`
+
+
+
+# Featured Tags
+featured-tags: true                     # whether or not using Feature-Tags
+featured-condition-size: 1              # A tag will be featured if the size of it is more than this condition value
+
+
+
+# Friends
+friends: [
+    {
+        title: "Hux Blog",
+        href: "http://huangxuan.me"
+    },{
+        title: "Foo",
+        href: "#"
+    }
+]
