@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 追postgresql的点滴(持续添加)
+title: 学习postgresql过程的碎片知识(持续添加)
 date: 2016-07-09 23:25
 categories: jekyll update
 ---
