@@ -10,6 +10,7 @@ tags:
 
 ### 解释
 > http://blog.csdn.net/sqlserverdiscovery/article/details/11369695 
+
 #### 临时表
 临时表包括：以#开头的局部临时表，以##开头的全局临时表。
 + 	存储

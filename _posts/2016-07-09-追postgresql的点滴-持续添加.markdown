@@ -18,11 +18,16 @@ execute plan 函数参数中有一个numberTuple 每次执行返回结果就是�
 ### netezza 转 pg
 
 由于tpcds没有 pg的 sql查询，直接执行有一些问题
-1、日期加减，，14 days -> interval 14 day
-2、子查询要有别名
-3、grouping
-4、ERROR:  failed to find conversion function from unknown to text 
-5、![icov](/image/icovn.png)
+
++   日期加减，，14 days -> interval 14 day
++   子查询要有别名
++   grouping
++   ERROR:  failed to find conversion function from unknown to text 
+> http://stackoverflow.com/questions/18073901/failed-to-find-conversion-function-from-unknown-to-text
+> 
+> Postgres is happy, if it can detect types of untyped constants from the context. But when any context is not possible, and when query is little bit more complex than trivial, then this mechanism fails. These rules are specific for any SELECT clause, and some are stricter, some not. If I can say, then older routines are more tolerant (due higher compatibility with Oracle and less negative impact on beginners), modern are less tolerant (due higher safety to type errors).
+There was some proposals try to work with any unknown literal constant like text constant, but was rejected for more reasons. So I don't expect significant changes in this area. This issue is usually related to synthetic tests - and less to real queries, where types are deduced from column types.
++   ![icov](/image/icovn.png)
 
 ### over()窗口函数
 
