@@ -12,6 +12,7 @@ tags:
 > http://blog.csdn.net/sqlserverdiscovery/article/details/11369695 
 
 #### 临时表
+
 临时表包括：以#开头的局部临时表，以##开头的全局临时表。
 + 	存储
 不管是局部临时表，还是全局临时表，都会放存放在tempdb数据库中。
