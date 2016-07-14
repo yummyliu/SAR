@@ -256,5 +256,15 @@ PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 ```
+#### New feature
+
+除此之外,在pg9.4之后添加了新的特性，动态加载bgworker,以插件的方式, create extension 具体例子可以参考，pg 源码的 src/test/modules/worker_spi
+
+
+#### 一句话
+
+在没有这个特性之前，如果我们自己需要创建一个新的后台维护任务，就要自己额外启动一个进程，  
+并管理好该进程的生命周期。有了bgworker之后，pg启动的时候顺带启动了我们自定义的后台任务进程  
+并且pgstop顺带stop，更加有整体性
 
 [bwp]: https://wiki.postgresql.org/wiki/What's_new_in_PostgreSQL_9.3#Custom_Background_Workers
