@@ -256,6 +256,7 @@ PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 ```
+
 #### New feature
 
 除此之外,在pg9.4之后添加了新的特性，动态加载bgworker,以插件的方式, create extension 具体例子可以参考，pg 源码的 src/test/modules/worker_spi
