@@ -99,3 +99,7 @@ SELECT 'string2', data FROM tbl2
 部分Oracle的复杂SQL使用到PG上会产生性能问题，多层子查询只在最外层排序分页的时候性能影响明显，尽量在子查询里进行关联，过滤，分页。
 当表和子查询多时，表的join顺序没有Oracle优化得好，可能会走错索引，所以尽量避免子查询，使用join来做。
 
+
+### 数据库发展史
+
+![his](/image/shujukuhistory.gif)
