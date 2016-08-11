@@ -8,8 +8,6 @@ header-img: "img/head.jpg"
 categories: jekyll update
 ---
 
-> 提到c/c++ 免不了就要提到内存管理，这是这个语言经常会被问的问题
-
 ### 内存问题
 
 ##### 内存泄露：memory leak
