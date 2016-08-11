@@ -12,9 +12,7 @@ tags:
 
 ##### 文件布局
 
-`select pg_relation_filepath('relname')`得到文件存储位置， 
-
-查看/data/base下数据文件，其中对于每个表有如下三个文件
+`select pg_relation_filepath('relname')`得到文件存储位置，查看/data/base下数据文件，其中对于每个表有如下三个文件
 
 ```
 -rw------- 1 liuyangming liuyangming   8192 7月   5 12:35 3602

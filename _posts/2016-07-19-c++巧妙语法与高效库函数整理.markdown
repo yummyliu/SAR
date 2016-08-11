@@ -1,0 +1,71 @@
+---
+layout: post
+title: c/c++巧妙代码整理(持续添加)
+date: 2016-05-15 23:21
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+    - c++
+    - 程序设计
+---
+
+> 大部分列出的是c++11 与 c99的，因为对于c++11感觉用起来方便多了  
+> 比如 `>> auto {初始化}`  等等特性  
+> 整理写程序过程中，看到的优秀代码 
+
+#### cmp
+> 在stl中常用的比较函数，可以使用匿名函数,或者自定义的函数对象
+
+``` cpp
+//  custom function object
+    class {
+    public:
+        bool operator()(int a, int b)
+        {   
+            return a < b;
+        }   
+    } customLess;
+    std::sort(s.begin(), s.end(), customLess);
+ 
+    //lambda expression 
+    std::sort(s.begin(), s.end(), [](int a, int b) {
+        return b < a;   
+    });
+```
+
+#### 找出数组中的第N个数
+
+##### nth_element
+
+将第n个数放在第n个位置，前面元素比他小，后面元素比他大，但是前后不一定排序
+
+``` cpp
+int main()
+	{
+		std::vector<int> v{5, 6, 4, 3, 2, 6, 7, 9, 3};
+	 
+		std::nth_element(v.begin(), v.begin() + v.size()/2, v.end());
+		std::cout << "The median is " << v[v.size()/2] << '\n';
+	 
+		std::nth_element(v.begin(), v.begin()+1, v.end(), std::greater<int>());
+		std::cout << "The second largest element is " << v[1] << '\n';
+	}
+```
+
+##### RANDOMIZED-SELECT
+![RS](/image/random.jpg)
+
+#### 巧用位运算
+> 利用位运算 `& | ^ ~ >> << `
+
++ `n|1` n变为不小于n的最小奇数
++ `n&0xfffe` n变为不大于n的最大偶数
++ `n&1` 判断n的奇偶
++ 
+
+#### 宏
+
++ 数据是可以随机索引的，应该开阔一下思路  
+比如虚拟下标：映射下标来定义不同的扫描顺序  
+`#define A(i) nums[(1+2*(i)) % (n|1)]` ： 先扫描奇数，再扫描偶数 
+

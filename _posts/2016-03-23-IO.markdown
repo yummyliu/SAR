@@ -1,11 +1,17 @@
 ---
 layout: post
-title: IO ,linux
+title: Linux的IO不完全概况
 date: 2016-03-23 16:11
 categories: jekyll update
+tags:
+    - Linux
 ---
 
-#### 本地IO
+> **流机制**: linux 提供的构造内核设备驱动程序和网络协议包的一种通用方法    
+> 用户进程->系统调用(->处理模块 使用ioctl命令可压入处理模块)->设备驱动程序  
+> 用户进程调用系统调用来读取流，系统调用相当于流的首部
+
+#### 写同步(以磁盘为例)
 
 > 在linux操作系统上，怎样保证对文件的更新内容成功持久化到硬盘？
 
@@ -51,68 +57,424 @@ int fdatasync(int fd);
 4.如果一个log文件写满了，则新建一个log文件，也只有一次同步metadata的开销
 ```
 
-#### 网络IO
-
-##### 流机制
-
-linux 提供的构造内核设备驱动程序和网络协议包的一种通用方法  
-用户进程->流首（系统调用界面）(->处理模块 使用ioctl命令可压入处理模块)->设备驱动程序  
+#### 读多个（以网络IO为例）
 
 ##### 综述
 
-1. n个进程阻塞读;
-    这种情况下，使用线程比使用进程简单，终止的时候，父子进程之间需要通信告知,但是使用线程就会带来线程同步的损失
+1. 阻塞型 n个进程阻塞读, **n个人每人管一个IO任务**;  
+这种情况下，使用线程比使用进程简单，终止的时候，父子进程之间需要通信告知,但是使用线程就会带来线程同步的损失
     
-2. 将n个描述符，设成非阻塞的方式（fcntl）,轮询之;
-   这样大部分时候是在浪费了CPU时间,多任务系统中很不可取
+2. 非阻塞同步型 将n个描述符，设成非阻塞的方式,轮询之, **一个人管多个IO任务**;  
+这样大部分时候是在浪费了CPU时间,多任务系统中很不可取
 
-3. 异步io,(ioctl)
-    不再自己主动去问了，当描述符准备好了，内核再通知它; 可是进程收到这个信号后，如果等的不止一个描述符，这个时候，就不知道是哪个准备好了，所以需要将这个描述符，设成非阻塞的轮询一遍
+3. 非阻塞异步型 异步io,(ioctl) **自己干自己的事，有事发生有报警铃**  
+不再自己主动去问了，当描述符准备好了，内核再通知它  
+可是进程收到这个信号后，如果等的不止一个描述符，  
+这个时候，就不知道是哪个准备好了，所以需要将这个描述符，设成非阻塞的轮询一遍  
 
-4. I/O多路转接:调用一个函数,告诉内核我们关心的描述符的列表，以及我们关心其IO的那种状态（读/写/异常）,届时函数返回告诉我们
+4. I/O多路转接 **报警的时候，告诉哪里出事了**  
+调用一个函数,告诉内核我们关心的描述符的列表，以及我们关心其IO的那种状态（读/写/异常）,届时函数返回告诉我们
 
-+ 使用轮询的方式的系统调用:
-    select/pselect
-    准备好的描述符 select(最大描述符+1,read状态组，write状态组，exception状态组，可等待时间,(pselect:信号屏蔽字))
-    poll
-    pollfd{
-        int fd;
-        short events;//关心的事件
-        short reevents;//最后发生的事件
+##### IO多路转接
+
+###### 使用轮询的方式
+
++ select/pselect  
+参数:   (最大描述符+1,read状态组，write状态组，exception状态组，可等待时间,(pselect:信号屏蔽字))
+
+``` c
+#include <sys/select.h>
+
+int pselect(int nfds, fd_set *readfds, fd_set *writefds,
+           fd_set *exceptfds, const struct timespec *timeout,
+           const sigset_t *sigmask);
+int select(int nfds, fd_set *readfds, fd_set *writefds,
+          fd_set *exceptfds, struct timeval *timeout);
+```
+
++ poll  
+参数和select不同，构造一个pollfd的数组，每个数组元素指定一个描述符的编号和关心的状态
+
+``` c
+struct pollfd {
+   int   fd;         /* file descriptor */
+   short events;     /* requested events */
+   short revents;    /* returned events */
+};
+#include <poll.h>
+
+int poll(struct pollfd *fds, nfds_t nfds, int timeout);
+
+#define _GNU_SOURCE         /* See feature_test_macros(7) */
+#include <signal.h>
+#include <poll.h>
+
+int ppoll(struct pollfd *fds, nfds_t nfds,
+       const struct timespec *tmo_p, const sigset_t *sigmask);
+```
+
+同样是告诉系统相关信息，只是形式不同，这个不用对三种状态，各维护一个列表
+
+
+##### 中断信号驱动的方式
+> **linux中异步i/o只对，streams设备和streams管道起作用，select poll对任何操作符都起作用**
+
+``` c
+struct epoll_event {
+  __uint32_t events;  /* Epoll events */
+  epoll_data_t data;  /* User data variable */
+};
+#include <sys/epoll.h>
+int epoll_create(int size);
+int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event);
+int epoll_wait(int epfd, struct epoll_event * events, int maxevents, int timeout);
+```
+epoll对文件描述符的操作有两种模式：LT（level trigger）和ET（edge trigger）。LT模式是默认模式，LT模式与ET模式的区别如下：
+LT模式：当epoll_wait检测到描述符事件发生并将此事件通知应用程序，应用程序可以不立即处理该事件。下次调用epoll_wait时，会再次响应应用程序并通知此事件。
+ET模式：当epoll_wait检测到描述符事件发生并将此事件通知应用程序，应用程序必须立即处理该事件。如果不处理，下次调用epoll_wait时，不会再次响应应用程序并通知此事件。
+ET模式在很大程度上减少了epoll事件被重复触发的次数，因此效率要比LT模式高。epoll工作在ET模式的时候，必须使用非阻塞套接口，以避免由于一个文件句柄的阻塞读/阻塞写操作把处理多个文件描述符的任务饿死。
+
+###### epoll 示例
+
+``` c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <sys/epoll.h>
+#include <unistd.h>
+#include <sys/types.h>
+
+#define IPADDRESS   "127.0.0.1"
+#define PORT        8787
+#define MAXSIZE     1024
+#define LISTENQ     5
+#define FDSIZE      1000
+#define EPOLLEVENTS 100
+
+//函数声明
+//创建套接字并进行绑定
+static int socket_bind(const char* ip,int port);
+//IO多路复用epoll
+static void do_epoll(int listenfd);
+//事件处理函数
+static void
+handle_events(int epollfd,struct epoll_event *events,int num,int listenfd,char *buf);
+//处理接收到的连接
+static void handle_accpet(int epollfd,int listenfd);
+//读处理
+static void do_read(int epollfd,int fd,char *buf);
+//写处理
+static void do_write(int epollfd,int fd,char *buf);
+//添加事件
+static void add_event(int epollfd,int fd,int state);
+//修改事件
+static void modify_event(int epollfd,int fd,int state);
+//删除事件
+static void delete_event(int epollfd,int fd,int state);
+
+int main(int argc,char *argv[])
+{
+    int  listenfd;
+    listenfd = socket_bind(IPADDRESS,PORT);
+    listen(listenfd,LISTENQ);
+    do_epoll(listenfd);
+    return 0;
+}
+
+static int socket_bind(const char* ip,int port)
+{
+    int  listenfd;
+    struct sockaddr_in servaddr;
+    listenfd = socket(AF_INET,SOCK_STREAM,0);
+    if (listenfd == -1)
+    {
+        perror("socket error:");
+        exit(1);
     }
-    int poll(fdarray[],nfds(fd数)，timeout)
-    同样是告诉系统相关信息，只是形式不同，这个不用对三种状态，各维护一个列表
+    bzero(&servaddr,sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    inet_pton(AF_INET,ip,&servaddr.sin_addr);
+    servaddr.sin_port = htons(port);
+    if (bind(listenfd,(struct sockaddr*)&servaddr,sizeof(servaddr)) == -1)
+    {
+        perror("bind error: ");
+        exit(1);
+    }
+    return listenfd;
+}
 
-+ 采用中断信号驱动的方式:
+static void do_epoll(int listenfd)
+{
+    int epollfd;
+    struct epoll_event events[EPOLLEVENTS];
+    int ret;
+    char buf[MAXSIZE];
+    memset(buf,0,MAXSIZE);
+    //创建一个描述符
+    epollfd = epoll_create(FDSIZE);
+    //添加监听描述符事件
+    add_event(epollfd,listenfd,EPOLLIN);
+    for ( ; ; )
+    {
+        //获取已经准备好的描述符事件
+        ret = epoll_wait(epollfd,events,EPOLLEVENTS,-1);
+        handle_events(epollfd,events,ret,listenfd,buf);
+    }
+    close(epollfd);
+}
 
-    *模式：reactor/proactor*
-    个人理解：户进程接收的是什么信号，dispatcher 是位于操作系统内核中 还是个人用户进程实现的
-    IO多路转接中，涉及到三个角色，hander(用户进程的处理模块),dispatcher(调度模块，接收数据),demultiplexer(类似于计组里的多路信号选择器)
-    reactor:dispatcher是用户进程中的，demultiplexer通知用户进程的是准备IO的信号
-    proactor: 首先使用这个模式需要 操作系统层面支持异步io，dispatcher就是操作系统里的一个线程whatever，demultiplexer通知用户进程的是IO完成的信号
-    既然这样的区别，那么我们在reactor的基础上，自己实现一个dispatcher,就可以自己实现一个proactive的io接口
+static void
+handle_events(int epollfd,struct epoll_event *events,int num,int listenfd,char *buf)
+{
+    int i;
+    int fd;
+    //进行选好遍历
+    for (i = 0;i < num;i++)
+    {
+        fd = events[i].data.fd;
+        //根据描述符的类型和事件类型进行处理
+        if ((fd == listenfd) &&(events[i].events & EPOLLIN))
+            handle_accpet(epollfd,listenfd);
+        else if (events[i].events & EPOLLIN)
+            do_read(epollfd,fd,buf);
+        else if (events[i].events & EPOLLOUT)
+            do_write(epollfd,fd,buf);
+    }
+}
+static void handle_accpet(int epollfd,int listenfd)
+{
+    int clifd;
+    struct sockaddr_in cliaddr;
+    socklen_t  cliaddrlen;
+    clifd = accept(listenfd,(struct sockaddr*)&cliaddr,&cliaddrlen);
+    if (clifd == -1)
+        perror("accpet error:");
+    else
+    {
+        printf("accept a new client: %s:%d\n",inet_ntoa(cliaddr.sin_addr),cliaddr.sin_port);
+        //添加一个客户描述符和事件
+        add_event(epollfd,clifd,EPOLLIN);
+    }
+}
 
-    epoll (linux)  reactor
-    kqueue (BSD ~mac) reactor
-    iocp (window) proactor
+static void do_read(int epollfd,int fd,char *buf)
+{
+    int nread;
+    nread = read(fd,buf,MAXSIZE);
+    if (nread == -1)
+    {
+        perror("read error:");
+        close(fd);
+        delete_event(epollfd,fd,EPOLLIN);
+    }
+    else if (nread == 0)
+    {
+        fprintf(stderr,"client close.\n");
+        close(fd);
+        delete_event(epollfd,fd,EPOLLIN);
+    }
+    else
+    {
+        printf("read message is : %s",buf);
+        //修改描述符对应的事件，由读改为写
+        modify_event(epollfd,fd,EPOLLOUT);
+    }
+}
 
-    以linux2.6.27之后 epoll_create1(int flag) flag:0 和epoll_create相同，不过之前设定size，现在内核可以动态分配，所以现在一般使用 EPOLL_CLOEXEC,因为create 时候也会占用一个系统fd，应及时close（） 或者像这样 
-    epoll_ctl(int eptd(create 返回的epoll 实例),
-            int op(添加 删除 修改操作),
-            int fd(描述符),
-            struct epoll_event*(关心的事件)) 
-    epoll_wait(int epfd(epoll实例),struct epoll_event* events,int maxevents,int timeout)
+static void do_write(int epollfd,int fd,char *buf)
+{
+    int nwrite;
+    nwrite = write(fd,buf,strlen(buf));
+    if (nwrite == -1)
+    {
+        perror("write error:");
+        close(fd);
+        delete_event(epollfd,fd,EPOLLOUT);
+    }
+    else
+        modify_event(epollfd,fd,EPOLLIN);
+    memset(buf,0,MAXSIZE);
+}
 
-    from linux 手册: **The epoll interface, when used with the EPOLLET flag ( Edge Triggered ) should use non-blocking file descriptors to avoid having a blocking read or write starve the task that is handling multiple file descriptors**
+static void add_event(int epollfd,int fd,int state)
+{
+    struct epoll_event ev;
+    ev.events = state;
+    ev.data.fd = fd;
+    epoll_ctl(epollfd,EPOLL_CTL_ADD,fd,&ev);
+}
+
+static void delete_event(int epollfd,int fd,int state)
+{
+    struct epoll_event ev;
+    ev.events = state;
+    ev.data.fd = fd;
+    epoll_ctl(epollfd,EPOLL_CTL_DEL,fd,&ev);
+}
+
+static void modify_event(int epollfd,int fd,int state)
+{
+    struct epoll_event ev;
+    ev.events = state;
+    ev.data.fd = fd;
+    epoll_ctl(epollfd,EPOLL_CTL_MOD,fd,&ev);
+}
+```
+
+###### client
+
+``` c
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <sys/epoll.h>
+#include <time.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <arpa/inet.h>
+
+#define MAXSIZE     1024
+#define IPADDRESS   "127.0.0.1"
+#define SERV_PORT   8787
+#define FDSIZE        1024
+#define EPOLLEVENTS 20
+
+static void handle_connection(int sockfd);
+static void
+handle_events(int epollfd,struct epoll_event *events,int num,int sockfd,char *buf);
+static void do_read(int epollfd,int fd,int sockfd,char *buf);
+static void do_read(int epollfd,int fd,int sockfd,char *buf);
+static void do_write(int epollfd,int fd,int sockfd,char *buf);
+static void add_event(int epollfd,int fd,int state);
+static void delete_event(int epollfd,int fd,int state);
+static void modify_event(int epollfd,int fd,int state);
+
+int main(int argc,char *argv[])
+{
+    int                 sockfd;
+    struct sockaddr_in  servaddr;
+    sockfd = socket(AF_INET,SOCK_STREAM,0);
+    bzero(&servaddr,sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons(SERV_PORT);
+    inet_pton(AF_INET,IPADDRESS,&servaddr.sin_addr);
+    connect(sockfd,(struct sockaddr*)&servaddr,sizeof(servaddr));
+    //处理连接
+    handle_connection(sockfd);
+    close(sockfd);
+    return 0;
+}
 
 
-**linux中异步i/o只对，streams设备和streams管道起作用，select poll对任何操作符都起作用**
+static void handle_connection(int sockfd)
+{
+    int epollfd;
+    struct epoll_event events[EPOLLEVENTS];
+    char buf[MAXSIZE];
+    int ret;
+    epollfd = epoll_create(FDSIZE);
+    add_event(epollfd,STDIN_FILENO,EPOLLIN);
+    for ( ; ; )
+    {
+        ret = epoll_wait(epollfd,events,EPOLLEVENTS,-1);
+        handle_events(epollfd,events,ret,sockfd,buf);
+    }
+    close(epollfd);
+}
 
-5. readv/writev
-    一次函数调用中读写多个非连续的缓冲区。
-    同样是实现这一个操作，我们可以调用多次read、write；或者申请一个足够大的用户缓冲区,将这些复制进去，然后调用一次write
-前者多次系统调用，开销必然大；
-后者多了一步复制的开销,这一步复制的开销需要和readv/writev实现必然比read write复杂的开销做权衡
+static void
+handle_events(int epollfd,struct epoll_event *events,int num,int sockfd,char *buf)
+{
+    int fd;
+    int i;
+    for (i = 0;i < num;i++)
+    {
+        fd = events[i].data.fd;
+        if (events[i].events & EPOLLIN)
+            do_read(epollfd,fd,sockfd,buf);
+        else if (events[i].events & EPOLLOUT)
+            do_write(epollfd,fd,sockfd,buf);
+    }
+}
 
-6. 存储映射
-    mmap,将磁盘文件和内存缓冲区对应上，读写缓冲区就是读写文件,映射区域系统虚存的页长度相关，会做padding
+static void do_read(int epollfd,int fd,int sockfd,char *buf)
+{
+    int nread;
+    nread = read(fd,buf,MAXSIZE);
+        if (nread == -1)
+    {
+        perror("read error:");
+        close(fd);
+    }
+    else if (nread == 0)
+    {
+        fprintf(stderr,"server close.\n");
+        close(fd);
+    }
+    else
+    {
+        if (fd == STDIN_FILENO)
+            add_event(epollfd,sockfd,EPOLLOUT);
+        else
+        {
+            delete_event(epollfd,sockfd,EPOLLIN);
+            add_event(epollfd,STDOUT_FILENO,EPOLLOUT);
+        }
+    }
+}
+
+static void do_write(int epollfd,int fd,int sockfd,char *buf)
+{
+    int nwrite;
+    nwrite = write(fd,buf,strlen(buf));
+    if (nwrite == -1)
+    {
+        perror("write error:");
+        close(fd);
+    }
+    else
+    {
+        if (fd == STDOUT_FILENO)
+            delete_event(epollfd,fd,EPOLLOUT);
+        else
+            modify_event(epollfd,fd,EPOLLIN);
+    }
+    memset(buf,0,MAXSIZE);
+}
+
+static void add_event(int epollfd,int fd,int state)
+{
+    struct epoll_event ev;
+    ev.events = state;
+    ev.data.fd = fd;
+    epoll_ctl(epollfd,EPOLL_CTL_ADD,fd,&ev);
+}
+
+static void delete_event(int epollfd,int fd,int state)
+{
+    struct epoll_event ev;
+    ev.events = state;
+    ev.data.fd = fd;
+    epoll_ctl(epollfd,EPOLL_CTL_DEL,fd,&ev);
+}
+
+static void modify_event(int epollfd,int fd,int state)
+{
+    struct epoll_event ev;
+    ev.events = state;
+    ev.data.fd = fd;
+    epoll_ctl(epollfd,EPOLL_CTL_MOD,fd,&ev);
+}
+```
+
+[两种IO多路复用方案:Reactor and Proactor][rp]
+
+[rp]: http://blog.jobbole.com/59676/
+

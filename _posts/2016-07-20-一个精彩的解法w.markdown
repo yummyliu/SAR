@@ -1,0 +1,16 @@
+---
+layout: post
+title: 一个精彩的解法
+date: 2016-05-20 19:05
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+    - 程序设计
+---
+
+
+
+请看[经典一题][vindex],以及[证明][explain]
+
+[vindex]: https://discuss.leetcode.com/topic/32929/o-n-o-1-after-median-virtual-indexing/2
+[explain]: https://discuss.leetcode.com/topic/32861/3-lines-python-with-explanation-proof
