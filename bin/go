@@ -8,8 +8,8 @@ then
 fi
 mydate=$(date +%Y-%m-%d | tr -d "\n") #Assign Output of Shell command to var
 mytime=$(date +%H:%M | tr -d "\n")
-blogname=$(echo -n $1)
-name=$(echo -n $mydate"-"$blogname".markdown")
+blogname=$(echo $1)
+name=$(echo $mydate"-"$blogname".markdown")
 touch $name
 # 添加jekyll的文件头
 echo "---" >> $name

@@ -69,3 +69,22 @@ int main()
 比如虚拟下标：映射下标来定义不同的扫描顺序  
 `#define A(i) nums[(1+2*(i)) % (n|1)]` ： 先扫描奇数，再扫描偶数 
 
+#### modern c++ (c++ 11)
+
+移动语义
+
+智能指针
+
+for语句
+
+容器
+
+nullptr
+
+auto关键字
+
+lamba表达式
+
+并发API
+
+Defaulted 和 Deleted 函数
