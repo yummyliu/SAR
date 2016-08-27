@@ -1,4 +1,5 @@
 # update
+jekyll clean
 if [ $# != 1 ]
 then
     echo "missing commitlog"
