@@ -14,7 +14,7 @@ categories: jekyll update
 
 代码如下:
 
-``` c++
+``` cpp
 #include <iostream>
 #include <map>
 using namespace std;
