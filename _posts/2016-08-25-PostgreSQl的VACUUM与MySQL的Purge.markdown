@@ -27,13 +27,6 @@ PostgreSQL中没有回滚段表空间，或者其他类似的东西。
 
 ### 膨胀
 
-Since both systems can potentially store multiple versions of any given tuple, both can lead to "bloat", where the size of a table grows far beyond the amount of data actually stored in it, the bloat shows up in different places.  
-Under InnoDB, most of the bloat (with the exception of any not-yet-removable deleted rows) is in the rollback tablespace, whereas in PostgreSQL it's mixed in with the actual table data.  
-In either case, the problem occurs mostly (a) in the presence of long-running transactions or (b) when VACUUM and/or purge can't keep up with the rate at which old row versions are accumulating and must be removed.  
-Beginning in PostgreSQL 8.3, VACUUM is typically performed automatically in the background, using multiple (three by default) concurrent worker processes.   
-MySQL performs purges in the background, but it is single-threaded.  
-Percona Server, and possibly other MySQL forks, offer multiple purge threads.
-
 因为实现多版本，需要保留一些旧版本的数据，不同的是保存的位置,
 但是同样随时间增长，如果不及时清理，一个表占用的空间会 bloat。
 比如存在一个长事务，或者Vacuum和Purge清理的速度跟不上。
