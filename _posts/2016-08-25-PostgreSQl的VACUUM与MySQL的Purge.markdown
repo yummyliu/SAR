@@ -6,21 +6,26 @@ header-img: "img/head.jpg"
 categories: jekyll update
 ---
 
-In InnoDB, only the most recent version of an updated row is retained in the table itself.  
-Old versions of updated rows are moved to the rollback segment, while deleted row versions are left in place and marked for future cleanup.  
-Thus, purge must get rid of any deleted rows from the table itself, and clear out any old versions of updated rows from the rollback segment.  
-All the information necessary to find the deleted records that might need to be purged is also written to the rollback segment, so it's quite easy to find the rows that need to be cleaned out; 
-and the old versions of the updated records are all in the rollback segment itself, so those are easy to find, too.  
-One small downside of this approach is that performing an update means writing two tuples - the old one must be copied to the undo tablespace, and the new one must be written in its place.
+> http://rhaas.blogspot.com/2011/02/mysql-vs-postgresql-part-2-vacuum-vs.html
 
-PostgreSQL takes a completely different approach.  
-There is no rollback tablespace, or anything similar.  
-When a row is updated, the old version is left in place; the new version is simply written into the table along with it.  
-As in InnoDB, records deleted are marked for future cleanup, but without also writing a record to the rollback tablespace.  
-Both of these differences result in slightly less work when the operation is initially performed, but the payback is the eventual cleanup is more expensive.  
-Lacking a centralized record of what must be purged, PostgreSQL's VACUUM has historically needed to scan the entire table to look for records that might require cleanup.  
-Beginning in PostgreSQL 8.3, there is an optimization called HOT (for "heap only tuple") which allows some vacuuming to be done on the fly in single-page increments; beginning in PostgreSQL 8.4 and higher, the system maintains a bitmap, called the visibility map, which indicates which pages of the table might possibly contain tuples in need of cleanup, and VACUUM can scan only those pages.  
-However, a full scan of each index is still required during each VACUUM, make it still a somewhat expensive operation for large tables.
+### Purge
+在Mysql的InnoDB中，只有最新更新的行，才报错在表中。旧版本的行存储在回滚段中，但是删除的行是留在原地，并被标注为已删除。
+因此，Purge可以去掉表中的已删除的行，并删掉回滚段中的旧版本的行。
+用来找到删除行的信息，同样要保存在回滚段中。这样就很容易找到要被删除的行了。清除更新的行就很容易了，因为旧版本的都在回滚段中。
+这一方式的一个小缺陷就是，执行一个update操作的就意味着要写两个tuple：old复制到回滚段。新的写在本地。
+
+### VACUUM
+
+PostgreSQL中没有回滚段表空间，或者其他类似的东西。
+当更新一个行的时候；新的版本写在旧版本后面，旧版本也就留在原地。
+和InnoDB类似，删除的记录同样被标记好，以待删除。
+这一不同使得，执行的时候很简单了。但是在清理的时候，需要费点功夫。
+没有集中管理需要删除的数据，PostgreSQL就需要全表扫描来清理。
+但是在PostgreSQL8.3之后，有一个优化手段叫 HOT（heap only tuple）。允许清理工作在一个页增长的时候自动进行。而在8.4之后，系统维护一个bitmap，叫做visibility map
+标记着那个page需要被清理，这样就只扫描这些page就行了。
+无论如何，每个索引项还是需要全扫的，这样来说，Vacuum在Postgresql中是个昂贵的操作。
+
+### 膨胀
 
 Since both systems can potentially store multiple versions of any given tuple, both can lead to "bloat", where the size of a table grows far beyond the amount of data actually stored in it, the bloat shows up in different places.  
 Under InnoDB, most of the bloat (with the exception of any not-yet-removable deleted rows) is in the rollback tablespace, whereas in PostgreSQL it's mixed in with the actual table data.  
@@ -28,3 +33,10 @@ In either case, the problem occurs mostly (a) in the presence of long-running tr
 Beginning in PostgreSQL 8.3, VACUUM is typically performed automatically in the background, using multiple (three by default) concurrent worker processes.   
 MySQL performs purges in the background, but it is single-threaded.  
 Percona Server, and possibly other MySQL forks, offer multiple purge threads.
+
+因为实现多版本，需要保留一些旧版本的数据，不同的是保存的位置,
+但是同样随时间增长，如果不及时清理，一个表占用的空间会 bloat。
+比如存在一个长事务，或者Vacuum和Purge清理的速度跟不上。
+在PostgreSQL8.3之后，VACUUM在后台开始使用多进程的方式来自动清理
+Mysql的Purge是单线程，但是Percona Server等Mysql的其他分支，提供了多线程的方式
+
