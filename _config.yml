@@ -6,7 +6,6 @@ email: sdwhlym@ruc.edu.cn
 description: "Do more with less"
 keyword: ""
 url: "http://yummyliu.github.io"              # your host, for absolute URL
-# baseurl: "/blogtest"         # for example, '/blog' if your blog hosted on 'host/blog'
 
 
 
@@ -15,7 +14,6 @@ RSS: false
 weibo_username:     yummmyliu
 zhihu_username:     ljl-d-d-d-d-d
 github_username:    yummyliu
-#twitter_username:  huxpro
 facebook_username:  
 
 
