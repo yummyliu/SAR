@@ -135,5 +135,16 @@ NewSQL的目标就是，能够提供和NoSql相同的、针对OLTP的读写负�
 并且使用面向两者的优化技术，OLTP（in-memory storage, lock-free execution）。OLAP（columnar storage, vectorized execution）
 比如，SAP HANA and MemSQL
 
+#### 为什么要选择Postgresql来做分布式数据库
+
+1. PostgreSQL社区环境不错，基于PG能有很好的社区资源
+2. 强大的SQL支持能力，和丰富的统计函数和统计语法支持，除了ANSI SQL外，还支持一些分析函数（window窗口函数），支持多种语言来写存储过程
+3. 查询优化器对于子查询，复制查询，多表Join优化能力强，多表Join是OLAP分析常用的操作，Mysql就不行了，而Mysql更适合OLTP的任务
+4. Postgresql的扩展性好，开发新的功能模块，数据类型，索引类型都很方便，按照API接口进行即可
+5. ACID事务处理，数据强一致性保证，数据类型支持，独特的MVCC带来高效的数据更新能力
+6. 没有大公司控制，社区纯洁，版本和路线控制好，用户可控性更强，Mysql分支太多了
+7. 可以很好的兼容Postgresql的功能，postgresql的功能和接口基本都可用，odbc,jdbc,oledb,... 等，所以可以方便与第三方工具，BI报表集成时候很容易；
+
+Postgresql + 并行调度 + 分布式事务两阶段提交
 
 以上，参考论文 ：What’s Really New with NewSQL?
