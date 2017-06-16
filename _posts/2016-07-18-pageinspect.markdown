@@ -28,9 +28,9 @@ init: The initialization fork is an empty table or index of the appropriate type
 
 ##### 页布局
 
-> 参考pg9.5文档  
-> 以下描述中   
-> byte意味着 8 bits  
+> 参考pg9.5文档
+> 以下描述中
+> byte意味着 8 bits
 > 术语item 意思是 存储在page中的数据值.   
 > table中,item代表一行row    
 > index中,item代表一个索引项.  

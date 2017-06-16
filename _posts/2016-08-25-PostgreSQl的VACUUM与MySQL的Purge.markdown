@@ -8,6 +8,8 @@ categories: jekyll update
 
 > http://rhaas.blogspot.com/2011/02/mysql-vs-postgresql-part-2-vacuum-vs.html
 
+### WAL日志
+
 ### Purge
 在Mysql的InnoDB中，只有最新更新的行，才报错在表中。旧版本的行存储在回滚段中，但是删除的行是留在原地，并被标注为已删除。
 因此，Purge可以去掉表中的已删除的行，并删掉回滚段中的旧版本的行。
