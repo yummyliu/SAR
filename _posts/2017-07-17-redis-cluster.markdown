@@ -7,6 +7,7 @@ categories: jekyll update
 ---
 
 ## 特点
+
 无中心结构, 采用hash槽的方式来分配数据，而不是一致性hash
 分区容忍性: 预先分配slot，有16384个hash槽，通过crc16校验后对16384取模，当发生节点增减的时候，调整slot的分布即可。
 可用性：Master-slave

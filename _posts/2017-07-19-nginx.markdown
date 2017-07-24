@@ -1,0 +1,84 @@
+---
+layout: post
+title: nginx
+date: 2017-07-19 23:59
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+    - nginx
+---
+
+# configure
+
+分为若干 context
+main events http server location
+events & http in main
+
+server in http
+
+location in server
+
+# serving static Content
+user: 指定进程运行用户及用户组
+autoindex on : 文件夹浏览
+
+# Setting Up a Simple Proxy server
+
+proxy_pass
+
+# Setting Up FastCGI Proxying
+
+fastcgi_pass
+fastcgi_param SCRIPT_FILENAME
+fastcgi_param  QUERY_STRING
+
+# How does nginx process one request
+
+1. 如果有很多server，那么首先匹配按照server name 匹配 server。
+
+the default server is the first one — which is nginx’s standard default behaviour. But you can also set explicitly 
+'listen 80 default_server' default server 是port的属性，所以不同的port，可以定义不同的default server
+
+2. 对于没有定义的server_name零如下配置，drop it
+
+'''
+server {
+    listen      80;
+    server_name "";
+    return      444;
+}
+'''
+
+3. location
+
+locations of all types test only a URI part of request line without arguments.
+
+4. 对于fastcgi， 将请求转发到 fastcgi_pass，带上fastcgi_param参数，即，转发到$fastcgi_pass$fastcgi_param
+
+'''
+    location ~ \.php$ {
+        fastcgi_pass  localhost:9000;
+        fastcgi_param SCRIPT_FILENAME
+                      $document_root$fastcgi_script_name;
+        include       fastcgi_params;
+    }
+'''
+
+# Server Name Chosen Precedence
+
+1. exact name 
+2. longest wildcard name starting with an asterisk, "*.example.org"
+3. longest wildcard name ending with an asterisk "mail.*"
+4. first matching regular expresion ( in order of appearance in a configuration file)
+
+**NOTE**
+
++ Wildcard names may contain an asterisk only on the name's start or end, and only a dot border. The names "www.*.example.org"  and "w*.example.org" are invalid. 
++ 能用前面的就用前面的匹配原则，前面的匹配效率高
+
+# HTTP load balancer
+
+1. round-robin
+2. least-connected
+3. ip-hash : Session persistence, ensures that the requests from the same client will always be directed to the same server except when this server is unavailable
+

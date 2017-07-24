@@ -1,12 +1,14 @@
 ---
 layout: post
-title: 豇豆包子技术教程
+title: 豇豆菜夹子技术教程
 date: 2017-07-19 03:28
 header-img: "img/head.jpg"
 categories: jekyll update
+tags:
+    - 生活
 ---
 
-## 成果图
+# 成果图
 
 在威海那边，根据面的种类，有两种包子；根据形状也分为两种包子；
 分别是发面包子和凉面包子；以及菜包子和菜夹子；
@@ -15,4 +17,17 @@ categories: jekyll update
 
 综上，凉皮菜夹子才是包子中的极品，将“馅多皮薄”的宗旨，发挥的淋漓尽致。
 
+各种配料酌情添加，喜欢吃肉就多加点
+
+### 肉粒
+![肉粒](/image/xian.jpg)
+### 豆粒
+![豇豆](/image/xian1.jpg)
+### 拌好的馅
+![成品馅](/image/xian2.jpg)
+### 包好的包子
+![半成品包子](/image/banchenpin.jpg)
+### 蒸好的包子
 ![不太好看的成品包子](/image/chengpin.jpg)
+
+
