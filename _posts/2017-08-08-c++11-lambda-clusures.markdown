@@ -6,15 +6,15 @@ header-img: "img/head.jpg"
 categories: jekyll update
 ---
 
-http://www.cprogramming.com/c++11/c++11-lambda-closures.html
-
 # PRE
 
 ## 简介
-对象是附带行为的数据，闭包是附带数据的行为
-**one fatal flaw of Functions Objects :**
+c++11,java8 这些老语言的新版本中都加上了函数式编程的特性，从某打
+关于函数对象和闭包的区别： 对象是附带行为的数据，闭包是附带数据的行为
 
-it wasn't quite convenient enough to create functions. You had to go define it somewhere else, just to be able to pass it in for one simple use. That's where lambdas come in.
+**函数对象的一个弊端**
+
+创建函数对象太不方便了，必须在另外一个地方定义一个类，然后才能用
 
 ``` cpp
 #include <iostream>
@@ -33,8 +33,7 @@ int main()
 return value : 并不需要明确指出，c++11中，编译器可以推断出lambda函数的返回值类型，上例中，编译器明白函数返回nothing，
 {} : 函数体， 这里并不执行，只是定义。
 
-**NOTE**: auto关键使我们用起来更方便
-比起原来重载一个()操作符，来实现函数对象，这样更加灵活方便
+**NOTE**: auto关键使我们用起来更方便，比起原来重载一个()操作符，来实现函数对象，这样更加灵活方便
 
 ## Variable Capture with Lambdas
 
@@ -59,7 +58,7 @@ return global_address_book.findMatchingAddresses(
 ```
 
 上面是定义了一个函数 找到 key为 "org"的对象，下者可以引用函数外的对象，比起只查找固定的name，这里name是函数外的变量
-with & in [], compile knows to perform variable capture
+通过[&]来定义匿名函数，编译器就开始捕获变量。
 
 ## Lambda and STL
 
@@ -84,8 +83,8 @@ for_each( v.begin(), v.end(), [] (int val)
     cout << val;
 } );
 ```
-下者good looking code , and is structured,
-**it turns out that for_each has about the same performance, and is sometimes even faster than a regular for loop. (The reason: it can take advantage of loop unrolling.)**
+
+下者的实现方式有更好的代码可读性，并且结构清晰。并且在性能上不会有损失，并且有时候会有优势，因为利用了循环展开的优化,
 通过STL的实例，不能简单的认为lambda仅仅是一个创建函数的特性，这是一种新的编程方式。将函数作为参数，将数据访问的方法独立出来
 
 ## More of New Lambda Syntax
@@ -109,20 +108,20 @@ for_each( v.begin(), v.end(), [] (int val)
 
 但是，c++是一个对性能很要求的语言，对于[]，有不同的形式，不同的形式获取不同的变量
 
-[] : Capture Nothing , rather than creating the class, C++ will create a regular function
-[&]layoutCapture any referenced variable by reference
-    NOTE:  if you return a lamba function from a function, you shouldn't use capture-by-reference because the reference will not be valid after the function returns
-[=]Capture any referenced variable by making a copy
-[=, &foo]Capture any referenced variable by making a copy, but capture variable foo by reference
-[bar]Capture bar by making a copy; don't copy anything else
-[this]Capture the this pointer of the enclosing class
++ [] : 并不捕获任何变量，这种方式c++不会创建一个类，而是创建一个普通函数
++ [&] : 通过引用的方式，捕获变量; 注意: 如果从一个函数中返回一个lambda函数，不能用这个方案, 因为变量可能会在函数返回后，失效。
++ [=] : 通过复制的方式引用变量
++ [=, &foo] : 除了foo之外的其他变量，都是通过引用的方式，其他用复制的方式
++ [bar] : 将bar复制一份，不管其他的
++ [this] : 将this只想的整个类，copy一下
 
 # What type is a Lambda
 
 上面是通过auto 来接的Lambda，但是每个Lambda实现方式都是一个单独的类, 这似乎会产生很多类，
 
-但是在C11中, 实现了一个方便的包装器，存储各种类型的function，包括--lambda function, functor, or function pointer: std::function.
+但是在C++11中, 实现了一个方便的包装器，存储各种类型的function，包括--lambda function, functor, or function pointer: std::function.
 注意当capture是[]的时候，lambda实现为一个函数指针，故下述代码是可行的
+
 ``` cpp
 typedef int (*func)();
 func f = [] () -> int { return 2; };
@@ -136,11 +135,11 @@ f();
 class AddressBook
 {
     public:
-    // using a template allows us to ignore the differences between functors, function pointers 
+    // using a template allows us to ignore the differences between functors, function pointers
     // and lambda
     template<typename Func>
     std::vector<std::string> findMatchingAddresses (Func func)
-    { 
+    {
         std::vector<std::string> results;
         for ( auto itr = _addresses.begin(), end = _addresses.end(); itr != end; ++itr )
         {
@@ -168,7 +167,7 @@ class AddressBook
     std::vector<string> findMatchingAddresses (std::function<bool (const string&)> func)
     {
         // check if we have a function (we don't since we didn't provide one)
-        if ( func ) 
+        if ( func )
         {
             // if we did have a function, call it
                 std::vector<string> results;
@@ -199,11 +198,14 @@ VS
 ``` cpp
 EmailProcessor processor;
 MessageSizeStore size_store;
-processor.setHandlerFunc( 
-        [&] (const std::string& message) { size_store.checkMessage( message ); } 
+processor.setHandlerFunc(
+        [&] (const std::string& message) { size_store.checkMessage( message ); }
 );
 ```
 
 # In the End
 
-some cases shortening code, in some cases improving unit tests, and in some cases replacing what could previously have only been accomplished with macros.
+通过c++匿名函数，我们可以减少代码量，提升单元测试, 有的时候能够替代一些之前用宏实现的功能
+
+[c++lambda][youtube]
+[c++lambda]:http://www.cprogramming.com/c++11/c++11-lambda-closures.html
