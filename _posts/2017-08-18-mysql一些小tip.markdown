@@ -1,0 +1,21 @@
+---
+layout: post
+title: mysql一些小tip
+date: 2017-08-18 15:16
+header-img: "img/head.jpg"
+categories: jekyll update
+---
+
+使用mysql的过程中的一些小问题解决方案，小知识点整理
+
+## datatime use now()
+
+
+In version 5.6.5, it is possible to set a default value on a datetime column, and even make a column that will update when the row is updated. The type definition:
+
+```
+CREATE TABLE foo (
+    `creation_time`     DATETIME DEFAULT CURRENT_TIMESTAMP,
+    `modification_time` DATETIME ON UPDATE CURRENT_TIMESTAMP
+)
+```
