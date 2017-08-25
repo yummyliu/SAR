@@ -1,0 +1,36 @@
+---
+layout: post
+title: 关于协程的思考
+date: 2017-08-25 09:25
+header-img: "img/head.jpg"
+categories: jekyll update
+---
+
+https://www.ibm.com/developerworks/cn/java/j-lo-iocp/index.html
+https://my.oschina.net/u/202946/blog/803088
+https://www.quora.com/Why-doesnt-Linux-have-a-system-like-IOCP-or-Rio-does
+
+# 缕清若干概念
+
++ one-thread-per-client: 线程切换代价高--CFS调度方式：O(log(m)),m约等于 活跃的上下文数，大概是和客户端数量相当
++ IOCP(Input/Output Completion Port): 支持多个同时发生的异步IO操作的应用程序编程接口。(主要是Window系统下，linux下相应为epoll，但是epoll不负责读写，只是通知)
++ Callback: 上层代码将一个函数对象or指针,传到底层库中，一般注册到某个事件上，当事件发生就回调
++ Sync/Async: 在C/S模型中，主要针对C端, Sync就是 (提交请求->等待服务器处理->处理完毕返回 ), Async就是 提交请求立即返回，继续做其他的事,但是注册一个回调，有消息那么调用回调，
++ Block/Unblock: 在C/S模型中，主要针对S端，Block和同步的区别：Block当前线程会被挂起，而同步调用当前线程还是激活的;
++ COW(copy on write): 在Linux程序中，fork()会产生一个和父进程完全相同的子进程，但子进程在此后多会exec系统调用，出于效率考虑，Linux中引入了“写时复制“技术，也就是只有进程空间的各段的内容要发生变化时，才会将父进程的内容复制一份给子进程。
+
+# Web Server IO模型
+
+##  one-thread/process-per-client，阻塞模式
+
+线程切换代价log(m), 每次IO阻塞(这里假设thread模型的io都是阻塞的)，都会发生开销。而且决定活跃线程数的是用户，
+这不是我们可控制的。更糟糕的是，当性能下降，响应速度下降时。同样的用户数下，活跃上下文会上升(因为响应变慢了)。这会进一步拉低性能。
+
+## 非阻塞模式
+
+既然是非阻塞，那么一定会有就绪通知的问题，如果没有就绪通知，我们只能在非阻塞的fd上轮询，直到遇到一个就绪的fd；
+两种方案：就绪事件通知和异步IO, 前者只是
+
+### 就绪事件通知
+
+**Linux下的主要方案就是就绪通知，select/poll/epoll** 
