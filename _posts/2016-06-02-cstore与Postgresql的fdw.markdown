@@ -4,7 +4,7 @@ title: cstore与Postgresql的fdw
 date: 2016-06-02 14:32
 header-img: "img/head.jpg"
 tags:
-    - PG
+    - DB
 ---
 
 #### 概述
@@ -14,9 +14,9 @@ tags:
 ![cstorefdwdql](/image/cstorefdwsql.png)
  	完成fdw的开发工作，主要的工作就是实现两个C函数，就是用户自定义函数的编写，而其中Handler函数的返回是一个结构体，其中包含很多函数指针，如下：
 ![fdwroutine](/image/fdwroutine.png)
-	
 
- 
+
+
 #### 详述
 
 对于外表的scan是必须要实现的方法，同时也支持了对外表的其他操作，择需而定。
@@ -35,10 +35,10 @@ Restrictinfo类型 在pg的relation.h文件中。
 
 ##### 关键函数
 可参考[funcs][funcs]
-###### GetForeignRelSize	
+###### GetForeignRelSize
 ```
-void GetForeignRelSize (PlannerInfo *root, 
-                   		RelOptInfo *baserel,                    					
+void GetForeignRelSize (PlannerInfo *root,
+                   		RelOptInfo *baserel,
                    		Oid foreigntableid);
 ```
 root：查询的全局信息
@@ -48,8 +48,8 @@ foreigntableid：pg_class中关于这个外部表的Oid
 
 ###### GetForeignPaths
 ```
-void GetForeignPaths (	PlannerInfo *root,                  				
-						RelOptInfo *baserel,                  				
+void GetForeignPaths (	PlannerInfo *root,
+						RelOptInfo *baserel,
 						Oid foreigntableid);
 ```
 生成外部表扫描的路径，可能有多条路径，每条路径要有相应的cost。调用create_foreign_path来生成一个ForeignPath结构，然后add_path添加到baserel->pathlist中
@@ -70,12 +70,12 @@ Cstoregetforeignpath
 
 ###### GetForeignPlan
 ```
-ForeignScan * GetForeignPlan (	PlannerInfo *root,                 					
-								RelOptInfo *baserel,                 					
-								Oid foreigntableid,                 					
-								ForeignPath *best_path,                 					
-								List *tlist,                 					
-								List *scan_clauses,                 					
+ForeignScan * GetForeignPlan (	PlannerInfo *root,
+								RelOptInfo *baserel,
+								Oid foreigntableid,
+								ForeignPath *best_path,
+								List *tlist,
+								List *scan_clauses,
 								Plan *outer_plan);
 ```
 基于之前得到的path，得到ForeignScan计划，推荐函数中使用make_foreignscan来生成scanplan
@@ -88,7 +88,7 @@ cstoreGetForeignPaths (PlannerInfo *root,
 ```
 ###### BeginForeignScan
 ```c++
-void BeginForeignScan (ForeignScanState *node,                   				
+void BeginForeignScan (ForeignScanState *node,
 						int eflags);
 ```
 在开始扫描之前做一些初始化的工作

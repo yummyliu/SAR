@@ -4,7 +4,7 @@ title: Cstore
 date: 2016-07-05 09:18
 header-img: "img/head.jpg"
 tags:
-    - PG
+    - DB
 ---
 
 ## Cstore文件结构
