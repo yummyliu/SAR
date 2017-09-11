@@ -4,7 +4,7 @@ title: 一个笔试题
 date: 2016-04-07 14:57
 header-img: "img/head.jpg"
 tags:
-    - 数据结构
+    - code
 ---
 
 描述

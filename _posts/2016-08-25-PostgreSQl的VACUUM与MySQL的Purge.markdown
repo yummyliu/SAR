@@ -4,6 +4,8 @@ title: PostgreSQl的VACUUM与MySQL的Purge
 date: 2016-08-25 09:26
 header-img: "img/head.jpg"
 categories: jekyll update
+tags:
+    - DB
 ---
 
 > http://rhaas.blogspot.com/2011/02/mysql-vs-postgresql-part-2-vacuum-vs.html

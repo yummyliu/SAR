@@ -4,7 +4,7 @@ title: dynamic-cube
 date: 2016-03-16 15:16
 categories: jekyll update
 tags:
-    - 数据仓库
+    - OLAP
 ---
 
 Dynamic cubes consist of a collection of dimensions, representing dimension tables in the data source, and a single measure dimension, representing the fact table. There can be only one measure dimension in a dynamic cube, but there can be any number of regular dimensions in a cube.

@@ -6,7 +6,7 @@ header-img: "img/head.jpg"
 categories: jekyll update
 tags:
     - c++
-    - 程序设计
+    - code
 ---
 
 > 大部分列出的是c++11 与 c99的，因为对于c++11感觉用起来方便多了  

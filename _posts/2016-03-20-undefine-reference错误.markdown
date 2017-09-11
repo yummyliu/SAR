@@ -3,6 +3,8 @@ layout: post
 title: undefine-reference错误
 date: 2016-03-20 22:37
 categories: jekyll update
+tags:
+    - Linux
 ---
 
 > 写makefile编译一个工程，需要添加 glog 和 gtest的库 

@@ -4,6 +4,8 @@ title: LRUcache的C++实现
 date: 2016-08-26 16:00
 header-img: "img/head.jpg"
 categories: jekyll update
+ctags:
+    - code
 ---
 
 
@@ -36,17 +38,17 @@ class List
 private:
 	size_t size;
 public:
-    
+
     Node* head;
     Node* tail;
-    
+
     List()
     {
         head = nullptr;
         tail = nullptr;
         size = 0;
     }
-    
+
     int pop_back()
     {
         if (size==0) {
@@ -61,7 +63,7 @@ public:
         size--;
         return key;
     }
-    
+
     void push_front(Node* newnode)
     {
         if (size==0)
@@ -69,7 +71,7 @@ public:
             newnode->nxt = nullptr;
             newnode->pre = nullptr;
 			head=newnode;
-			tail=newnode; 
+			tail=newnode;
         }
         else
         {
@@ -80,11 +82,11 @@ public:
         }
         size++;
     }
-    
+
     void behead(Node* node)
     {
         if (node == head)
-            return; 
+            return;
         if (node == tail)
         {
             tail = node->pre;
@@ -95,7 +97,7 @@ public:
             node->pre->nxt = node->nxt;
             node->nxt->pre = node->pre;
         }
-        
+
         head->pre = node;
         node->nxt = head;
         node->pre = nullptr;
@@ -105,20 +107,20 @@ public:
 
 class LRUCache
 {
-    
+
 public:
     size_t capacity;
     size_t length;
-    
+
     List *nodes;
     multimap<int,Node*> cache;
-    
+
     LRUCache(int capacity):capacity(capacity)
     {
         length = 0;
         nodes = new List();
     }
-    
+
     int get(int key)
     {
         auto ite = cache.find(key);
@@ -126,13 +128,13 @@ public:
             // cache miss
             return -1;
         }
-       
+
         // cache hit
         nodes->behead(ite->second);
-        
+
         return ite->second->value;
     }
-    
+
     void set(int key, int value)
     {
         auto ite = cache.find(key);
@@ -145,7 +147,7 @@ public:
                 cache.erase(cache.find(k));
                 length--;
             }
- 
+
             Node *newnode = new Node(key,value);
             nodes->push_front(newnode);
             cache.insert(make_pair(key, newnode));
@@ -170,7 +172,7 @@ int main()
     ch.set(1, 2);
     cout << ch.get(1) <<endl;
     cout << ch.get(2) <<endl;
-    
+
     return 0;
 }
 ```

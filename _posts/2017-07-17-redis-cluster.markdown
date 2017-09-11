@@ -4,6 +4,8 @@ title: redis-cluster
 date: 2017-07-17 23:35
 header-img: "img/head.jpg"
 categories: jekyll update
+tags:
+    - Redis
 ---
 
 ## 特点

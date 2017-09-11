@@ -4,6 +4,8 @@ title: Go的import
 date: 2017-08-28 15:58
 header-img: "img/head.jpg"
 categories: jekyll update
+tags:
+    - Go
 ---
 
 # Go workspace

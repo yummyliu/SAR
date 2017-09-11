@@ -4,6 +4,8 @@ title: 分布式数据库
 date: 2016-08-30 22:00
 header-img: "img/head.jpg"
 categories: jekyll update
+tags:
+    - DB
 ---
 
 > 如雨后春笋般，出来众多的分布式数据库。到底什么是分布式数据库? 是数据库集群么？

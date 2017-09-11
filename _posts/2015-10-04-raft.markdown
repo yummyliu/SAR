@@ -4,7 +4,7 @@ title: raft
 date: 2015-10-04 09:44
 categories: jekyll update
 tags:
-    - 分布式
+    - code
 ---
  
 > There are significant gaps between the description of the Paxos algorithm and the needs of a real-world system. . . . 

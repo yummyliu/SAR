@@ -4,7 +4,7 @@ title: 数仓升级初步思路
 date: 2016-01-03 18:29
 categories: jekyll update
 tags:
-    - 数据仓库
+    - OLAP
 ---
 
 ![cognos](/image/cognos.jpg)

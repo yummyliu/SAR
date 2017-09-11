@@ -4,7 +4,7 @@ title: 部署cognos
 date: 2015-12-28 20:44
 categories: jekyll update
 tags:
-    - 数据仓库
+    - OLAP
 ---
 
 > 介于部署这个系统花了我好多时间，其中装了一次又一次，为了我付出的时间，我觉得应该认真记下来了

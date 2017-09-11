@@ -3,12 +3,12 @@ layout: post
 title:  "建jekyll+github博客(to be continue...)"
 date:   2015-09-25 18:00
 categories: jekyll update
-tags: 
-    - 工具
+tags:
+    - tool
 ---
 
 #### 关于github pages
-    + 创建一个库 username.github.io 
+    + 创建一个库 username.github.io
     + 在setting中找到github pages就知道怎么做了
 
 #### 用jekyll 丰富这个库
@@ -17,6 +17,6 @@ tags:
     + jekyll new username.gi~ ,得到初始的blog
 
 #### 修改初始模板 上传库
-    + 修改 `_config.yml` 文件 
+    + 修改 `_config.yml` 文件
     + 其他的，如果你懂HTML CSS js 等,修改就行了
 

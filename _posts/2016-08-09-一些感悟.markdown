@@ -4,6 +4,8 @@ title: 一些感悟
 date: 2016-08-02 15:20
 header-img: "img/head.jpg"
 categories: jekyll update
+tags:
+    - life
 ---
 
 进入了找工作的季节了... ...

@@ -4,6 +4,8 @@ title: c++11-lambda-clusures
 date: 2017-08-08 09:29
 header-img: "img/head.jpg"
 categories: jekyll update
+tags:
+    - C++
 ---
 
 # PRE

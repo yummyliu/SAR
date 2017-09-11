@@ -4,6 +4,8 @@ title: 协程与goroutine
 date: 2017-08-10 18:03
 header-img: "img/head.jpg"
 categories: jekyll update
+tags:
+    - Go
 ---
 
 https://www.ibm.com/developerworks/cn/java/j-lo-iocp/index.html

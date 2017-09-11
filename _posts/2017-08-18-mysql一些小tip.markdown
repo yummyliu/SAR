@@ -4,6 +4,8 @@ title: mysql一些小tip
 date: 2017-08-18 15:16
 header-img: "img/head.jpg"
 categories: jekyll update
+tags:
+    - DB
 ---
 
 使用mysql的过程中的一些小问题解决方案，小知识点整理

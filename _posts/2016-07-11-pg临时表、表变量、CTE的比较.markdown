@@ -4,7 +4,7 @@ title: 临时表、子查询、CTE的性能差异
 date: 2016-07-11 21:23
 header-img: "img/head.jpg"
 tags:
-    - PG
+    - DB
 ---
 
 

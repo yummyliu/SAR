@@ -4,7 +4,7 @@ title: 一个括号引发的"xuean"
 date: 2016-03-01 16:02
 categories: jekyll update
 tags:
-    - 数据结构
+    - code
 ---
 
 > 出差中汇，工作进展太慢，抽出时间刷刷题
