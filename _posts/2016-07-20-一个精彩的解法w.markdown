@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 一个精彩的解法
+title: git 小技巧
 date: 2016-05-20 19:05
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -8,9 +8,7 @@ tags:
     - DB
 ---
 
-
-
-请看[经典一题][vindex],以及[证明][explain]
-
-[vindex]: https://discuss.leetcode.com/topic/32929/o-n-o-1-after-median-virtual-indexing/2
-[explain]: https://discuss.leetcode.com/topic/32861/3-lines-python-with-explanation-proof
+# github 记住密码
+```
+git config --global credential.helper store
+```
