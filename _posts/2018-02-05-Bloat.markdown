@@ -8,7 +8,7 @@ tags:
     - PG
 ---
 
-#table bloat
+# table bloat
 
 PG的mvcc机制，将旧tuple还是放在堆表中，等待vacuum回收；如果回收不及时，表空间膨胀，浪费磁盘空间，IO速度下降。
 
