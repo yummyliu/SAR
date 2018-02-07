@@ -9,7 +9,7 @@ tags:
 ---
 
 > 实际第一次参与开源社区代码的实践，其中遇到了一个功能性的bug
-> 调试耗时略长，调试的时候也在追pg的代码，感觉收获不少，故捉而记之 :)
+> 调试耗时略长，调试的时候也在追pg的代码，感觉收获不少:)
 
 ### bug 问题描述
 
@@ -146,7 +146,7 @@ select
     sr_return_amt as aaa
 from store_returns
 limit 2;
-``` 
+```
 
 targetColumList不为空
 +  分析bug原因 
@@ -185,4 +185,4 @@ pg如何生成自己的targetlist和这个bug的不会产生这个bug，这个bu
 
 
 
-[pt]: [http://www.runoob.com/manual/PostgreSQL/catalog-pg-type.html]
+[pt]: http://www.runoob.com/manual/PostgreSQL/catalog-pg-type.html
