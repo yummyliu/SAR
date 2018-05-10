@@ -1,0 +1,18 @@
+---
+layout: post
+title: 
+date: 2018-03-06 14:14
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+    - PG
+---
+
+作为一个DBA，如果某一个库，压力过大，经常需要做数据迁移的工作，来拆表；比较简单的方式，就是使用COPY迁移一个表的数据，到其他库中。
+
+# COPY & nc & gzip
+
+使用COPY可以将表数据，复制到文件中。然后将文件复制到目标server上，最后在目标server上，再次COPY的方式导入进去。但是这种方式，转移文件太繁琐，中间步骤多，容易出错。
+
+假设我们需要从A复制到B中。
+```
