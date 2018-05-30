@@ -34,7 +34,7 @@ tags:
 
    根据PlanTree定义的顺序执行即可；（这里似乎涉及到结果是 Pull还是Push（TODO））
 
-![QueryProcessing](../image/qp1.png)
+![QueryProcessing](/image/qp1.png)
 
 
 
@@ -46,13 +46,13 @@ SELECT id, data FROM tbl_a WHERE id < 300 ORDER BY data;
 
 ##### ParseTree
 
-![ParseTree](../image/fig-3-02.png)
+![ParseTree](/image/fig-3-02.png)
 
 该查询计划树的根是一个`SelectStmt`结构，parser只是检查语法，语法合格符合定义，就生成一个定义好的数据结构；parser不检查语义，即使table不存在，也不会提示，语义是analyzer做的；
 
 #### Analyzer
 
-![QueyTree](../image/fig-3-03.png)
+![QueyTree](/image/fig-3-03.png)
 
 基于ParserTree，将每个节点与数据库中的元信息对应上，TargetList就是目标列，RangeTable就是目标表，FromExpr就是From&Where，SortGroupClause。。。
 
@@ -62,13 +62,13 @@ SELECT id, data FROM tbl_a WHERE id < 300 ORDER BY data;
 
 在pg_rules中有一些用户自定义的规则，rewriter会基于其中定义的rule以及系统的一些规则重写QueryTree;比如讲一个视图重写成一个子查询；
 
-![rewriter](../image/fig-3-04.png)
+![rewriter](/image/fig-3-04.png)
 
 #### Planner&Executor
 
 在PG中，Planner是完全基于代价估计的；它不支持基于规则和hints（PG社区不想支持hint，如果想用就用pg_hint_plan这个插件）。
 
-![planTree](../image/fig-3-05.png)
+![planTree](/image/fig-3-05.png)
 
 每个PlanTree包括多个PlanNode，每个PlanNode包括所有Executor需要的执行信息，Executor就可以从下往上执行这个PlanTree。
 
@@ -108,7 +108,7 @@ SELECT tablename,attname, correlation FROM pg_stats WHERE tablename = 'tablename
 
 取值从-1到1；大概就是index中的key和堆表中的key的顺序的一致性；
 
-![indexcor](../image/fig-3-08.png)
+![indexcor](/image/fig-3-08.png)
 
 seq_page_cost & random_page_cost
 
@@ -128,7 +128,7 @@ PostgreSQL 中默认后者是前者的4倍，这是基于HDD硬盘的假设；�
 
 3. 离散逻辑AND OR，进行扁平化
 
-   ![扁平化](../image/fig-3-09.png)
+   ![扁平化](/image/fig-3-09.png)
 
 ##### 基于代价估计最小代价路径
 
@@ -161,7 +161,7 @@ PostgreSQL 中默认后者是前者的4倍，这是基于HDD硬盘的假设；�
 3. 基于2中的结果，得到每三个表的最优path
 4. 同上直到结束
 
-![multitable](../image/fig-3-31.png)
+![multitable](/image/fig-3-31.png)
 
 ## Join
 
@@ -209,13 +209,13 @@ Cinner和Couter是内外表扫描的代价，内表需要扫描Nouter次，所�
 
 另外就是如果outertable上也有索引，或者where条件中可以减少outer表的数量，这种信息也能用上
 
-![out](../image/fig-3-19.png)
+![out](/image/fig-3-19.png)
 
 #### Merge Join
 
 ###### Merge Join
 
-![lll](../image/fig-3-20.png)
+![lll](/image/fig-3-20.png)
 
 先在work_mem或者temp file中排序后，然后merge
 
@@ -227,7 +227,7 @@ Cinner和Couter是内外表扫描的代价，内表需要扫描Nouter次，所�
 
 同样类似Nest Loop，对外表的扫描如果有索引列，就可以不用sort；
 
-![](../image/fig-3-22.png)
+![](/image/fig-3-22.png)
 
 
 
@@ -242,9 +242,9 @@ Cinner和Couter是内外表扫描的代价，内表需要扫描Nouter次，所�
 1. inner计算hash函数，建立hashtable
 2. outer计算hash函数，probe hashtable
 
-![](../image/fig-3-23.png)
+![](/image/fig-3-23.png)
 
-![](../image/fig-3-24.png)
+![](/image/fig-3-24.png)
 
 
 
@@ -252,17 +252,17 @@ Cinner和Couter是内外表扫描的代价，内表需要扫描Nouter次，所�
 
 ​	当innertable不能放到work_mem中，需要将innertable分成若干batch装载进work_mem中，一个batch一个batch的处理。按照hash column的hashkey的后n位，分成2^n个batch，每个batch中有2^m个bucket。这样基于hashkey的末尾(n+m)位，可以定位该tuple位于那个batch的哪个bucket中。
 
-​	![](../image/fig-3-25.png)
+​	![](/image/fig-3-25.png)
 
 ​	通过使用上文提到的PostgreSQL中TTS机制（综合利用work_mem和tempfile），建立初步的hashtable。由于inner 和outer都需要分批次处理，这样build-probe这个过程需要执行2^n次。第一个批次的时候，所有的batch都被创建了，并且inner和outer的第一个batch都被处理了。这样后面的几批次都需要在tempfile中操作，这很耗时。PostgreSQL在基本batch上，额外提供了一个特殊的batch，即**skew**，在第一个批次的时候尽可能的处理更多的tuples，大概的意思就让第一批次的hashkey对应到inner表的join条件列，在outer中出现频次高的那些值上，这样在第一批次处理的时候，outer越不均匀，外表被处理的tuple越多，而第一批次都是在work_mem，probe效率更高。
 
-![](../image/fig-3-26.png)
+![](/image/fig-3-26.png)
 
-![](../image/fig-3-27.png)
+![](/image/fig-3-27.png)
 
-![](../image/fig-3-28.png)
+![](/image/fig-3-28.png)
 
-![](../image/fig-3-29.png)
+![](/image/fig-3-29.png)
 
 在inner的build阶段，除了按照常规建立batch_0~batch_2^n之外，会按照某个方法判断这个tuple是不是outertable的MCV（频次高的值），是的话插入到特定的skew batch中。在outer的第一次probe过程中，判断如果是MCV，那么与skew batch中的tuple进行join，如图(6)箭头，如果要么和内存中batch_0按照常规join，要么放在outer表自己在tempfile中的batch_1…2..3_out文件中，等后续操作。第一轮结束后outertable的MCV tuple 和本来属于batch_0都已join好了（8）。
 
@@ -272,7 +272,7 @@ Cinner和Couter是内外表扫描的代价，内表需要扫描Nouter次，所�
 
 介绍完详细的算法，每个算法就是plan数的一个执行节点，该node提供执行时需要的信息。如下
 
-![](../image/fig-3-30.png)
+![](/image/fig-3-30.png)
 
 
 

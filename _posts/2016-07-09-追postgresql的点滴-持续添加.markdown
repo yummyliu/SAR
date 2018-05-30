@@ -29,7 +29,7 @@ execute plan 函数参数中有一个numberTuple 每次执行返回结果就是�
 > 
 > Postgres is happy, if it can detect types of untyped constants from the context. But when any context is not possible, and when query is little bit more complex than trivial, then this mechanism fails. These rules are specific for any SELECT clause, and some are stricter, some not. If I can say, then older routines are more tolerant (due higher compatibility with Oracle and less negative impact on beginners), modern are less tolerant (due higher safety to type errors).
 There was some proposals try to work with any unknown literal constant like text constant, but was rejected for more reasons. So I don't expect significant changes in this area. This issue is usually related to synthetic tests - and less to real queries, where types are deduced from column types.
-+   ![icov](/image/icovn.png)
++   ![icov/image/icovn.png)
 + pg不区分大小写
 
 ### over()窗口函数
@@ -104,4 +104,4 @@ SELECT 'string2', data FROM tbl2
 
 ### 数据库发展史
 
-![his](/image/shujukuhistory.gif)
+![his/image/shujukuhistory.gif)

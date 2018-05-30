@@ -77,7 +77,7 @@ TransactionIdPrecedesOrEquals(TransactionId id1, TransactionId id2)
 
 #### vacuum操作的两种模式
 
-![anti](../image/anti-wa.jpeg)
+![anti](/image/anti-wa.jpeg)
 
 PostgreSQL的Vacuum操作，通过判断visibility map，有时候会跳过需要frozen的页，anti-wraparound vacuum（也叫 eager vacuum）就是强制对全表进行frozen操作；
 

@@ -90,9 +90,9 @@ PG中目前没有提供复制的时候的过滤器，所以主从复制是完全
 + walsender 发送wal日志
 + walreceiver 向磁盘写日志
 + startup 应用日志来恢复数据
-![pgrep](/image/pgrep.png)
+![pgrep/image/pgrep.png)
 
-![pgws](/image/pgws.png)
+![pgws/image/pgws.png)
 
 #### Postgresql与Mysql的实现机制比较
 

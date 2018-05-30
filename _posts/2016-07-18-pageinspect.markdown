@@ -42,7 +42,7 @@ init: The initialization fork is an empty table or index of the appropriate type
 
 ###### Page
 
-![page](/image/heap_file_page.png)
+![page/image/heap_file_page.png)
 Pageheader后面的items是一些(offset,length)对，指向真正的数据位置  
 指向一个item的指针叫做 CTID，包含一个页号和item的索引
 
@@ -61,11 +61,11 @@ sales_price | 0.00
 但是这并不意味着pg的列值限制在8kb内，有一个TOAST机制来处理这一情况
 
 ###### Page数据结构
-![pgae](/image/pagelayout.jpg)
+![pgae/image/pagelayout.jpg)
 ###### PageHeaderData
-![header](/image/pageheaderdata.jpg)
+![header/image/pageheaderdata.jpg)
 ###### HeapTupleHeaderData 
-![pgae](/image/heaptupleheader.jpg)
+![pgae/image/heaptupleheader.jpg)
 > 得到数据库底层存储页的内容, 只有超级用户有权限使用
 
 ##### pageinspect

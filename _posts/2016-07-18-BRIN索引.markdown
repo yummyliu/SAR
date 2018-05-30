@@ -11,9 +11,9 @@ tags:
 #### 例子比较,和Btree
 
 + btree
-![btree](/image/B-tree.svg.png)
+![btree/image/B-tree.svg.png)
 + brin
-![brin](/image/BRIN_index.svg.png)
+![brin/image/BRIN_index.svg.png)
 
 ##### 创建索引时间
 

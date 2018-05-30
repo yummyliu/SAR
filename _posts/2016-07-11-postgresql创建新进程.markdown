@@ -51,7 +51,7 @@ walwriter.c       // 预写式日志写进程的源文件
 > postgresql 9.5 版本不同顺序不同
 
 虽然找到了接口，附带追了一下postgresql启动创建进程的流程，以下是我简单画了一个流程图，供君指点 :)
-![pgstartup](/image/postgres启动.jpg)
+![pgstartup/image/postgres启动.jpg)
 
 ### 正题 background worker
 

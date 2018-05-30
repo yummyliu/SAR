@@ -20,7 +20,7 @@ checkpoint会将某个时间点前的全部脏数据刷新到磁盘，以实现�
 
 > NOTE: 目标是，checkpoint以不影响用户使用的频率执行；
 
-![checkpoint](../image/fig-9-13.png)
+![checkpoint](/image/fig-9-13.png)
 
 1. 在checkpoint进程启动的时候，在内存中记录一个REDO point‘；REDO point就是db开始恢复XLOG的位置
 2. 关于这个checkpoint的xlog record写入到wal buffer中

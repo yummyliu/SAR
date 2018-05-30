@@ -7,7 +7,7 @@ tags:
     - OLAP
 ---
 
-![cognos](/image/cognos.jpg)
+![cognos/image/cognos.jpg)
 
 ## 项目思路一：cognos10.2.2 ROLAP
 原先系统基于 cognos 10.1.1 的Powercube，采用的MOLAP的方式 在面临大数据量的情况下，这种方式生产cube的时间过长，现在基于cognos10.2.2中的dynamiccube,采用ROLAP的方式

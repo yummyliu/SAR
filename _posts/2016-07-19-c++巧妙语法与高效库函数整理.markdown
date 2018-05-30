@@ -53,7 +53,7 @@ int main()
 ```
 
 ##### RANDOMIZED-SELECT
-![RS](/image/random.jpg)
+![RS/image/random.jpg)
 
 #### 巧用位运算
 > 利用位运算 `& | ^ ~ >> << `

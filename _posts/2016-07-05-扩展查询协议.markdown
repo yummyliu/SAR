@@ -11,7 +11,7 @@ tags:
 
 如图是Postgresql主函数的处理流程  
 发现使用psql的时候只走其中的case Q, 使用jdbc的时候 就不走 case Q了，走 case P,其中不得其解，firstchar是在何时被设置的 —— 这是和postgresql的查询协议相关的消息流
-![postgresmain](/image/postgresMain.png)
+![postgresmain/image/postgresMain.png)
 
 协议在启动和正常操作过程中有不同的阶段。在启动阶段里，前端打开一个到服务器的连接并且认证自身以满足服务器（这可能涉及到一条或多条消息，取决于使用的认证方法）。 如果一切正常，服务器就发送状态信息给前端，并最后进入正常操作。除了最初的启动请求消息之外，协议的这个部分是服务器驱动的。
 
