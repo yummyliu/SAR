@@ -22,7 +22,7 @@ tags:
 
 ## Basic Paxos
 
-![Basic Paxos 的两阶段](/image/basicpaxos.jpg)
+![Basic Paxos 的两阶段](../image/basicpaxos.jpg)
 
 Basic Paxos 中有三个角色，Proposer,Acceptor,Learner。Learner使用最后一致的值，使用的方式就是执行一下Proposer获得相应的值
 ,Basic Paxos 中的每个节点都可以是三个角色;
@@ -61,7 +61,7 @@ Basic Paxos 中有三个角色，Proposer,Acceptor,Learner。Learner使用最后
 ##Multi-paxos中考虑的几个问题：
 
 #### 首先就是如何确定一个client请求的log entry,(在log中位置)
-    
+
 找到该server第一个没有被选中的log entry，则用这个log entry的Index发送Basic Paxos Prepare请求，如果返回了某个acceptedvalue，那么重复，否则选择当前的client commond
 
 #### Improving Efficiency
@@ -108,7 +108,7 @@ acceptor 查找自己的**log中小于firstUnchoosedInde**x的log entry中,**acc
 
 这样，acceptor能够得知大多说已经被选中的entry,见下图：
 
-![fistunchoosedentry](/image/firsiunchoosedentry.jpg)
+![fistunchoosedentry](../image/firsiunchoosedentry.jpg)
 
 4.Proposer接收的Accept返回值中，加上acceptor的firstunchoosedindex，如果proposer.fist~ > acceptor.first~ 那么就在后台发送Success RPC
 Success(index,v),如果需要会发送很多次
