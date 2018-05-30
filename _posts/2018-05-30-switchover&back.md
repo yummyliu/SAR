@@ -23,7 +23,7 @@ tags:
 1. 停主库
 
    ```bash
-   [postgres@liuyangming data]$ pg_ctl stop -D /export/postgresql/omi_10/data/
+   $ pg_ctl stop -D /export/postgresql/omi_10/data/
    waiting for server to shut down.... done
    server stopped
    ```
@@ -31,11 +31,11 @@ tags:
 2. 查看从库复制的位置，然后从库直接promote
 
    ```bash
-   [postgres@10-9-178-80 omi_10]$ psql  -c 'select pg_last_wal_receive_lsn() "receive_location",pg_last_wal_replay_lsn() "replay_location",pg_is_in_recovery() "recovery_status";'
+   $ psql  -c 'select pg_last_wal_receive_lsn() "receive_location",pg_last_wal_replay_lsn() "replay_location",pg_is_in_recovery() "recovery_status";'
     receive_location | replay_location | recovery_status
    ------------------+-----------------+-----------------
     0/75000098       | 0/75000098      | t 
-   [postgres@10-9-178-80 omi_10]$ pg_ctl promote -D /export/postgresql/omi_10/data/
+   $ pg_ctl promote -D $pgdata
    waiting for server to promote.... done
    server promoted
    ```
@@ -49,32 +49,28 @@ tags:
    -rw------- 1 postgres postgres 16777216 Mar 19 11:08 000000020000000000000075
    -rw------- 1 postgres postgres       42 Mar 19 11:08 00000002.history
 
-   [postgres@10-9-178-80 omi_10]$ scp data/pg_wal/00000002.history 10.9.133.228:/export/postgresql/omi_10/data/pg_wal/
-   postgres@10.9.133.228's password:
-   00000002.history
-   [postgres@10-9-178-80 pg_wal]$ cat 00000002.history
-   1	0/75000098	no recovery target specified
+   $ scp ...
    ```
 
 4. 编辑主库的recovery.conf文件 然后，启动主库
 
    ```bash
-   [postgres@liuyangming data]$ cat recovery.conf
+   $ cat recovery.conf
    recovery_target_timeline = 'latest'
    standby_mode = on
-   primary_conninfo = 'user=replication password=Phaif5izei3Pij5 host=10.9.178.80 port=5432 sslmode=prefer sslcompression=1 krbsrvname=postgres target_session_attrs=any'
+   primary_conninfo = 'user=replication password=*** host=*** port=5432 sslmode=prefer sslcompression=1 krbsrvname=postgres target_session_attrs=any'
    ```
 
 5. 启动新从库
 
    ```bash
-   [postgres@liuyangming data]$ pg_ctl start -D /export/postgresql/omi_10/data/
-   waiting for server to start....2018-03-19 11:17:40 CST [21058:1] user=,db=,app=,client=LOG:  listening on IPv4 address "0.0.0.0", port 5432
-   2018-03-19 11:17:40 CST [21058:2] user=,db=,app=,client=LOG:  listening on IPv6 address "::", port 5432
-   2018-03-19 11:17:40 CST [21058:3] user=,db=,app=,client=LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
-   2018-03-19 11:17:40 CST [21058:4] user=,db=,app=,client=LOG:  listening on Unix socket "/tmp/.s.PGSQL.5432"
-   2018-03-19 11:17:40 CST [21058:5] user=,db=,app=,client=LOG:  redirecting log output to logging collector process
-   2018-03-19 11:17:40 CST [21058:6] user=,db=,app=,client=HINT:  Future log output will appear in directory "log".
+   $ pg_ctl start -D $pgdata
+   waiting for server to start....2018-03-19 11:17:40 CST  user=,db=,app=,client=LOG:  listening on IPv4 address "0.0.0.0", port 5432
+   2018-03-19 11:17:40 CST  user=,db=,app=,client=LOG:  listening on IPv6 address "::", port 5432
+   2018-03-19 11:17:40 CST  user=,db=,app=,client=LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+   2018-03-19 11:17:40 CST  user=,db=,app=,client=LOG:  listening on Unix socket "/tmp/.s.PGSQL.5432"
+   2018-03-19 11:17:40 CST  user=,db=,app=,client=LOG:  redirecting log output to logging collector process
+   2018-03-19 11:17:40 CST  user=,db=,app=,client=HINT:  Future log output will appear in directory "log".
     done
    server started
    ```
@@ -84,12 +80,12 @@ tags:
    ```SQl
    --- 主
    postgres=# select * from pg_stat_replication ;
-   -[ RECORD 1 ]----+------------------------------
+   -----+------------------------------
    pid              | 2900
    usesysid         | 16384
    usename          | replication
    application_name | walreceiver
-   client_addr      | 10.9.133.228
+   client_addr      | ***
    client_hostname  |
    client_port      | 38154
    backend_start    | 2018-03-19 11:17:40.611539+08
