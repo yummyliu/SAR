@@ -9,4 +9,6 @@ tags:
 
 ##发现了个百度脑图挺好用的，整理了一下分布式存储系统的一些问题
 
-![distributed/image/dis.jpg)
+!()[../image/dis.jpg)
+
+![](../image/dis.jpg)

@@ -5,6 +5,7 @@ date: 2016-04-13 16:45
 header-img: "img/head.jpg"
 tags:
     - tool
+typora-root-url: ../../yummyliu.github.io
 ---
 
 
@@ -44,7 +45,7 @@ tags:
 1、 服务不可用，netstat -anp 看相依端口有没有启动
                 iptable -L  看相应的端口有没有被防火墙屏蔽
                 ping 服务器是否ping 通，ping 这个命令只能说明 网络层 ip解析没问题，icmp没问题，
-                
+
 2、IP
         0.0.0.0 整个网络
         127. 保留内部回送
