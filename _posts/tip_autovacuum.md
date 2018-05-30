@@ -1,3 +1,15 @@
+---
+layout: post
+title: 
+date: 2018-03-30 15:13
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+    - PG
+---
+
+
+
 ### dead tuples
 
 在PG里，delete设置tuple的xmax，tuple还在表中；update就是delete+insert；如果一些元祖对所有的事务都不可见了，那么就是dead tuple，占用磁盘空间，并且index还引用他们，会导致表和索引的膨胀；

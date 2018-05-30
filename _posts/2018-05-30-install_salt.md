@@ -1,3 +1,13 @@
+---
+layout: post
+title: 
+date: 2018-05-30 15:13
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+    - Devops
+---
+
 ## 安装
 
 系统环境

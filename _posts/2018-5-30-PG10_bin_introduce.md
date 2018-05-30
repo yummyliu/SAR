@@ -1,3 +1,13 @@
+---
+layout: post
+title: 
+date: 2018-05-30 15:13
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+    - PG
+---
+
 在pg的安装目录bin下有如下的可执行文件：
 
 + clusterdb
