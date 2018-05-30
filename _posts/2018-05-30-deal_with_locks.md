@@ -1,3 +1,13 @@
+---
+layout: post
+title: 
+date: 2018-05-30 18:06
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+    - PG
+---
+
 ## 处理锁的7条建议
 
 数据库操作过程中，一些不恰当的操作，会导致数据库发生锁阻塞，影响DB性能；但是，同样的操作，我们可以通过恰当的操作，避免这一问题，如下是一些建议，欢迎补充；

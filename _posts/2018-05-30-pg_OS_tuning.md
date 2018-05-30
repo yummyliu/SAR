@@ -1,3 +1,13 @@
+---
+layout: post
+title: 
+date: 2018-03-30 18:06
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+    - PG
+---
+
 # PostgreSQL 操作系统调优
 
 + 最大化系统吞吐量

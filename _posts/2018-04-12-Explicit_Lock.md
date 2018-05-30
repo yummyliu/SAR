@@ -1,7 +1,8 @@
 ---
 layout: post
-title:  "建jekyll+github博客(to be continue...)"
-date:   2015-09-25 18:00
+title: 
+date: 2018-05-30 18:06
+header-img: "img/head.jpg"
 categories: jekyll update
 tags:
     - PG

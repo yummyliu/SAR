@@ -1,3 +1,13 @@
+---
+layout: post
+title: 
+date: 2018-05-30 18:06
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+    - PG
+---
+
 ## 主从切换
 
 流复制的主从之间是通过wal日志，来同步数据；

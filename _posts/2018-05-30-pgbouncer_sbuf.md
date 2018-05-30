@@ -1,3 +1,13 @@
+---
+layout: post
+title: 
+date: 2018-04-10 18:06
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+    - PG
+---
+
 ```c
 /*
  * Stream Buffer.

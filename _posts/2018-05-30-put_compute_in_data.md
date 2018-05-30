@@ -1,3 +1,13 @@
+---
+layout: post
+title: 
+date: 2018-05-30 18:06
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+    - PG
+---
+
 ### 在SQL中计算，还是在APP中计算
 
 有时同样的业务需求可以在DB，也可以在APP server中计算，如何决定；

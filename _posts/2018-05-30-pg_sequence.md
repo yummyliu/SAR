@@ -1,3 +1,13 @@
+---
+layout: post
+title: 
+date: 2018-05-30 18:06
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+    - PG
+---
+
 ### 关于sequences
 
 sequences用来产生主键列的数字值；保证产生的New ID是唯一的，即使很多database session同时使用sequence。

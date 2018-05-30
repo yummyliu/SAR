@@ -1,3 +1,13 @@
+---
+layout: post
+title: 
+date: 2018-05-30 18:06
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+    - PG
+---
+
 # pg_statsinfo
 
 间歇性地记录PG的活动和统计信息的snapshot，存储在另一个或者本dbserver上；另外还会在pg的csv格式的日志中提取活动信息；

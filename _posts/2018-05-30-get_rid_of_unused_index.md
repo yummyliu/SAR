@@ -1,3 +1,13 @@
+---
+layout: post
+title: 
+date: 2018-05-30 18:06
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+    - PG
+---
+
 Index可以加速查询，但是也有一些缺点，需要避免；
 
 1. **use up space**：提高Physical Backup的空间和时间

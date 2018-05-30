@@ -1,3 +1,13 @@
+---
+layout: post
+title: 
+date: 2018-05-30 18:06
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+    - PG
+---
+
 > PG9.4中，加入的新功能。维护着当前的复制状态（比如，复制完成的位置），即使slave下线或者断连了，还是保持着，以备其再次使用；
 >
 > 并不默认启用，这篇文章解释了它干了什么事，为什么在流复制中很有用，在逻辑复制中也很有必要；

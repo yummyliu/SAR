@@ -1,3 +1,12 @@
+layout: post
+title: 
+date: 2018-02-05 18:06
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+
+    - PG
+
 # 配置参数
 
 listen_addresses = '*'

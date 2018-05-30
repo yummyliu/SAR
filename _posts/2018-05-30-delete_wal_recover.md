@@ -1,3 +1,15 @@
+---
+layout: post
+title: 
+date: 2018-05-30 18:06
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+    - PG
+---
+
+
+
 ```bash
  2014-10-16 13:15:28 IRST LOG:  could not open file "pg_xlog/00000001000007DC00000037" (log file 2012, segment 55): No such file or directory
  2014-10-16 13:15:28 IRST LOG:  invalid primary checkpoint record

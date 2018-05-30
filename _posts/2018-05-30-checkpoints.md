@@ -1,3 +1,13 @@
+---
+layout: post
+title: 
+date: 2018-05-30 18:06
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+    - PG
+---
+
 ## what
 
 checkpoint会将某个时间点前的全部脏数据刷新到磁盘，以实现数据的一致性与完整性。
