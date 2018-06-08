@@ -1,0 +1,46 @@
+---
+layout: post
+title: 
+date: 2018-06-01 09:12
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+   - PG
+   - tool
+---
+
+# pgwatch2
+
++ 创建一个config数据库PostgreSQL，里面配置好要监控的库的信息，以及查询的时候执行的命令；
+
++ 创建一个influxdb，用来收集的监控信息
+
++ pgwatch2.go 读取config库中的信息，从相应的monitor_db中获取信息，存储在influxdb中
+
++ 装一个grafana，配置好DataSource，然后创建自己的dashboard，或者导入现成的json模板文件
+
+  ```
+  -[ RECORD 1 ]-------+------------------------------------------------
+  id                  | 2
+  org_id              | 1
+  version             | 1
+  type                | influxdb
+  name                | Influx
+  access              | proxy
+  url                 | http://10.9.58.95:8086
+  password            | root
+  user                | root
+  database            | pgwatch2
+  basic_auth          | f
+  basic_auth_user     |
+  basic_auth_password |
+  is_default          | t
+  json_data           | {"keepCookies":[]}
+  created             | 2018-05-23 12:45:24.165326
+  updated             | 2018-05-23 14:18:26
+  with_credentials    | f
+  secure_json_data    |
+  read_only           | f
+  ```
+
+  ​

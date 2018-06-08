@@ -38,8 +38,34 @@ CREATE DATABASE %s WITH DURATION %dd REPLICATION 1 SHARD DURATION 3d NAME pgwatc
 ```
 
 + `DURATION`：定义了influxdb保留的数据最长时间，最小是一小时；
+
 + `REPLICATION`：在数据节点上，保留数据的几个副本；单节点的influxdb这个设置没有用；
+
 + `SHARD DURATION`：定义了一个shard组中包含多长时间范围数据；默认是和DURATION相同；（就是按照range方式分区，分区的列是time）
+
++ 没有create MEASUREMENTS ; 直接insert 
+
+  ```sql
+  $ influx
+  > CREATE DATABASE mydb
+  > USE mydb
+  Using database mydb
+  > SHOW MEASUREMENTS
+  > INSERT cpu,host=serverA value=10
+  > SHOW MEASUREMENTS
+  name: measurements
+  name
+  ----
+  cpu
+
+  > INSERT mem,host=serverA value=10
+  > SHOW MEASUREMENTS
+  name: measurements
+  name
+  ----
+  cpu
+  mem
+  ```
 
 ##### timescaladb create
 
@@ -106,3 +132,6 @@ create_hypertable()
        WantedBy=timers.target
        ```
 
+## insert
+
+influx

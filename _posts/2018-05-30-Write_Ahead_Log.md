@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 
+title:
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -55,7 +55,7 @@ PG中将所有的改动，作为历史数据，写入到持久存储中，历史
 >
 > ```sql
 > testdb=# SELECT pg_xlogfile_name('1/00002D3E');  # In version 10 or later, "SELECT pg_walfile_name('1/00002D3E');"
->      pg_xlogfile_name     
+>      pg_xlogfile_name
 > --------------------------
 >  000000010000000100000000
 > ```
@@ -92,15 +92,15 @@ exec_simple_query() @postgres.c
 (3)   XLogInsert() @xlog.c (9.5 or later, xloginsert.c)
                                           /* 把xlog record写入到 WAL buffer中，并更新page的											* pd_lsn.
                                            */
-(4) finish_xact_command() @postgres.c     /* commit*/   
+(4) finish_xact_command() @postgres.c     /* commit*/
       XLogInsert() @xlog.c  (9.5 or later, xloginsert.c)
-                                          /* Write a XLOG record of this commit action 
+                                          /* Write a XLOG record of this commit action
                                            * to the WAL buffer.
                                            */
-(5)   XLogWrite() @xlog.c                 /* Write and flush all XLOG records on 
+(5)   XLogWrite() @xlog.c                 /* Write and flush all XLOG records on
                                            * the WAL buffer to WAL segment.
                                            */
-(6) TransactionIdCommitTree() @transam.c  /* Change the state of this transaction 
+(6) TransactionIdCommitTree() @transam.c  /* Change the state of this transaction
                                            * from "IN_PROGRESS" to "COMMITTED" on the CLOG.
 ```
 
