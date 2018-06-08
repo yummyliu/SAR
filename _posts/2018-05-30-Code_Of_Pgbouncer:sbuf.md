@@ -6,7 +6,12 @@ header-img: "img/head.jpg"
 categories: jekyll update
 tags:
     - PG
+    - Pgbouncer
 ---
+
+# Sbuf
+
+
 
 ```c
 /*
@@ -36,6 +41,8 @@ struct SBuf {
     const char *tls_host;   /* target hostname */
 };
 ```
+
+
 
 ##### wait_type
 
