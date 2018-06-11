@@ -11,8 +11,6 @@ tags:
 
 # Sbuf
 
-
-
 ```c
 /*
  * Stream Buffer.
