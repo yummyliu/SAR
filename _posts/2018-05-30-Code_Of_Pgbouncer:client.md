@@ -17,7 +17,7 @@ tags:
 
 模块对外提供三个接口：
 
-1. `bool set_pool(PgSocket *client, const char *dbname, const char *username, const char *password, bool takeover)`：在pgbouncer发生takeover的时候，配置pool的相关参数
+1. `bool set_pool(PgSocket *client, const char *dbname, const char *username, const char *password, bool takeover)`：在pgbouncer发生takeover的时候，配置client对应的pool的相关参数
 2. `bool handle_auth_response(PgSocket *client, PktHdr *pkt) `：client登录的时候，处理PostgreSQL返回的认证消息，其实是处理的server端的请求，感觉应该放在server模块中
 3. `bool client_proto(SBuf *sbuf, SBufEvent evtype, struct MBuf *data)`：处理Client请求的回调函数
 
