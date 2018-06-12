@@ -6,6 +6,7 @@ header-img: "img/head.jpg"
 categories: jekyll update
 tags:
     - PG
+    - Pgbouncers
 ---
 
 # 文件结构
