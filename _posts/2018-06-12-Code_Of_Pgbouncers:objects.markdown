@@ -102,15 +102,19 @@ bool use_server_socket(int fd, PgAddr *addr, const char *dbname, const char *use
 void change_client_state(PgSocket *client, SocketState newstate);
 void change_server_state(PgSocket *server, SocketState newstate);
 
-// 
+// 字面意思，都是从slab这个带统计信息的双向链表中取count
 int get_active_client_count(void);
 int get_active_server_count(void);
 
-void tag_database_dirty(PgDatabase *db);
-void tag_autodb_dirty(void);
-void tag_host_addr_dirty(const char *host, const struct sockaddr *sa);
+// 相应的对象发生改变
+void tag_database_dirty(PgDatabase *db); // db上的查询发生改变
+void tag_autodb_dirty(void);  // autodb 的链接串发生改变
+void tag_host_addr_dirty(const char *host, const struct sockaddr *sa); // 链接上的请求结果发生改变
+
+// for_each
 void for_each_server(PgPool *pool, void (*func)(PgSocket *sk));
 
+// just_freelist -> free_list
 void reuse_just_freed_objects(void);
 
 void init_objects(void);
