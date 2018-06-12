@@ -1,0 +1,179 @@
+---
+layout: post
+title: 
+date: 2018-06-11 16:30
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+typora-root-url: ../../SAR
+---
+
+# TCP 状态转换图
+
+![](/image/tcp.gif)
+
+### 3次握手🤝：
+
+1. client发送SYN，请求连接
+
+2. server接收SYN，放入SYN QUEUE中；给client返回 SYN+ACK
+
+3. client发送ACK，先和ESTABLISHED的连接对比，然后和syn queue中的对比；对比成功，syn queue中的slot删掉，创建一个新的inet_sock，放到ACCEPT QUEUE队列中；**连接建立成功**
+
+4. 当application调用accept的时候，相应的sockets出列，赋予给application
+
+   ![](/image/all-1.jpeg)
+
+   这就是通常的三次握手；但是如果设置了`TCP_FASTOPEN`和`TCP_DEFER_ACCEPT`就有点不一样
+
+##### TCP_FASTOPEN
+
+###### client normal
+
+```c
+/* create socket file descriptor */
+fd = socket(domain, type, protocol);
+
+/* connect to the target server/port */
+connect(fd,...);
+
+/* send some data */
+send(fd, buf, size);
+
+/* wait for some reply and read into a local buffer */ 
+while ((bytes  = recv(fd, ...))) {
+    ...
+}
+```
+
+###### client fastopen
+
+```c
+/* create the socket */
+fd = socket();
+
+/* connect and send out some data */
+sendto(fd, buffer, buf_len, MSG_FASTOPEN, ...);
+
+/* write more data */
+send(fd, buf, size);
+
+/* wait for some reply and read into a local buffer */ 
+while ((bytes  = recv(fd, ...))) {
+    ...
+}
+```
+
+###### server normal
+
+```c
+/* create the socket */
+fd = socket();
+
+/* connect and send out some data */
+bind(fd, addr, addrlen);
+
+/* this socket will listen for incoming connections */
+listen(fd, backlog);
+```
+
+server fastopen
+
+```c
+/* 
+ * A generic protection in case you include this 
+ * from multiple files 
+ */
+#ifndef _KERNEL_FASTOPEN
+#define _KERNEL_FASTOPEN
+
+/* conditional define for TCP_FASTOPEN */
+#ifndef TCP_FASTOPEN
+#define TCP_FASTOPEN   23
+#endif
+
+/* conditional define for MSG_FASTOPEN */
+#ifndef MSG_FASTOPEN
+#define MSG_FASTOPEN   0x20000000
+#endif
+
+#endif
+
+/* a hint value for the Kernel */
+int qlen = 5;
+
+/* create the socket */
+fd = socket();
+
+/* bind the address */
+bind(fd, addr, addrlen);
+
+/* change the socket options to TCO_FASTOPEN */
+setsockopt(sockfd, SOL_TCP, TCP_FASTOPEN, &qlen, sizeof(qlen));
+
+/* this socket will listen for incoming connections */
+listen(fd, backlog);
+```
+
+默认系统关闭fastopen；
+
+打开：`echo 1 > /proc/sys/net/ipv4/tcp_fastopen`
+
+##### TCP_DEFER_ACCEPT
+
+三次握手的第二步之后，server需要等待一个ack，才能建立连接；而之后才会有real data；这在建立tcp连接的时候，比较耗时；
+
+打开了TCP_DEFER_ACCEPT之后，server在接收到SYN+ACK包之后，不会等待ack，直接等待real data包；这能减少连接建立时的delay；
+
+### 四次挥手👋
+
+在Linux中，一切皆文件，Socket也不例外；一个成功建立的Socket文件，是由两对IP:Port确定的；当其中一方TCP Close的时候，就开始了这个Socket的四次挥手的关闭流程，如下：
+
+```
+     TCP A                                                TCP B
+
+  0.  ESTABLISHED                                          ESTABLISHED
+
+  1.  (Close)
+      FIN-WAIT-1  --> <SEQ=100><ACK=300><CTL=FIN,ACK>  --> CLOSE-WAIT
+
+  2.  FIN-WAIT-2  <-- <SEQ=300><ACK=101><CTL=ACK>      <-- CLOSE-WAIT
+
+  3.                                                       (Close)
+      TIME-WAIT   <-- <SEQ=300><ACK=101><CTL=FIN,ACK>  <-- LAST-ACK
+
+  4.  TIME-WAIT   --> <SEQ=101><ACK=301><CTL=ACK>      --> CLOSED
+
+  5.  (2 MSL)
+      CLOSED       
+```
+
+👋：发起Close的一端A，意味着我没有任何数据需要SEND了，但是在发起Close之后还是会Recv，直到被通知另一端也Close了；
+
+👋👋：B收到FIN信号，进入CLOSE_WAIT状态，并回复ACK；TCP是可靠的，此时B会保证将Buffer中的数据，在B关闭之前发送出去，*这里要确保自己会及时关闭（60s之内）这些CLOSE_WAIT状态的socket，否则会socket泄露*；
+
+👋👋👋：TCP收到一个FIN信号，会回复一个ACK；但是不会立马发送自己的FIN信号，直到自身的user也Close这个tcp连接；
+
+👋👋👋👋：B端主动发起Close，给A发一个FIN，一起关闭
+
+> 在原来的TCP协议中，是不允许从FIN_WAIT_2状态自动转换的；FIN_WAIT_2应该接着运行，直到另一端已经清理完毕了。但是实际上经过`tcp_fin_timeout`时间，如果收不到另一端的fin控制信号，会强制关闭自己，位置放置dos攻击；
+>
+> ```
+> tcp_fin_timeout (integer; default: 60)
+>       This specifies how many seconds to wait for a final FIN packet
+>       before the socket is forcibly closed.  This is strictly a
+>       violation of the TCP specification, but required to prevent
+>       denial-of-service attacks.
+> ```
+
+
+
+[ref](https://www.ibm.com/support/knowledgecenter/en/SSLTBW_2.1.0/com.ibm.zos.v2r1.halu101/constatus.htm)
+
+[ref](http://edsiper.linuxchile.cl/blog/2013/02/21/linux-tcp-fastopen-in-your-sockets/)
+
+[ref](https://blog.cloudflare.com/syn-packet-handling-in-the-wild/)
+
+[ref](https://blog.cloudflare.com/this-is-strictly-a-violation-of-the-tcp-specification/)
+
+[ref](http://www.freesoft.org/CIE/Course/Section4/11.htm)
