@@ -14,7 +14,7 @@ typora-root-url: ../../SAR
 
 ### 3次握手🤝：
 
-1. client发送SYN，请求连接
+1. ## client发送SYN，请求连接
 
 2. server接收SYN，放入SYN QUEUE中；给client返回 SYN+ACK
 
