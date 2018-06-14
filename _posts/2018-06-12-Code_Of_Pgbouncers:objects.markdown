@@ -1,6 +1,7 @@
 ---
 layout: post
-title: 
+title: Pgbouncer内部对象的管理
+subtitle: Pgbouncer用到的数据结构
 date: 2018-06-12 13:35
 header-img: "img/head.jpg"
 categories: jekyll update
