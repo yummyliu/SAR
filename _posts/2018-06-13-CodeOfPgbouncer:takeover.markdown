@@ -1,5 +1,5 @@
 ---
-layout: post
+wlayout: post
 title: 
 date: 2018-06-13 08:07
 header-img: "img/head.jpg"
@@ -9,75 +9,12 @@ tags:
   - Pgbouncer
 ---
 
-takeover操作在pgbouncer中，就是当pgbouncer重启的时候，接管原来的资源：Socket fd，objects；
+在pgbouncer启动的时候，会创建一个dbname为pgbouncer的的假连接池，作为admin pool；当pgbouncer使用`-R`参数online reboot的时候，启动另一个进程，接管原来的socket fd 和 objects，具体的接管流程在takeover模块中，分为两个部分：
 
-对外主要提供4个函数：
-
-```c
-void takeover_init(void);
-bool takeover_login(PgSocket *bouncer) _MUSTCHECK;
-void takeover_login_failed(void);
-void takeover_finish(void);
-```
-
-##### takeover_init
-
-在pgbouncer启动的时候，会创建一个dbname为pgbouncer的的假连接池，作为admin pool；takeover初始化时：
-
-1. 取出pgbouncer对应admin pool；没有则报错
-2. admin_pool尝试添加新的连接；
-
-```bash
-2018-06-13 11:38:30.770 7656 LOG takeover_init: launching connection
-2018-06-13 11:38:30.770 7656 LOG S-0x249d690: pgbouncer/pgbouncer@unix:6432 new connection to server
-2018-06-13 11:38:30.770 7497 LOG C-0x18e4a30: (nodb)/(nouser)@unix(7656):6432 closing because: client unexpected eof (age=0)
-2018-06-13 11:38:30.771 7497 LOG C-0x18e4a30: (nodb)/pgbouncer@unix(7656):6432 pgbouncer access from unix socket
-```
-
-##### takeover_login
-
-takeover_init中，pool需要向PostgreSQL申请新的连接，就是一个登录请求；**PostgreSQL**认证成功返回'Z'(ReadyForQuery).
-
-在server_proto回调中，调用`handle_server_startup`，pgbouncer模拟客户端，回复一个'Q'（Query）；而后到调用`takeover_login`。`takeover_login` 中向连接中发送了`SUSPEND`指令；同时注册一个回调`takeover_recv_cb` ，等待suspend指令结束，执行下一步；
+> -R参数只有在系统支持Unix Sockets，并且`unix_socket_dir` enabled才能用
 
 ```c
-		/* let the takeover process handle it */
-		if (res && server->pool->db->admin)
-			res = takeover_login(server);
-```
-
-```bash
-2018-06-13 11:38:30.771 7497 LOG C-0x18e4a30: pgbouncer/pgbouncer@unix(7656):6432 login attempt: db=pgbouncer user=pgbouncer tls=no
-2018-06-13 11:38:30.771 7656 LOG S-0x249d690: pgbouncer/pgbouncer@unix:6432 Login OK, sending SUSPEND
-2018-06-13 11:38:30.771 7497 LOG SUSPEND command issued
-```
-
-`suspend`指令结束，触发回调，若suspend成功结束：
-
-```c
-		case 'C': /* CommandComplete */
-			log_debug("takeover_parse_data: 'C'");
-			next_command(bouncer, &pkt.data);
-			break;
-```
-
-那么，接着执行后面的命令 `show fds`，打印现在的fd信息：
-
-```bash
-2018-06-13 11:38:30.771 7656 LOG SUSPEND finished, sending SHOW FDS
-2018-06-13 11:38:30.771 7656 LOG got pooler socket: 127.0.0.1:6432
-2018-06-13 11:38:30.772 7656 LOG got pooler socket: unix:6432
-2018-06-13 11:38:30.772 7656 LOG SHOW FDS finished
-2018-06-13 11:38:30.772 7656 LOG disko over, going background
-```
-
-##### takeover_login_failed
-
-打个日志而已，郑重其事地搞了个函数🙄
-
-##### takeover_finish
-
-```c
+// Part 1
 	if (cf_reboot) {
 		if (check_old_process_unix()) {
 			takeover_part1();
@@ -90,7 +27,10 @@ takeover_init中，pool需要向PostgreSQL申请新的连接，就是一个登�
 	}
 
 ......
+    if (cf_daemon)
+		go_daemon();
     
+// Part 2
     if (did_takeover) {
 		takeover_finish();
 	} else {
@@ -98,33 +38,132 @@ takeover_init中，pool需要向PostgreSQL申请新的连接，就是一个登�
 	}
 ```
 
-重启后如果进入takeover模式，在`takeover_part1`中，将大部分的工作完成，最后`takeover_finish`进行一个收尾工作:
+#### takeover Part1
 
-1. shut down old pgbouncer
+Part_1中，new pgb连接上old pgb，通过show fds，获取到old fds，并`takeover_load_fd`；
 
-2. 等待old pgbouncer的sbuf中的 shutdown的reponse信息，直到成功；
+```c
+//	takeover_load_fd
 
-3. 关闭老的pgbouncer的连接
+	if (cmsg->cmsg_level == SOL_SOCKET
+		&& cmsg->cmsg_type == SCM_RIGHTS
+		&& cmsg->cmsg_len >= CMSG_LEN(sizeof(int)))
+	{
+		/* get the fd */
+		memcpy(&fd, CMSG_DATA(cmsg), sizeof(int));
+		log_debug("got fd: %d", fd);
+	} else {
+		fatal("broken fd packet");
+	}
+```
 
-4. 继续原来的Socket连接
+主要有以下几步：
+
+1. takeover_init takeover初始化时：
+
+   1. 取出admin pool：pgbouncer；
+
+   2. 新的admin pool向老的pgbouncer的发起连接，就是一个尝试的登录请求`db=pgbouncer user=pgbouncer`；
+
+   3. main_loop_once 处理连接登录的消息
+
+      1. SBUF_EV_CONNECT_OK： 连接成功
+
+      2. SBUF_EV_READ：auth ok
+
+      3. 以及若干个SBUF_EV_READ： 服务器的信息，比如编码等
+
+      4. 最后登录成功，进入`takeover_login`，给old pgb发送指令
+
+         1. SUSPEND
+
+            ```bash
+            2018-06-14 11:31:14.709 10444 LOG S-0x67a580: pgbouncer/pgbouncer@unix:6432 Login OK, sending SUSPEND
+            ```
+
+         2. SHOW FDS
+
+            ```bash
+            2018-06-14 11:31:22.184 10444 LOG SUSPEND finished, sending SHOW FDS
+            2018-06-14 11:31:28.661 10444 DEBUG got fd: 12
+            2018-06-14 11:31:28.661 10444 DEBUG FD row: fd=12(12) linkfd=0 task=pooler user=NULL db=NULL enc=NULL
+            2018-06-14 11:31:28.661 10444 LOG got pooler socket: 127.0.0.1:6432
+            2018-06-14 11:31:28.661 10444 DEBUG takeover_parse_data: 'D'
+            2018-06-14 11:31:28.661 10444 DEBUG got fd: 13
+            2018-06-14 11:31:28.661 10444 DEBUG FD row: fd=13(13) linkfd=0 task=pooler user=NULL db=NULL enc=NULL
+            2018-06-14 11:31:28.661 10444 LOG got pooler socket: unix:6432
+            ```
+
+         3. CommandComplete
+
+      5. takeover_finish_part1
+
+#### takeover Part2
+
+Part2中，new pgb已经通过fork子进程的方式，完成了守护进程的方式运行；此时进行一个收尾工作:
+
+1. 向old pgb发送：`SHUTDOWN`命令；
 
    ```bash
    2018-06-13 11:38:30.775 7658 LOG sending SHUTDOWN;
    2018-06-13 11:38:30.775 7497 LOG SHUTDOWN command issued
+   ```
+
+2. 等待old pgb成功shutdown；
+
+3. 关闭老的pgbouncer的连接
+
+   ```bash
    2018-06-13 11:38:30.776 7658 LOG S-0x249d690: pgbouncer/pgbouncer@unix:6432 closing because: disko over (age=0)
    2018-06-13 11:38:30.776 7658 LOG waiting for old pidfile to go away
+   ```
+
+4. 原来已经建立的socket连接，重新开始工作；原来的pool重新开始监听；
+
+   ```bash
    2018-06-13 11:38:30.776 7658 LOG old process killed, resuming work
    2018-06-13 11:38:30.776 7658 LOG process up: pgbouncer 1.8.1, libevent 2.0.21-stable (epoll), adns: c-ares 1.10.0, tls: OpenSSL 1.0.1e-fips 11 Feb 2013
    ```
 
+#### Questions
 
+1. pgbouncer如何做到新进程接管老进程？
 
-##### Question
+   `takeover_load_fd` 
 
-这个模块和整理的关联比较大，看完还是有几点疑惑，等后续各个部分都看完，再梳理；
-
-1. pgbouncer是一个特殊的pool，takeover中，基本就是用一个新的pgbouncer进程替代老的pgbouncer进程，这个pool中与PostgreSQL有没有连接？
 2. pgbouncer如何切换的进程？
+
+   在admin.c中，有处理shutdown指令的handler，并没有在handler中主动，停止进程，而是设置一个标志`cf_showdown`，
+
+   ```c
+   	log_info("SHUTDOWN command issued");
+   	cf_shutdown = 2;
+   	event_loopbreak();
+   ```
+
+   然后在main函数中，每次的main_loop会判断这个 函数，确定是否退出
+
+   ```c
+   	/* main loop */
+   	while (cf_shutdown < 2)
+   		main_loop_once();
+   ```
+
+   这就是为什么在新的pgbouncer进程在给老pgbouncer发送shutdown之后，需要等待一会，确保旧的pid文件没有
+
+   ```c
+   	if (cf_pidfile && cf_pidfile[0]) {
+   		log_info("waiting for old pidfile to go away");
+   		while (1) {
+   			struct stat st;
+   			if (stat(cf_pidfile, &st) < 0) {
+   				if (errno == ENOENT)
+   					break;
+   			}
+   			usleep(USEC/10);
+   		}
+   	}
+   ```
 
 
 
