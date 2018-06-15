@@ -26,6 +26,8 @@ typora-root-url: ../../SAR
 >    1. 当前的状态
 >    2. 历史的状态
 
+![adb](/image/arch_db.jpeg)
+
 ## *有效*的存储
 
 > 先把数据放好
@@ -190,23 +192,61 @@ autovacuum间隔`autovacuum_naptime`执行一次`vacuum`和`analyze`命令；但
 
 ###### basebackup
 
+pg_basebackup命令，主要就是注意做热备的时候；wal_keep_segment可以的话，调大点
+
 ###### archiver process
+
+注意这两个占位符：%p %f；三个配置项：mode/command/timeout；
+
+注意开了归档，command一定是成功的，要不磁盘空间会被wal占满；
 
 ##### 流复制
 
-###### wal sender process
+PostgreSQL可以级联流复制，所以在一个基于流复制的Cluster中，有以下三个角色
 
-###### wal receiver process
+###### primary master
+
+在这个节点上，一定要设置好`wal_level`，这决定了整个集群的复制级别；10中有了logical，之前的archive和hot standby整合成replica了；如果采用同步提交打开，master上设置好`synchronous_standby_names`（有first和any两种模式）；
+
+由于主从的查询不一样，用到的tuple也不一样；为了防止master把slave用到的tuple给清理了：
+
+可以设置一下`vacuum_defer_cleanup_age`保留一定时间的老数据；
+
+也可以在slave中打开`hot_standby_feedback`，来向master知会slave上的查询状态；
+
+但是，这两种方式都可能导致bloat，所以通过`old_snapshot_threshold`强制设置一个老快照的上限；
+
+###### cascaded slave
+
+承接上下游的关键节点，压力还是不要太大的好
+
+###### leaf slave
+
+承接读流量
 
 #### 逻辑冗余
+
+表级复制，目前支持的是update insert delete操作的同步；
 
 ##### Logic Replication
 
 ###### publication
 
+默认使用主键作为replication identity，没有主键必须指定一个唯一索引作为replication identity；要么只能full
+
+```sql
+REPLICA IDENTITY { DEFAULT | USING INDEX index_name | FULL | NOTHING }
+```
+
+另外，注意表结构的更改一定要同步；
+
 ###### subscription
 
-##### pg_dump
+指定publication的连接和pubname，就会在publication端创建一个logical replication slot，多个表可以共用一个slot；
+
+##### pg_dump/pg_dumpall
+
+常用的导出数据的命令，如果数据有坏块，得处理一下；全局的对象用dumpall，比如role等；
 
 ## *高效*的计算
 
@@ -218,29 +258,63 @@ autovacuum间隔`autovacuum_naptime`执行一次`vacuum`和`analyze`命令；但
 
 ###### ParserTree
 
+自己拿`flex/bison`定义一个语法，就可以做语法解析了
+
 ##### Analyzer
 
 ###### QueryTree
+
+就是把语法解析出来的tablename，columnname和数据库里的metadata对比一下
 
 ##### Rewriter
 
 ###### Rules
 
+基于pg_rules这个用户自定义的规则，或者经验上的一些规则，比如视图展开，选择下推，重写查询；
+
 ##### Planer
 
 ###### PlanTree
 
+基于代价估计的方式，选择node algo和path
+
 ###### stats collector process
+
+该进程有个UDP端口，系统中的别的活动，往这里发消息来收集；
 
 ###### ScanNode (e.g.) 
 
+各种场景下，选择哪些Scan算法：Seq 、Index、Index-Only、bitmap-index；这里注意有时候索引多了会给[PostgreSQL误导](http://yummyliu.github.io/jekyll/update/2018/06/12/%E6%B7%BB%E5%8A%A0%E7%B4%A2%E5%BC%95%E5%AF%BC%E8%87%B4PG%E7%9A%84%E6%80%A7%E8%83%BD%E6%81%B6%E5%8C%96/)
+
 ###### JoinNode (e.g.) 
+
+nestloop、 hash、 sort-merge；PostgreSQL中的join算法还比较全，Mysql只有第一个；这也是为什么PostgreSQL在OLAP中表现比较好的原因之一；
 
 ##### Executor
 
 ###### Pull
 
+> Copying data in memory can be a serious bottleneck. Copies contribute latency, consume CPU cycles, and can ﬂood the CPU data cache. This fact is often a surprise to people who have not operated or implemented a database system, and assume that main-memory operations are “free” compared to disk I/O. But in practice, throughput in a well-tuned transaction processing DBMS is typically not I/O-bound.
+>
+> ​												—— Hellerstein 
+>
+> ​													Architecture of a Database System
+
+`hasNext(), next()` 
+
+这种模型产生的时候，是IO代价比CPU代价高的时候；在这种模型中，每个tuple都需要一个next，其次，这个next的调用往往是一个虚拟函数或者函数指针的方式，此外，这种方式的代码本地性（code locality）也不好，并且会有复制的虚拟函数和函数指针记录的逻辑（book-keeping）；这样CPU消耗比较高
+
+> code locality:
+>
+> ​	类似于数据缓存，利用数据访问的局部性，可以提高性能；代码的执行也是一行一行的，代码也是需要加载的，跳来跳去不太好；就比如在代码中，尽量少用goto控制语句，鼓励使用顺序，循环和分支来处理；
+>
+> ![nogoto](/image/nogoto.jpeg)
+
 ###### Push
+
+在Push中，查询计划中有一些materialization points，也叫pipeline breaks；数据不是从前往后拉，是从后向前推，直到遇到某个pipeline breaks；如下图，原来的执行计划，分成了四段；
+
+![](/image/pipeline.jpeg)
 
 ### 多个计算——并发控制
 
@@ -250,25 +324,49 @@ autovacuum间隔`autovacuum_naptime`执行一次`vacuum`和`analyze`命令；但
 
 ###### 原子：
 
+事务要么成功，要么失败；关注的是事务的状态只有两种:commit和aborted
+
 ###### 一致：
 
+整个db的数据，从外部看总是一致的；事务处理的中间状态，对外是不可见的；这是要求的强一致性，需要严格加锁；
+
 ###### 隔离：
+
+太强的一致性，带来性能的损失；适当的降低隔离性，提高性能；
 
 ##### 永远不要乱
 
 ###### 持久：
 
+先写日志，后写数据
+
 #### 锁
 
-##### 锁级别
+##### 加锁的方式
 
-##### 如何利用锁
+###### 一次性锁协议
+
+###### 两阶段锁协议
+
+###### 树形协议
+
+###### 时间戳排序协议
+
+##### 锁类型
+
+###### 表
+
+###### 行
+
+###### 页
+
+###### 咨询
+
+###### 死锁
 
 #### MVCC
 
-##### 优点
-
-##### 缺点
+[mvcc in pg](http://yummyliu.github.io/jekyll/update/2018/05/30/Mvcc_And_Vacuum/)
 
 ## *完备*的监控
 
