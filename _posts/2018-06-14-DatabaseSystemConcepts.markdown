@@ -11,9 +11,7 @@ tags:
 typora-root-url: ../../SAR
 ---
 
-> 从一开始的仓颉造纸，到最后的磁盘上的01串，存储媒介不断发生变化；而当进入信息时代，如何有效的在计算机中管理数据，最后就是数据库管理系统的任务了；而数据库就是解决两个问题：存储和计算；这两个任务能够有效的做好，完备的监控是必须的；
->
-> 本文从三个角度，来概述PostgreSQL
+> 数据库解决两个问题：存储和计算；这两个任务能够有效的做好，完备的监控是必须的；本文从三个角度，按照自己的理解，概述一下PostgreSQL：
 >
 > 1. 有效的存储
 >    1. 存储介质
@@ -344,13 +342,59 @@ nestloop、 hash、 sort-merge；PostgreSQL中的join算法还比较全，Mysql�
 
 ##### 加锁的方式
 
-###### 一次性锁协议
+###### Pre-claiming Lock
 
-###### 两阶段锁协议
+![](/image/pre_claiming.png)
 
-###### 树形协议
+在事务开始执行前，请求所需要的对象上的所有的锁；请求失败，就回滚；
+
+###### Two-Phase Locking 2PL
+
+![](/image/2PL.png)
+
+事务关于锁有两个阶段，第一个阶段：只加锁，不放锁；当有一个锁被释放了，进入第二个阶段：只放锁，不加锁；
+
+> 这种方式的2PL，由于咩有严格的隔离型，会导致cascading abort：提前释放了修改好的对象上的锁，别的事务可见了，这样如果当前事务回滚了，那么这些相关的事务，都要回滚
+
+###### Strict Two-Phase Locking
+
+![](/image/strict_2PL.png)
+
+和2PL的不同就是，锁保持到事务结束，一次性释放；不会有cascading abort；
+
+> 2PL，由于有一个持有部分锁，并等待其他锁的过程；这有可能会导致死锁；更保守的2PL协议[Conservative 2-PL](https://www.geeksforgeeks.org/dbms-concurrency-control-protocol-two-phase-locking-2-pl-iii/) 可以避免这个问题，但是实际上很少使用这个方式；了解一下。。。
 
 ###### 时间戳排序协议
+
+每个事务有一个开始的时间戳：TS(Ti)；每个数据有一个读时间戳：R-ts(X)，和一个写时间戳：W-ts(X)；时间戳排序控制协议如下：
+
++ 如果事务Ti要读数据X
+
+  ```
+  If TS(Ti) < W-ts(X)
+  	Operation rejected.
+  If TS(Ti) >= W-ts(X)
+  	Operation executed.
+  All data-item timestamps updated.
+  ```
+
+  写了之后才能读；
+
++ 如果事务Ti要写数据X
+
+  ```
+  If TS(Ti) < R-ts(X)
+  	Operation rejected.
+  If TS(Ti) < W-ts(X)
+  	Operation rejected and Ti rolled back.
+  Otherwise, operation executed.
+  ```
+
+  数据的任何操作之后，才能写；并且老的写事务会被新的写事务忽略，这叫*[Thomas' Write Rule](https://en.wikipedia.org/wiki/Thomas_write_rule)*；
+
+###### Graph Based Protocol
+
+2PL只是保证了事务的*Strict Schedule*；但是没有保证*deadlock free*；Graph Based Protocol是一个可选方案，tree based Protocol是一个简单的实现；比较复杂了，没细看；
 
 ##### 锁类型
 
@@ -376,10 +420,72 @@ nestloop、 hash、 sort-merge；PostgreSQL中的join算法还比较全，Mysql�
 
 ##### table
 
+基本就是一些PostgreSQL中的一些概念的原信息，pg_trigger /pg_type/ pg_class/ pg_index/ pg_sequence 。。。
+
 ##### view
+
+pg_stat_*
 
 ### 历史的状态——日志
 
-###### logger process
+##### logger process
+
++ where
+
+  + log_destination：stderr, csvlog , syslog；csvlog需要`logging_collector = on`
+  + log_directory：
+  + log_filename
+
++ when
+
+  + log_min_duration_statement
+
++ what
+
+  + log_connections
+  + log_checkpoints
+  + log_duration
+  + log_lock_waits
+  + log_statement
+  + log_temp_files
+
++ csv to table
+
+  ```sql
+  CREATE TABLE postgres_log
+  (
+    log_time timestamp(3) with time zone,
+    user_name text,
+    database_name text,
+    process_id integer,
+    connection_from text,
+    session_id text,
+    session_line_num bigint,
+    command_tag text,
+    session_start_time timestamp with time zone,
+    virtual_transaction_id text,
+    transaction_id bigint,
+    error_severity text,
+    sql_state_code text,
+    message text,
+    detail text,
+    hint text,
+    internal_query text,
+    internal_query_pos integer,
+    context text,
+    query text,
+    query_pos integer,
+    location text,
+    application_name text,
+    PRIMARY KEY (session_id, session_line_num)
+  );
+  COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
+  ```
+
++ process title set cluster_name；一个机器上多个实例，可以区分一下；
 
 ##### 监控指标
+
+[PostgreSQL监控指标整理](http://yummyliu.github.io/jekyll/update/2018/06/01/pgwatch2%E8%A7%A3%E6%9E%90/)
+
+[ref](https://www.cl.cam.ac.uk/teaching/2000/ConcSys/csig2/57.html)
