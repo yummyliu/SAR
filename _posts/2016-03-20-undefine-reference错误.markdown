@@ -5,9 +5,10 @@ date: 2016-03-20 22:37
 categories: jekyll update
 tags:
     - Linux
+    - C++
 ---
 
-> 写makefile编译一个工程，需要添加 glog 和 gtest的库 
+> 写makefile编译一个工程，需要添加 glog 和 gtest的库
 > 首先按照 常规的 ./configure make make install 就行了,
 > 这里这两个包需要 使用cmake 由 CMakeLists.txt 来生成makefile,
 > 后面make之后 gtest 不支持make install，glog make install 也是有问题，既然安装有问题，那就就自己来连接吧

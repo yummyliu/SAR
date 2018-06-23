@@ -3,6 +3,8 @@ layout: post
 title: supersonic
 date: 2016-03-12 15:46
 categories: jekyll update
+tags:
+  - Database
 ---
 
 supersonic 是google 的开源项目，目前版本号只是0.9 基于列存储的SQL查询引擎库，使用c++编写，并大量使用缓存感知，SIMD，超流水线的优化，基于列存储，其面向的是数据仓库中的OLAP应用，测试的时候 使用 TPC-H这个针对决策支持系统的数据集
@@ -33,7 +35,7 @@ supersonic 是google 的开源项目，目前版本号只是0.9 基于列存储�
 
 {% endhighlight %}
 
-这是从代码中找的一个典型的使用，其中操作符都继承自Operation类，Operation中定义了一个 纯虚函数 createcursor 
+这是从代码中找的一个典型的使用，其中操作符都继承自Operation类，Operation中定义了一个 纯虚函数 createcursor
 类似的游标类系中，Cursor作为基类中其中定义了一个Next纯虚函数
 
 #### supersonic 内存分配
@@ -57,4 +59,5 @@ supersonic 是google 的开源项目，目前版本号只是0.9 基于列存储�
     };
 
 {% endhighlight %}
+
 Buffer将构造函数私有，并设置一个BufferAllocator的友元类，由且只由该类分配buffer，并以该类为基类拥有面向不同场景的内存分配类

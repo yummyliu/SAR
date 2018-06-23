@@ -1,19 +1,18 @@
 ---
 layout: post
 title: raft
+subtitle: Paxos虽然是一个被证明的正确的分布式一致性理论，但是在实际使用的过程中难度较大，实现难
 date: 2015-10-04 09:44
 categories: jekyll update
 tags:
     - Program
 ---
- 
-> There are significant gaps between the description of the Paxos algorithm and the needs of a real-world system. . . . 
+
+> There are significant gaps between the description of the Paxos algorithm and the needs of a real-world system. . . .
 > the final system will be based on an un- proven protocol
 >                   —— Chubby
-> 关于Chubby实现的一个评价，Paxos在实际使用的时候，都将原来的架构变了，来适应实际的环境，
-> Paxos虽然是一个被证明的正确的分布式一致性理论，但是在实际使用的过程中难度较大，实现难
-> Paxos uses a symmetric peer-to-peer approach at its core (though it eventually suggests a weak form of leadership as a performance optimization). 
-> This makes sense in a simplified world where only one decision will be made, but few practical systems use this approach. 
+> Paxos uses a symmetric peer-to-peer approach at its core (though it eventually suggests a weak form of leadership as a performance optimization).
+> This makes sense in a simplified world where only one decision will be made, but few practical systems use this approach.
 > If a series of decisions must be made, it is simpler and faster to first elect a leader, then have the leader coordinate the decisions.
 
 
