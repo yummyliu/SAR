@@ -35,6 +35,8 @@ WAL允许用in-place方式更新数据库。另一种用来实现原子更新的
 要优点是**减少索引和块列表的修改**。[ARIES][aries]是WAL系列技术常用的算法。在文件系统中，WAL
 通常称为journaling。PostgreSQL也是用WAL来提供point-in-time恢复和数据库复制特性。
 
+> ARIES：一种事务型恢复策略：基于日志先行协议，支持细颗粒度锁和局部回滚
+
 
 #### PG的复制
 
@@ -90,9 +92,9 @@ PG中目前没有提供复制的时候的过滤器，所以主从复制是完全
 + walsender 发送wal日志
 + walreceiver 向磁盘写日志
 + startup 应用日志来恢复数据
-![pgrep/image/pgrep.png)
+![](/image/pgrep.png)
 
-![pgws/image/pgws.png)
+![](/image/pgws.png)
 
 #### Postgresql与Mysql的实现机制比较
 
