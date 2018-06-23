@@ -1,6 +1,7 @@
 ---
 layout: post
 title: c/c++巧妙代码整理(持续添加)
+subtitle: 大部分列出的是c++11 与 c99的, 整理写程序过程中，看到的优秀代码
 date: 2016-05-15 23:21
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -8,10 +9,6 @@ tags:
     - C++
     - Program
 ---
-
-> 大部分列出的是c++11 与 c99的，因为对于c++11感觉用起来方便多了
-> 比如 `>> auto {初始化}`  等等特性
-> 整理写程序过程中，看到的优秀代码
 
 #### cmp
 > 在stl中常用的比较函数，可以使用匿名函数,或者自定义的函数对象

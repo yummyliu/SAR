@@ -1,6 +1,7 @@
 ---
 layout: post
 title: 抓虫记
+subtitle: 第一次参与开源社区代码的实践，其中遇到了一个功能性的bug 调试耗时略长，感觉收获不少，简单记录下
 date: 2016-07-10 09:45
 header-img: "img/head.jpg"
 tags:
@@ -8,12 +9,9 @@ tags:
     - Program
 ---
 
-> 实际第一次参与开源社区代码的实践，其中遇到了一个功能性的bug
-> 调试耗时略长，调试的时候也在追pg的代码，感觉收获不少:)
-
 ### bug 问题描述
 
-tpcds Q5 在Cstorefdw 表上执行的时候，会报出 ERROR:  cache lookup failed for type 0  
+tpcds Q5 在Cstorefdw 表上执行的时候，会报出 ERROR:  cache lookup failed for type 0
 tpcds Q5在pg的原生表上没有出现这个问题
 
 ### debug it
@@ -25,7 +23,7 @@ tpcds Q5在pg的原生表上没有出现这个问题
 +  找到问题堆栈,typeid确实就是0,不是错误信息里的
 
 ```
-    #0  elog_finish (elevel=20, fmt=0xb35438 "cache lookup failed for type %u") at elog.c:1341  
+    #0  elog_finish (elevel=20, fmt=0xb35438 "cache lookup failed for type %u") at elog.c:1341
     #1  0x0000000000928abd in getBaseTypeAndTypmod (typid=0, typmod=0x7ffd2180507c) at lsyscache.c:2203
     #2  0x0000000000928a54 in getBaseType (typid=0) at lsyscache.c:2178
     #3  0x0000000000615f6b in GetDefaultOpClass (type_id=0, am_id=403) at indexcmds.c:1339
@@ -48,12 +46,12 @@ tpcds Q5在pg的原生表上没有出现这个问题
         union all
     select
         sr_return_amt as aaa
-        from store_returns  
+        from store_returns
     limit 2;
     /* 上下颠倒下就没问题了 */
     select
         sr_return_amt as aaa
-        from store_returns  
+        from store_returns
         union all
     select
         cast(0 as numeric(7,2)) as aaa
@@ -63,16 +61,16 @@ tpcds Q5在pg的原生表上没有出现这个问题
     /* 换一种类型，上下颠倒一下也没问题了 */
     select
         ss_ticket_number as ticket_number
-        from store_sales 
+        from store_sales
         union all
     select
         cast(0 as integer) as ticket_number
         from store_returns
         limit 2;
-        
+
     select
         ss_ticket_number as ticket_number
-        from store_sales 
+        from store_sales
         union all
     select
         cast(0 as integer) as ticket_number
@@ -122,10 +120,10 @@ tpcds Q5在pg的原生表上没有出现这个问题
     }
 ```
 
-在ColumnList此处断点，发现：typeid=0 对应的是 T_Const, 就是 cast(0 as numeric) as aaa, 
+在ColumnList此处断点，发现：typeid=0 对应的是 T_Const, 就是 cast(0 as numeric) as aaa,
 而同时发现，同样的表，从baserel中获得的targetColumnList并不相同, store_salse中并没有某一列，只是为了Union all 做了一个常数的假列，
 ColumnList需要得到某个表的实际参与执行的列,源代码中没有辨别这种情况, 至于pg 为什么会有如下的情况，需要另记了
-执行 
+执行
 
 ``` sql
 select
@@ -149,10 +147,10 @@ limit 2;
 ```
 
 targetColumList不为空
-+  分析bug原因 
++  分析bug原因
 
-经过上面的调试，不管为什么pg在有的情况下, 常数并没有放在targetlist中，有的时候却把常数放在targetlist中，这和pg的实现机制相关  
-pg如何生成自己的targetlist和这个bug的不会产生这个bug，这个bug就是引如cstore出现的，应该在了解了pg的实际情况后在Cstore_fdw的代码中修改  
+经过上面的调试，不管为什么pg在有的情况下, 常数并没有放在targetlist中，有的时候却把常数放在targetlist中，这和pg的实现机制相关
+pg如何生成自己的targetlist和这个bug的不会产生这个bug，这个bug就是引如cstore出现的，应该在了解了pg的实际情况后在Cstore_fdw的代码中修改
 如下：
 
 ``` cpp

@@ -1,6 +1,7 @@
 ---
 layout: post
 title: 一个笔试题
+subtitle: 这个题花了时间很长，首先从理解题目开始就出现的偏差，代码一定不要着急开始写，多想想，就能在没写代码的时候，尽力避开一些陷阱 做这个题的时候，题意理解错了，写了两个不符合题意的答案
 date: 2016-04-07 14:57
 header-img: "img/head.jpg"
 tags:
@@ -14,8 +15,8 @@ The maze consists of N * M grids. Each grid is either empty(represented by '.') 
 
 Unfortunately some sensors on the robot go crazy just before the demo starts. As a result, the robot can only repeats two operations alternatively: keep moving to the right until it can't and keep moving to the bottom until it can't. At the beginning, the robot keeps moving to the right.
 
-rrrrbb..            
-...r....     ====> The robot route with broken sensors is marked by 'r'. 
+rrrrbb..
+...r....     ====> The robot route with broken sensors is marked by 'r'.
 ...rrb..
 ...bb...
 While the FTEs(full-time employees) are busy working on the sensors, you try to save the demo day by rearranging the maze in such a way that even with the broken sensors the robot can reach the exit successfully. You can change a grid from empty to blocked and vice versa. So as not to arouse suspision, you want to change as few grids as possible. What is the mininum number?
@@ -113,10 +114,10 @@ void printvisit(int i, int j, int des){
 		visit[i][j][0] = true;
 	}else{
 		visit[i][j][1] = true;
-	}	
+	}
 }
 int bfs(vector<vector<char>> &maze,int N, int M){
-	// this is wrong answer, 
+	// this is wrong answer,
 	// 广搜的时候搜集的状态，只是撞墙的时候将 'b'变成'.' 而实际上 我们可以把迷宫中的任意'.' 变成'b'
 
 	for(int i=0;i<N;i++){
