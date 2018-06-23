@@ -1,6 +1,7 @@
 ---
 layout: post
-title: mysql一些小tip
+title: MySQL一些小tip
+subtitle: MySQL使用的时候，不少坑，持续整理
 date: 2017-08-18 15:16
 header-img: "img/head.jpg"
 categories: jekyll update

@@ -5,8 +5,8 @@ subtitle: 第一次参与开源社区代码的实践，其中遇到了一个功�
 date: 2016-07-10 09:45
 header-img: "img/head.jpg"
 tags:
-    - DataBase
     - Program
+    - Citus
 ---
 
 ### bug 问题描述

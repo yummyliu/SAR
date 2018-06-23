@@ -1,14 +1,13 @@
 ---
 layout: post
 title: PostgreSQl的VACUUM与MySQL的Purge
+subtitle: 因为实现多版本，需要保留一些旧版本的数据，不同的是保存的位置, 但是同样随时间增长，如果不及时清理，一个表占用的空间会膨胀
 date: 2016-08-25 09:26
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
     - DataBase
 ---
-
-> http://rhaas.blogspot.com/2011/02/mysql-vs-postgresql-part-2-vacuum-vs.html
 
 ### WAL日志
 
@@ -32,8 +31,9 @@ PostgreSQL中没有回滚段表空间，或者其他类似的东西。
 ### 膨胀
 
 因为实现多版本，需要保留一些旧版本的数据，不同的是保存的位置,
-但是同样随时间增长，如果不及时清理，一个表占用的空间会 bloat。
+但是同样随时间增长，如果不及时清理，一个表占用的空间会膨胀。
 比如存在一个长事务，或者Vacuum和Purge清理的速度跟不上。
 在PostgreSQL8.3之后，VACUUM在后台开始使用多进程的方式来自动清理
 Mysql的Purge是单线程，但是Percona Server等Mysql的其他分支，提供了多线程的方式
 
+[ref](http://rhaas.blogspot.com/2011/02/mysql-vs-postgresql-part-2-vacuum-vs.html)
