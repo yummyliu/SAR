@@ -1,17 +1,13 @@
 ---
 layout: post
-title: 数据库表结构类型
+title: 数据库实现——表的存储类型
+subtitle: 主要有两种，索引组织表和堆表，另外有个聚簇表，主要是如果有一些表经常会在某些键上join，那么物理上，就把他们放在一起。
 date: 2016-08-04 13:01
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
     - DataBase
 ---
-
-### 表类型
-
-主要有两种，索引组织表和堆表，另外有个聚簇表，主要是如果有一些表经常会在某些键上join，
-那么物理上，就把他们放在一起。
 
 #### 索引组织表
 

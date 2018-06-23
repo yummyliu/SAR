@@ -7,7 +7,6 @@ header-img: "img/head.jpg"
 categories: jekyll update
 tags:
   - Paper
-  - DataBase
 typora-root-url: ../../yummyliu.github.io
 ---
 

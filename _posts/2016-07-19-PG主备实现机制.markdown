@@ -1,6 +1,7 @@
 ---
 layout: post
 title: 数据库复制机制与PG
+subtitle: 容灾，备份以及提高整体查询吞吐
 date: 2016-07-19 10:41
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -8,27 +9,26 @@ tags:
     - DataBase
 ---
 
-#### 数据库复制
 
-Replication is one of the most popular features used in RDBMS’s today.   
-Replication is used for **disaster recovery purposes** (i.e. backup or warm 
-stand-by servers),reporting systems where query activity is offloaded onto 
-another machine to **conserve resources** on the transactional server,and scale-out 
-architectures that use sharding or other methods to **increase overall 
-query performance and data throughput**.   
+> Replication is one of the most popular features used in RDBMS’s today.
+> Replication is used for **disaster recovery purposes** (i.e. backup or warm
+> stand-by servers),reporting systems where query activity is offloaded onto
+> another machine to **conserve resources** on the transactional server,and scale-out
+> architectures that use sharding or other methods to **increase overall
+> query performance and data throughput**.
+> 
+> 总的来说就是可以容灾与提高负载能力,然而实现的方式有很多种，基于语句的，基于行的，基于预写式日志的
 
-总的来说就是可以容灾与提高负载能力,然而实现的方式有很多种，基于语句的，基于行的，基于预写式日志的
-
-#### WAL log 
+#### WAL log
 
 预写式日志（Write-ahead logging，缩写 WAL）是关系数据库系统中用于提供**原子性和持久性**
 （ACID属性中的两个）的一系列技术。在使用WAL的系统中，所有的修改在提交之前都要先写入log
-文件中。log文件中通常包括redo和undo信息。这样做的目的可以通过一个例子来说明。  
+文件中。log文件中通常包括redo和undo信息。这样做的目的可以通过一个例子来说明。
 
 假设一个程序在执行某些操作的过程中机器掉电了。在重新启动时，程序可能需要知道当时执行的
 操作是成功了还是部分成功或者是失败了。如果使用了WAL，程序就可以检查log文件，并对突然掉
 电时计划执行的操作内容跟实际上执行的操作内容进行比较。在这个比较的基础上，程序就可以决
-定是撤销已做的操作还是继续完成已做的操作，或者是保持原样。  
+定是撤销已做的操作还是继续完成已做的操作，或者是保持原样。
 
 WAL允许用in-place方式更新数据库。另一种用来实现原子更新的方法是[shadow paging][shadowpages]，
 它并不是in-place方式。这种方式是新开辟的一空间来修改改好后直接替换。用in-place方式做更新的主
@@ -39,31 +39,31 @@ WAL允许用in-place方式更新数据库。另一种用来实现原子更新的
 #### PG的复制
 
 Master上的所有对象和数据的操作，都会被发送到slave端的wal日志中，PG默认是异步的方式，
-如果是同步的话，master会等到salve返回完成的消息，然后才提交日志，但如果是ReadOnly 
+如果是同步的话，master会等到salve返回完成的消息，然后才提交日志，但如果是ReadOnly
 tranction或者tranction rollback就不需要等反馈消息了，所以等待针对的是需要两阶段提交的动作
 
 PG中目前没有提供复制的时候的过滤器，所以主从复制是完全的复制。Slave端然后应用WAL日志，
 直接写磁盘上的表数据，这比起基于语句来的又快又安全，因为基于语句的可能在不同机器上执行结果不同，
-比如这样 `INSERT INTO table (column) VALUES (SELECT function());` 可能得到不同的结果  
+比如这样 `INSERT INTO table (column) VALUES (SELECT function());` 可能得到不同的结果
 
 #### PG配置主从复制
 
-1. 创建一个复制的用户   
+1. 创建一个复制的用户
 `CREATE ROLE replica login replication encrypted password 'replica'`
-2. Master的postgresql.conf   
+2. Master的postgresql.conf
 `wal_level = hot_standby`
-3. Master的pg_hba.conf    
+3. Master的pg_hba.conf
 `host    replication     replica     slaveip/32                 trust`
-4. 使用[pg_basebackup][pg_backup]先初始化从库   
+4. 使用[pg_basebackup][pg_backup]先初始化从库
 `pg_basebackup -F p --progress -D $PGDATA -h slaveip -p 5432 -U replica --password`
-5. 新建slave的 revovery.conf   
+5. 新建slave的 revovery.conf
 `cp $PG_HOME/share/recovery.conf.sample $PGDATA/recovery.conf`
-6. Slave的recovery.conf  
-`standby_mode = on  `  
+6. Slave的recovery.conf
+`standby_mode = on  `
 `primary_conninfo = 'host=masterip port=5432 user=replica password=replica' `
-7. Slave的postgresql.conf    
+7. Slave的postgresql.conf
 `hot_standby = on `
-8. 启动Slave，启动Master 
+8. 启动Slave，启动Master
 
 如下是我在本机两个目录下配置的主从复制,配置好后发现wal reveiver, wal sender startup进程
 
@@ -96,7 +96,7 @@ PG中目前没有提供复制的时候的过滤器，所以主从复制是完全
 
 #### Postgresql与Mysql的实现机制比较
 
-+ Mysql 提供基于语句的和基于行的两种方式复制，PG只有基于WALlog一种；  
++ Mysql 提供基于语句的和基于行的两种方式复制，PG只有基于WALlog一种；
 大家都知道基于行和wallog的更加安全可靠，但是在Mysql中比起基于语句的，基于行的会产生更大的日志
 + 对于数据丢失，Mysql5.5提供了半同步的选项，PG提供了完全的同步复制选项
 + 对于复制过滤，Mysql在slave端提供了数据过滤，PG则没有过滤器
