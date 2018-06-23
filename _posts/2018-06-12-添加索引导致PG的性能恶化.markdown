@@ -5,7 +5,7 @@ date: 2018-06-12 10:30
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-  - PG
+  - PostgreSQL
 ---
 
 我们都知道添加索引是有性能损失的——数据更新会变慢，index会占用额外的空间；我们时常会由此删掉一些不用的索引；

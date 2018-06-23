@@ -5,7 +5,7 @@ date: 2016-07-18 10:32
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-    - DB
+    - DataBase
 ---
 
 #### PG物理存储

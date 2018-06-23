@@ -5,7 +5,7 @@ date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-    - PG
+    - PostgreSQL
 ---
 
 Index可以加速查询，但是也有一些缺点，需要避免；

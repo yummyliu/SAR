@@ -5,7 +5,7 @@ date: 2018-05-31 15:43
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-   - DB
+   - DataBase
 ---
 
 # 时序数据库

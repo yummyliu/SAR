@@ -4,7 +4,7 @@ title: 分布式存储系统
 date: 2015-12-24 10:20
 categories: jekyll update
 tags:
-    - code
+    - Program
 ---
 
 ##发现了个百度脑图挺好用的，整理了一下分布式存储系统的一些问题

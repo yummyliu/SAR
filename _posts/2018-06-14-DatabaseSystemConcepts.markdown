@@ -6,7 +6,7 @@ date: 2018-06-14 13:46
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-    - DB
+    - DataBase
     - PostgreSQL
 typora-root-url: ../../SAR
 ---

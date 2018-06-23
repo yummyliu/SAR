@@ -5,7 +5,7 @@ date: 2016-08-25 09:26
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-    - DB
+    - DataBase
 ---
 
 > http://rhaas.blogspot.com/2011/02/mysql-vs-postgresql-part-2-vacuum-vs.html

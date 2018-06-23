@@ -5,7 +5,7 @@ date: 2018-03-30 15:13
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-    - PG
+    - PostgreSQL
 ---
 
 

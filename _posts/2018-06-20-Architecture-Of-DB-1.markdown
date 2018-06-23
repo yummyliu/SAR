@@ -6,8 +6,8 @@ date: 2018-05-20 20:45
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-  - paper
-  - DB
+  - Paper
+  - DataBase
 typora-root-url: ../../yummyliu.github.io
 ---
 

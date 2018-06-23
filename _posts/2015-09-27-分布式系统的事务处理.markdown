@@ -4,7 +4,7 @@ title:  "分布式系统的事物处理-2pc-paxos等"
 date:   2015-09-27 18:00
 categories: jekyll update
 tags:
-    - code
+    - Program
 ---
 
 ### 分布式处理事务要解决的问题

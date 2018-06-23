@@ -5,8 +5,8 @@ date: 2018-06-01 09:12
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-   - PG
-   - tool
+   - PostgreSQL
+   - Tool
 ---
 
 # pgwatch2简介

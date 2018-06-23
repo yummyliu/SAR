@@ -5,7 +5,7 @@ date: 2018-03-06 14:14
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-    - PG
+    - PostgreSQL
 ---
 
 作为一个DBA，如果某一个库，压力过大，经常需要做数据迁移的工作，来拆表；比较简单的方式，就是使用COPY迁移一个表的数据，到其他库中。

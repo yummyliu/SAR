@@ -4,7 +4,7 @@ title: postgresql各种scan
 date: 2016-06-17 14:14
 header-img: "img/head.jpg"
 tags:
-    - DB
+    - DataBase
 ---
 
 ### 概述

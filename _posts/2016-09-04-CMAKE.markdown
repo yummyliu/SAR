@@ -5,7 +5,7 @@ date: 2016-09-04 22:59
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-    - tool
+    - Tool
 ---
 
 # NOTE

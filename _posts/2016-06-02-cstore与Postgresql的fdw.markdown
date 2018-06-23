@@ -4,7 +4,7 @@ title: cstore与Postgresql的fdw
 date: 2016-06-02 14:32
 header-img: "img/head.jpg"
 tags:
-    - DB
+    - DataBase
 ---
 
 #### 概述
