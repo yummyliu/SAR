@@ -7,6 +7,7 @@ header-img: "img/head.jpg"
 categories: jekyll update
 tags:
     - DataBase
+typora-root-url: ../../yummyliu.github.io
 ---
 
 
@@ -67,24 +68,6 @@ PG中目前没有提供复制的时候的过滤器，所以主从复制是完全
 `hot_standby = on `
 8. 启动Slave，启动Master
 
-如下是我在本机两个目录下配置的主从复制,配置好后发现wal reveiver, wal sender startup进程
-
-```
-1008     469050  0.0  0.0 265532 13136 pts/0    S    13:57   0:00 /home/liuyangming/postgresql-9.5.3/build/bin/postgres -D newdata
-1008     469052  0.0  0.0 265652  2596 ?        Ss   13:57   0:00 postgres: checkpointer process
-1008     469053  0.0  0.0 265532  2332 ?        Ss   13:57   0:00 postgres: writer process
-1008     469054  0.0  0.0 265532  5284 ?        Ss   13:57   0:00 postgres: wal writer process
-1008     469055  0.0  0.0 265952  1932 ?        Ss   13:57   0:00 postgres: autovacuum launcher process
-1008     469056  0.0  0.0 120540  1024 ?        Ss   13:57   0:00 postgres: stats collector process
-1008     469169  0.3  0.0 305564 39688 pts/0    S    14:10   0:00 /home/liuyangming/postgresql-9.5.3/build/bin/postgres -D newdata2
-1008     469170  0.1  0.0 305648  1652 ?        Ss   14:10   0:00 postgres: startup process   recovering 000000010000000000000003
-1008     469171  0.9  0.0 310316  2220 ?        Ss   14:10   0:00 postgres: wal receiver process   streaming 0/3000220
-1008     469172  0.1  0.0 266084  2548 ?        Ss   14:10   0:00 postgres: wal sender process replica 127.0.0.1(52917) streaming 0/3000220
-1008     469173  0.0  0.0 305564  1104 ?        Ss   14:10   0:00 postgres: checkpointer process
-1008     469174  0.0  0.0 305564  1208 ?        Ss   14:10   0:00 postgres: writer process
-1008     469178  0.0  0.0 103328   888 pts/0    S+   14:11   0:00 grep postgres
-```
-
 #### 实现机制
 
 参与到PG的复制工作的有三个进程,其相关工作内部原理，这有一篇好文:[PostgreSQL PG主备流复制机制][standby1]
@@ -98,11 +81,11 @@ PG中目前没有提供复制的时候的过滤器，所以主从复制是完全
 
 #### Postgresql与Mysql的实现机制比较
 
-+ Mysql 提供基于语句的和基于行的两种方式复制，PG只有基于WALlog一种；
++ 对于复制级别，Mysql 提供基于语句的和基于行的两种方式复制，PG只有基于WALlog一种；
 大家都知道基于行和wallog的更加安全可靠，但是在Mysql中比起基于语句的，基于行的会产生更大的日志
-+ 对于数据丢失，Mysql5.5提供了半同步的选项，PG提供了完全的同步复制选项
-+ 对于复制过滤，Mysql在slave端提供了数据过滤，PG则没有过滤器
-+ MYsql和PG都是单线程复制
++ 对于数据丢失，Mysql5.5提供了半同步的选项，PG提供了完全的同步复制选项；
++ 对于复制过滤，Mysql在slave端提供了数据过滤，PG则没有过滤器；
++ 对于并发复制，Mysql和PG都是单线程复制；
 + 复制监控，Mysql提供一些 SHOW的命令来查看复制的状态，PG9.0之后提供了一些函数来得到主从的不同
 + 容错与负载均衡，PG社区中有pgPool，Mysql5.5企业版提供连接池，而其他功能则是需要第三方的产品
 + 另外PG独特的概念[timeline][timeline]，类似于github的分支一样，可以让我们恢复到任意时间点
