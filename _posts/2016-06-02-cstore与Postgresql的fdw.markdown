@@ -4,34 +4,31 @@ title: cstore与Postgresql的fdw
 date: 2016-06-02 14:32
 header-img: "img/head.jpg"
 tags:
-    - DataBase
+    - CitusDB
+    - PostgreSQL
 ---
 
 #### 概述
 
 创建PG的插件的方式分为两种，一种利用hook，一种编写C函数然后和数据库关联。而FDW插件属于后一种。
-实现FDW需要实现两个C函数，Handler和 Validator （可选）。然后写一个control文件，control文件是在create extension加载的文件，根据这个文件，PG去寻找对应的sql文件，在 create extension … 的时候调用，执行相应的sql文件来建立和数据库的关联。比如cstore_fdw.sql文件内容：
-![cstorefdwdql/image/cstorefdwsql.png)
+实现FDW需要实现两个C函数，Handler和 Validator （可选）。然后写一个control文件，control文件是在create extension加载的文件，根据这个文件，PG去寻找对应的sql文件，在 `create extension … ` 的时候调用，执行相应的sql文件来建立和数据库的关联。比如cstore_fdw.sql文件内容：
+![cstorefdwdql](/image/cstorefdwsql.png)
  	完成fdw的开发工作，主要的工作就是实现两个C函数，就是用户自定义函数的编写，而其中Handler函数的返回是一个结构体，其中包含很多函数指针，如下：
-![fdwroutine/image/fdwroutine.png)
-
-
+![fdwroutine](/image/fdwroutine.png)
 
 #### 详述
 
 对于外表的scan是必须要实现的方法，同时也支持了对外表的其他操作，择需而定。
 
-fdw的回调函数GetForeignRelSize, GetForeignPaths, GetForeignPlan, and PlanForeignModify 必须和pg的planner运行机制相符。
+fdw的回调函数GetForeignRelSize, GetForeignPaths, GetForeignPlan, 和 PlanForeignModify 必须和pg的planner运行机制相符。
 以下就是他们要做到的东西
 
-note：
-1、root和baserel的信息能够减少必须要从外部表获得的信息数量，从而降低消耗。
-baserel 是 RelOptInfo 类型
-baserel->baserestrictinfo 是一个链表其中，都是Restrictinfo 类型，
-Restrictinfo类型 在pg的relation.h文件中。
-和sql中的WHERE和join/on相关。相当于AND类型，所以使用这个信息来过滤元素，达到优化。
-如果对于一个基本表，那么会出现在基本表的baserestrictinfo中
-多个表就是在joininfo中，总之就是用来过滤的。
+> note：root和baserel的信息能够减少必须要从外部表获得的信息数量，从而降低消耗。
+> baserel 是 RelOptInfo 类型
+> baserel->baserestrictinfo 是一个链表。其中都是Restrictinfo 类型，
+> Restrictinfo类型 在pg的relation.h文件中。和sql中的WHERE和join/on相关。相当于AND类型，所以使用这个信息来过滤元素，达到优化。
+> 如果对于一个基本表，那么会出现在基本表的baserestrictinfo中
+> 多个表就是在joininfo中，总之就是用来过滤的。
 
 ##### 关键函数
 可参考[funcs][funcs]
@@ -54,7 +51,7 @@ void GetForeignPaths (	PlannerInfo *root,
 ```
 生成外部表扫描的路径，可能有多条路径，每条路径要有相应的cost。调用create_foreign_path来生成一个ForeignPath结构，然后add_path添加到baserel->pathlist中
 ForeignPath结构如下:
-![fdwpath/image/fdwpath.png)
+![fdwpath](/image/fdwpath.png)
 Cstoregetforeignpath
 
 从进程的Recache中取到foreigntableid，对应的RelationData，double check
