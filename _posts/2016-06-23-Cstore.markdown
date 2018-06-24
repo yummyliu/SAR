@@ -1,6 +1,7 @@
 ---
 layout: post
 title: Cstore
+subtitle: citusdb开源的列存扩展插件
 date: 2016-07-05 09:18
 header-img: "img/head.jpg"
 tags:
@@ -44,7 +45,7 @@ stripe footer 。
 
 
 #### table data file
-![csoredatafile/image/cstore-file-layout.jpg)
+![csoredatafile](/image/cstore-file-layout.jpg)
 其由很多stripe构成；
 每个stripe中是按列存放的，
 每列数据包括exists序列、 value序列 物理上，exists序列是连续存放的，同样，value序列也是连续存放的，放在exists后面;
