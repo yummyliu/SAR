@@ -7,6 +7,8 @@ header-img: "img/head.jpg"
 categories: jekyll update
 tags:
     - DataBase
+    - PostgreSQL
+    - MySQL
 ---
 
 ### WAL日志

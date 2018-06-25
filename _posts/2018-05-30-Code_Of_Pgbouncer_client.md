@@ -1,6 +1,7 @@
 ---
 layout: post
-title: 
+title: Pgboucner代码解析——Client
+subtitle: 这两个模块主要是用来处理Pgbouncer前后交互的消息，其中定义了一些回调函数，不同的条件下触发相应的handler；
 date: 2018-06-09 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -8,10 +9,6 @@ tags:
     - PostgreSQL
     - Pgbouncer
 ---
-
-### Client & Server
-
-这两个模块主要是用来处理Pgbouncer前后交互的消息，其中定义了一些回调函数，不同的条件下触发相应的handler；
 
 ###### Client
 

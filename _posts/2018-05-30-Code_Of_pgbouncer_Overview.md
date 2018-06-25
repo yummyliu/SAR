@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Pgbouncer实现概览
+title: Pgbouncer代码解析——实现概况
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update

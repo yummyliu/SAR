@@ -1,7 +1,7 @@
 ---
 layout: post
-title: Pgbouncer的信息传输通道--Sbuf
-subtitle: Pgbouncer的Sbuf与异步IO
+title: Pgbouncer代码解析--Sbuf
+subtitle: Pgbouncer的信息传输通道，与异步IO
 date: 2018-06-10 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
