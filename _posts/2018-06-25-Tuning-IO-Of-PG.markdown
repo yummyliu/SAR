@@ -147,6 +147,10 @@ VACUUM和ANALYZE需要全表扫描来对表做维护操作，详细情况可以�
 
 
 
+[ref](https://severalnines.com/blog/tuning-io-operations-postgresql)
+
+[ref](https://www.postgresql.org/docs/10/static/wal-configuration.html)
+
 
 
 
