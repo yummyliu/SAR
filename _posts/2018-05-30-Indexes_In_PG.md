@@ -5,7 +5,7 @@ date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-    - PG
+    - PostgreSQL
 ---
 
 数据库的索引是提高性能的关键。如果没有索引，scan只能seq scan; pg中常用的索引有 B-tree, Hash, GiST, SP-GiST, GIN 和 BRIN;

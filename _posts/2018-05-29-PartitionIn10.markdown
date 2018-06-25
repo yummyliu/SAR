@@ -5,7 +5,7 @@ date: 2018-05-29 15:13
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-    - PG
+    - PostgreSQL
 ---
 
 # Table Partition 

@@ -5,7 +5,8 @@ date: 2016-07-18 10:32
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-    - DB
+    - DataBase
+typora-root-url: ../../yummyliu.github.io
 ---
 
 #### PG物理存储
@@ -21,10 +22,10 @@ tags:
 ```
 
 + fsm: free space map of this relation
-+ vm:  visibility map ,track which pages are known to have no dead tuples
++ vm:  visibility map，track which pages are known to have no dead tuples
 和mvcc相关
 + 另外 Unlogged tables and indexes 还有一个文件以init为后缀
-init: The initialization fork is an empty table or index of the appropriate type. When an unlogged table must be reset to empty due to a crash, the initialization fork is copied over the main fork, and any other forks are erased (they will be recreated automatically as needed).
+init: The initialization fork is an empty table or index of the appropriate type. When an unlogged table must be reset to empty due to a crash, the initialization fork is copied over the main fork, and any other forks are erased (they will be recreated automatically as needed)。
 
 ##### 页布局
 
@@ -35,14 +36,14 @@ init: The initialization fork is an empty table or index of the appropriate type
 > table中,item代表一行row    
 > index中,item代表一个索引项.  
 
-表和索引存储在一个固定大小页的数组中，大小一般为8KB（可以在编译期指定不同的page size） 
+表和索引存储在一个固定大小页的数组中，大小一般为8KB（可以在编译期指定不同的page size）
 在表中，所有的page逻辑上都是相同的，所以一个特定的item可以存在任何page中，  
 在索引中，第一个page一般被认为是metapage，保存的是控制信息，   
 在索引中，可能有不同类型的page，取决于索引访问方法。  
 
 ###### Page
 
-![page/image/heap_file_page.png)
+![page](/image/heap_file_page.png)
 Pageheader后面的items是一些(offset,length)对，指向真正的数据位置  
 指向一个item的指针叫做 CTID，包含一个页号和item的索引
 
@@ -61,11 +62,11 @@ sales_price | 0.00
 但是这并不意味着pg的列值限制在8kb内，有一个TOAST机制来处理这一情况
 
 ###### Page数据结构
-![pgae/image/pagelayout.jpg)
+![page](/image/pagelayout.jpg)
 ###### PageHeaderData
-![header/image/pageheaderdata.jpg)
+![header](/image/pageheaderdata.jpg)
 ###### HeapTupleHeaderData 
-![pgae/image/heaptupleheader.jpg)
+![pgae](/image/heaptupleheader.jpg)
 > 得到数据库底层存储页的内容, 只有超级用户有权限使用
 
 ##### pageinspect

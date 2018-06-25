@@ -6,7 +6,7 @@ date: 2016-08-03 20:54
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-    - DB
+    - Database
 ---
 
 PostgreSQL和MySQL之间有很大的不同，在评估过两者不同，并做好权衡后决定，才是明智的；这里提供了一个两者之间经常被评估的特性：

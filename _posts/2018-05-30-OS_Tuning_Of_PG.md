@@ -5,7 +5,7 @@ date: 2018-03-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-    - PG
+    - PostgreSQL
 ---
 
 # PostgreSQL 操作系统调优

@@ -1,10 +1,11 @@
 ---
 layout: post
-title: 学习postgresql过程的碎片知识(持续添加)
+title: postgresql的Tips
+subtitle: 每个数据库都不太一样，总有各自使用时需要注意的问题；和另一篇Mysql的tips类似，本文持续整理平时使用PostgreSQL过程中遇到的小问题小技巧
 date: 2016-07-09 23:25
 header-img: "img/head.jpg"
 tags:
-    - DB
+    - DataBase
 ---
 
 

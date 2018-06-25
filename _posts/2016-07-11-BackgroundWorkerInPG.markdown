@@ -1,14 +1,14 @@
 ---
 layout: post
 title: postgresql创建新进程
+subtitle: 现在需要在现有postgresql进程的基础上，另加上一个服务进程，来做元数据信息同步，首先来整理一下 pg的现有的进程结构，以及相互之间的关系
 date: 2016-07-11 21:07
 header-img: "img/head.jpg"
 header-img: "img/head.jpg"
 tags:
-    - DB
+    - PostgreSQL
+    - Program
 ---
-
-> 现在需要在现有postgresql进程的基础上，另加上一个服务进程，来做元数据信息同步，首先来整理一下 pg的现有的进程结构，以及相互之间的关系
 
 ### 进程简述
 
@@ -33,25 +33,25 @@ bgworker.c        // 维护一个BackgroundWorkerArray,其中维护着后台工�
 bgwriter.c        // 后台写进程的源文件
 checkpointer.c    // 检查点进程，掌控系统的所有的检查点，pg 9.2后新加的
 fork_process.c    // 启动进程工具函数
-pgarch.c          // 预习式日志归档进程的源文件
+pgarch.c          // 预写式日志归档进程的源文件
 pgstat.c          // 统计数据收集进程的源文件
 postmaster.c      // Postmaster
-startup.c         
+startup.c
 syslogger.c       // 系统日志进程的源文件
 walwriter.c       // 预写式日志写进程的源文件
 ```
-看了一天进程启动的代码，想看看在哪个地方可以修改  
-可以创建一个新的后台进程，  
-最终没想到在postgresql 中已经提供了一个Custom Background Workers   
-这是在 postgresql 9.3中新加的 [new feature][bwp]
-开始没有吧bgworker.c和进程对应上，没注意看源文件里的注释啊！！！  
+看了一天进程启动的代码，想看看在哪个地方可以修改
+可以创建一个新的后台进程，
+最终没想到在postgresql 中已经提供了一个Custom Background Workers
+这是在 postgresql 9.3中新加的新特性[background worker][bwp]
+开始没有把bgworker.c和进程对应上，没注意看源文件里的注释啊！！！
 **// POSTGRES pluggable background workers implementation**
 
 ### postgresql 启动流程
 > postgresql 9.5 版本不同顺序不同
 
 虽然找到了接口，附带追了一下postgresql启动创建进程的流程，以下是我简单画了一个流程图，供君指点 :)
-![pgstartup/image/postgres启动.jpg)
+![pgstartup](/image/postgres启动.jpg)
 
 ### 正题 background worker
 
@@ -103,8 +103,8 @@ unit already.
 An elementary sample module is supplied.
 ```
 
-我们将想要添加的功能编译成一个共享库，添加到pg的lib里，配置好，pg启动一个新的bg worker运行我们的程序  
-可以申请访问share_memory的权限，访问数据库的数据，或者直接使用libpg来访问数据库  
+我们将想要添加的功能编译成一个共享库，添加到pg的lib里，配置好，pg启动一个新的bg worker运行我们的程序
+可以申请访问share_memory的权限，访问数据库的数据，或者直接使用libpg来访问数据库
 添加这一个feature，我们就可以利用这一特性做一些我们想要的功能，特别是后台维护性质的任务
 
 ### 编写一个custome background worker
@@ -227,7 +227,7 @@ hello_main(void *main_arg)
         rc = WaitLatch(&MyProc-;>procLatch,
                 WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
                 10000L);
-        ResetLatch(&MyProc-;>procLatch);	
+        ResetLatch(&MyProc-;>procLatch);
         elog(LOG, "Hello World!"); 	/* Say Hello to the world */
     }
     proc_exit(0);
@@ -264,8 +264,8 @@ include $(PGXS)
 
 #### 一句话
 
-在没有这个特性之前，如果我们自己需要创建一个新的后台维护任务，就要自己额外启动一个进程，  
-并管理好该进程的生命周期。有了bgworker之后，pg启动的时候顺带启动了我们自定义的后台任务进程  
+在没有这个特性之前，如果我们自己需要创建一个新的后台维护任务，就要自己额外启动一个进程，
+并管理好该进程的生命周期。有了bgworker之后，pg启动的时候顺带启动了我们自定义的后台任务进程
 并且pgstop顺带stop，更加有整体性
 
 [bwp]: https://wiki.postgresql.org/wiki/What's_new_in_PostgreSQL_9.3#Custom_Background_Workers

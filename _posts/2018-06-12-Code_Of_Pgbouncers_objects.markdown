@@ -6,8 +6,8 @@ date: 2018-06-12 13:35
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-  - PG
-  - Pgbouncers
+  - PostgreSQL
+  - Pgbouncer
 ---
 
 >  本模块实现在不同的list之间，操作pgbouncer的objects

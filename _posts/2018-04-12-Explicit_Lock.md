@@ -5,7 +5,7 @@ date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-    - PG
+    - PostgreSQL
 ---
 
 ​PostgreSQL提供了各种锁定模式来控制对表中数据的并发访问。 锁可用于当MVCC不满足MVCC不满足需求时，由应用程序控制锁定。 此外，大多数PostgreSQL命令会自动获取适当模式的锁定，以确保引用的表不会在执行命令时，被冲突的事务删除或修改。 （例如，当同一个表上有其他操作在执行时，TRUNCATE不能同时执行，所以它会在表上获得排它锁后，执行该操作。）

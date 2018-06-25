@@ -5,7 +5,7 @@ date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-    - PG
+    - PostgreSQL
 ---
 
 ### 关于sequences
@@ -153,7 +153,7 @@ Date:   Wed May 31 16:39:27 2017 -0700
 > END;
 > $$ LANGUAGE 'plpgsql';
 >
-> --- PG10
+> --- in PG10
 > CREATE OR REPLACE FUNCTION multi_nextval(
 >    use_seqname regclass,
 >    use_increment integer

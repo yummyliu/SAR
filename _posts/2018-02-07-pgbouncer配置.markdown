@@ -5,8 +5,8 @@ date: 2018-02-07 10:52
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-    - PG
-    - pgbouncer
+    - PostgreSQL
+    - Pgbouncer
 ---
 
 # pgbouncer

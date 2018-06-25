@@ -1,13 +1,12 @@
 ---
 layout: post
 title: 各种树
+subtitle: 除了一些经常听说的树的类型，其实还有好多树，各个树可以巧妙地解决一些特定的问题
 date: 2016-01-07 23:36
 categories: jekyll update
 tags:
-    - code
+    - Program
 ---
-
-> 除了一些经常听说的树的类型，其实还有好多树，各个树可以巧妙地解决一些特定的问题，这个笔记就用来记这个吧
 
 ### B树
 
