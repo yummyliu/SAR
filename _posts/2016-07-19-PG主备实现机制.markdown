@@ -11,14 +11,8 @@ typora-root-url: ../../yummyliu.github.io
 ---
 
 
-> Replication is one of the most popular features used in RDBMS’s today.
-> Replication is used for **disaster recovery purposes** (i.e. backup or warm
-> stand-by servers),reporting systems where query activity is offloaded onto
-> another machine to **conserve resources** on the transactional server,and scale-out
-> architectures that use sharding or other methods to **increase overall
-> query performance and data throughput**.
-> 
-> 总的来说就是可以容灾与提高负载能力,然而实现的方式有很多种，基于语句的，基于行的，基于预写式日志的
+
+数据库复制机制，可以提高容灾与提高负载能力，然而实现的方式有很多种，基于语句的，基于行的，基于预写式日志的。
 
 #### WAL log
 
@@ -82,13 +76,15 @@ PG中目前没有提供复制的时候的过滤器，所以主从复制是完全
 #### Postgresql与Mysql的实现机制比较
 
 + 对于复制级别，Mysql 提供基于语句的和基于行的两种方式复制，PG只有基于WALlog一种；
-大家都知道基于行和wallog的更加安全可靠，但是在Mysql中比起基于语句的，基于行的会产生更大的日志
+  大家都知道基于行和wal log的更加安全可靠，但是在Mysql中比起基于语句的，基于行的会产生更大的日志
 + 对于数据丢失，Mysql5.5提供了半同步的选项，PG提供了完全的同步复制选项；
 + 对于复制过滤，Mysql在slave端提供了数据过滤，PG则没有过滤器；
 + 对于并发复制，Mysql和PG都是单线程复制；
 + 复制监控，Mysql提供一些 SHOW的命令来查看复制的状态，PG9.0之后提供了一些函数来得到主从的不同
 + 容错与负载均衡，PG社区中有pgPool，Mysql5.5企业版提供连接池，而其他功能则是需要第三方的产品
 + 另外PG独特的概念[timeline][timeline]，类似于github的分支一样，可以让我们恢复到任意时间点
+
+[replicationofPGvsMysql](https://www.theserverside.com/feature/Comparing-MySQL-and-Postgres-90-Replication)
 
 
 [shadowpages]: https://www.quora.com/What-is-shadow-paging-in-dbms
