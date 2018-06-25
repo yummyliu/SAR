@@ -1,6 +1,7 @@
 ---
 layout: post
-title:
+title: PostgreSQL DBA常用的一些管理查询SQL整理
+subtitlle: 频繁重用的代码片段整理，有需要可以看看
 date: 2018-05-30 11:45
 header-img: "img/head.jpg"
 categories: jekyll update

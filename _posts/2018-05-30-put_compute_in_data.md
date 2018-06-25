@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 
+title: 一个例子——compute in SQL or APP ??
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -44,7 +44,7 @@ ALTER TABLE factbook
    ALTER trades
     TYPE BIGINT
    USING REPLACE(trades, ',', '')::BIGINT,
-   
+
    ALTER dollars
     TYPE BIGINT
    USING SUBSTRING(REPLACE(dollars, ',', '') FROM 2)::NUMERIC;
@@ -174,15 +174,15 @@ with diffs as
       where date is not null
    order by date
   )
-select count(*) as days 
+select count(*) as days
 
   from diffs
        left join lateral
-       -- 
+       --
        -- for each row of our "diffs" relation, compute the next
        -- day at which the stock change direction is changing, that is
        -- where a + becomes a - or the other way round
-       -- 
+       --
        (
          select date
            from diffs d2
@@ -207,7 +207,7 @@ order by days desc
    limit 1;
 ```
 
-> left join lateral: 逐个遍历左边的行（左边也可以是一个子查询），在右边引用进行查询；这里左边是一个CTE-diffs；遍历diffs中的每个diff列为'+'的行，进行右边的子查询，对于左边的每一行，找到比当前date大的但是diff不同的列，即，增长停止的列；按照停止列的date分组，统计count(*), 
+> left join lateral: 逐个遍历左边的行（左边也可以是一个子查询），在右边引用进行查询；这里左边是一个CTE-diffs；遍历diffs中的每个diff列为'+'的行，进行右边的子查询，对于左边的每一行，找到比当前date大的但是diff不同的列，即，增长停止的列；按照停止列的date分组，统计count(*),
 
 ##### 另一种解法
 
@@ -215,10 +215,10 @@ order by days desc
 with recursive raising as
 (
    (
-       -- 
+       --
        -- start with the most recent date in our dataset
        -- and prepare our recursive computed data: series
-       -- of increasing dollars values and number of days 
+       -- of increasing dollars values and number of days
        -- in a row of seeing an increase
        --
    select date, dollars, array[dollars] as series, 0 as days
@@ -227,9 +227,9 @@ with recursive raising as
  order by date desc
     limit 1
    )
-   
+
    union all
-    
+
   (
          --
          -- fetch the previous day of factbook data and compute

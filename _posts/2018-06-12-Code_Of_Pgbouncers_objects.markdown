@@ -1,7 +1,7 @@
 ---
 layout: post
-title: Pgbouncer内部对象的管理
-subtitle: Pgbouncer用到的数据结构
+title: Pgbouncer代码解析——内部对象的管理
+subtitle: Pgbouncer内部对象的状态转换与管理
 date: 2018-06-12 13:35
 header-img: "img/head.jpg"
 categories: jekyll update

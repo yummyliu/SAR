@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 
+title: (译)PostgreSQL的Buffer Manager
 date: 2018-05-31 14:36
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -9,6 +9,7 @@ tags:
 typora-copy-images-to: ../image
 typora-root-url: ../../yummyliu.github.io
 ---
+
 
 缓存管理器管理着共享内存和持久存储之间的数据传输，对于DBMS的性能有很重要的影响；PostgreSQL的Buffer Manager工作的十分高效；
 
@@ -398,3 +399,6 @@ ring buffer使用完立马释放掉，使用ring buffer避免一个大表把整�
 checkpointer： 在checkpointing开始的时候，在wal日志中写入一个checkpoint记录，并将脏页刷新；
 
 bgworker：为了减少checkpoint对PostgreSQL性能的影响，bgworker间隔一段时间（默认bgworker_delay:200ms）刷一些page出去（默认bgwriter_lru_maxpages:100pages）；
+
+
+[interdb-8](http://www.interdb.jp/pg/pgsql08.html)

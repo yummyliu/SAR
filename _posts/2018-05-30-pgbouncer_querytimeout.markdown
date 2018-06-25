@@ -1,13 +1,12 @@
 ---
 layout: post
-title: 
+title: PostgreSQL+Pgbouncer架构下的查询超时设置
+subtitle: 超时是架构设计中必须要考虑的问题，当使用多个系统时，可能要考虑不同的超时设置
 date: 2018-05-30 11:43
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
 ---
-
-
 
 pgbouncer设置了query_timeout=60，超时了日志报错（Pooler Error: query_timeout）之后
 关闭了和pgserver的连接，然而此时pg并没有立马结束相应的activity（这就是为什么上午发现的pgb的show server和 psql的pg_stat_activity信息不一致的问题）；
@@ -32,5 +31,7 @@ chat的offline的statement_timeout打开，设为120000；
 pgbouncer的query_timeout关闭，这样pgbouncer不会timeoutquery
 ```
 
-https://www.postgresql.org/docs/current/static/kernel-resources.html#LINUX-MEMORY-OVERCOMMIT
+参考PostgreSQL文档：
+
+[LINUX-MEMORY-OVERCOMMIT](https://www.postgresql.org/docs/current/static/kernel-resources.html#LINUX-MEMORY-OVERCOMMIT)
 

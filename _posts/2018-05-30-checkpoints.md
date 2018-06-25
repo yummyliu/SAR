@@ -1,6 +1,7 @@
 ---
 layout: post
-title: 
+title: PostgreSQL的checkpoint
+subtitle: checkpoint是保证某一时间点的数据已经同步到磁盘中了，这样恢复的时候可以快一些
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update

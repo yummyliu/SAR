@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 
+title: SaltStack安装与测试
 date: 2018-05-30 15:13
 header-img: "img/head.jpg"
 categories: jekyll update

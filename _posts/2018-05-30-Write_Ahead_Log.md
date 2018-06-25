@@ -1,6 +1,7 @@
 ---
 layout: post
-title:
+title: PostgreSQL的wal日志详解
+subtitle: wal日志是PostgreSQL实现原子性和持久性的关键技术，并且基于wal实现了PostgreSQL的各种复制；
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update

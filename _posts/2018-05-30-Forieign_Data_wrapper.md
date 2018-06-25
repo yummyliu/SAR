@@ -8,8 +8,6 @@ tags:
     - PostgreSQL
 ---
 
-
-
 # Foreign data wrapper
 
 ## 使用FDW

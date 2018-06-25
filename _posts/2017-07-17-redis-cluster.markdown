@@ -13,7 +13,7 @@ tags:
 无中心结构, 采用hash槽的方式来分配数据，而不是一致性hash
 分区容忍性: 预先分配slot，有16384个hash槽，通过crc16校验后对16384取模，当发生节点增减的时候，调整slot的分布即可。
 可用性：Master-slave
-一致性（consistency）： 最终一致性，采用gossip协议 
+一致性（consistency）： 最终一致性，采用gossip协议
 
 ## 配置文件
 
@@ -26,7 +26,7 @@ redis-cluster 只能接受单个key的查询，多个key的话，必须是相同
 
 ## smart client
 
-client 必须能够处理 ask redirection, 
+client 必须能够处理 ask redirection,
 
 ## Cluster bus port
 

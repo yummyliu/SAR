@@ -1,6 +1,7 @@
 ---
 layout: post
-title: 
+title: PostgreSQL中的Sequence详解
+subtitle: Sequenece常常作为表的身份列标识，如果对这个不理解，很多工作不能顺畅进行;
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update

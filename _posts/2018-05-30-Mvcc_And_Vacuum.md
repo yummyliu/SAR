@@ -1,6 +1,7 @@
 ---
 layout: post
-title: 
+title: PostgreSQL的MVCC
+subtitle: PostgreSQL的MVCC实现了没有读锁的并发访问
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update

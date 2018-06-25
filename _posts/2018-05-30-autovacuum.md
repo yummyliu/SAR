@@ -1,14 +1,12 @@
 ---
 layout: post
-title: 
+title: PostgreSQL中的autovacuum
 date: 2018-03-30 15:13
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
     - PostgreSQL
 ---
-
-
 
 ### dead tuples
 

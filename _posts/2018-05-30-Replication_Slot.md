@@ -1,6 +1,7 @@
 ---
 ayout: post
-title: 
+title: PostgreSQL中的Replication SLot详解
+subtitle: PostgreSQL中不管是物理复制还是逻辑复制都可能用到Replication Slot，这又是一个关键技术点
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update

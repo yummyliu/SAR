@@ -1,6 +1,7 @@
 ---
 layout: post
-title: 
+title: SQL骚操作——递归查询
+subtitle: 了解一些骚操作，开阔眼界，说不定一些case下，就用上了
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update

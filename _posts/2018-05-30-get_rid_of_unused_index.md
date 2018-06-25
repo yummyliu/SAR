@@ -1,6 +1,7 @@
 ---
 layout: post
-title: 
+title: PostgreSQL去掉不用的index
+subtitle: 索引是有负担的，不用就不要放在系统中
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update

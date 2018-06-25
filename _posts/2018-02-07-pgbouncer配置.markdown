@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 
+title:
 date: 2018-02-07 10:52
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -19,7 +19,7 @@ tags:
 
 ini格式的配置文件，以`;`或者`#`开头的行是注释行，但是在行内的不认为是注释
 
-在配置项里有三个用户，stats_user,admin_user,auth_file中的user; 
+在配置项里有三个用户，stats_user,admin_user,auth_file中的user;
 
 pgboucner自己会维护一个特殊的数据库，stats_user 只能连接pgbouncer数据库 执行 show命令;
 
@@ -50,17 +50,17 @@ auth_file文件的配置如下：
   "username2" "md5abcdef012342345" ...
   ```
 
-+ auth_type : 
++ auth_type :
 
   + pam : ignored auth_file, use `PAM` to authenticate user;
   + hba : use auth_hba_file
   + cert : Use TLS connection
   + md5 : (default); MD5-based passwd check;
-  + plain : (deprecated); 
+  + plain : (deprecated);
   + trust : 不需要认证，但是用户名必须在auth_file中
-  + any : 和trust一样，并且也不需要在auth_file中读取文件。 
+  + any : 和trust一样，并且也不需要在auth_file中读取文件。
 
-+ auth_hba_file 
++ auth_hba_file
 
 + auth_query : 从数据库中查询密码的sql
 
@@ -92,7 +92,7 @@ auth_file文件的配置如下：
 
   每个user-db对的连接池默认大小
 
-+ min_pool_size: 
++ min_pool_size:
 
   连接池中维护的最少连接，为了保证当系统长时间不运行，突然来流量，不用从0开始
 
@@ -126,7 +126,7 @@ auth_file文件的配置如下：
 
 ###访问控制
 
-+ admin_users: 
++ admin_users:
 
   逗号分隔的用户名，这些用户可以运行任何命令；如果auth_type是any，忽略这个配置，因为那样的话，都是任何用户都是adminuser
 

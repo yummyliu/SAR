@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 
+title: 对wal的操作一定要谨慎
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update

@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 
+title: (译) PostgreSQL查询解析
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -276,10 +276,4 @@ Cinner和Couter是内外表扫描的代价，内表需要扫描Nouter次，所�
 ![](/image/fig-3-30.png)
 
 
-
-
-
-
-
-
-
+[interdb-3](http://www.interdb.jp/pg/pgsql03.html)
