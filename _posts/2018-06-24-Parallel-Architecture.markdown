@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 
+title: (译) Parallel Architecture
 date: 2018-05-25 13:59
 header-img: "img/head.jpg"
 categories: jekyll update

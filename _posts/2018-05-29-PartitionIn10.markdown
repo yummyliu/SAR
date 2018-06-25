@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 
+title: PostgreSQL的分区表
 date: 2018-05-29 15:13
 header-img: "img/head.jpg"
 categories: jekyll update
