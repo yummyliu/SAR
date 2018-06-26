@@ -172,3 +172,40 @@ tags:
     ```sql
     select split_part(split_part(application_name,':',1),'-',2) as appname ,left(split_part(query,'FROM',2),100) from pg_stat_activity where usename !='dba' and client_addr = '127.0.0.1' and application_name !='';
     ```
+
++ 删除某几列上重复的记录，只保留ctid或者id或者updatetime等最大的
+
+    ```sql
+    with keys as ( select last_value(id) over (partition by user_id, moment_id, moment_user_id order by updated_time), count(*) over (partition by user_id, moment_id, moment_user_id) as c
+    from tablename)
+    select * from keys where c > 1;
+
+    delete from tablename where id in (select id from keys where c > 1);
+    ```
+
+
++ 批量间隔更新
+
+  ```sql
+  $ cat updateoffset.sql
+
+  WITH updateid AS
+    (SELECT *
+     FROM table_bk
+     OFFSET :offset LIMIT 500)
+  UPDATE table
+  SET created_time = u.created_time
+  FROM updateid u
+  WHERE table.id = u.id;
+
+  for (( i = 0; i < 54; i++ )); do
+  psql -f updateoffset.sql -v offset=$((i*500));
+  Sleep 60;
+  done
+
+  ```
+
+  ​
+
++ ​
+
