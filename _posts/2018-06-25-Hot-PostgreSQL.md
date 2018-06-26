@@ -1,7 +1,7 @@
 ---
 layout: post
 title: (译)Head Only Tuple和Index-Only Scan
-date: 2018-05-30 18:06
+date: 2018-06-26 12:46
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
