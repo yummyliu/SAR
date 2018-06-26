@@ -145,5 +145,3 @@ NewSQL的目标就是，能够提供和NoSql相同的、针对OLTP的读写负�
 7. 可以很好的兼容Postgresql的功能，postgresql的功能和接口基本都可用，odbc,jdbc,oledb,... 等，所以可以方便与第三方工具，BI报表集成时候很容易；
 
 Postgresql + 并行调度 + 分布式事务两阶段提交
-
-以上，参考论文 ：What’s Really New with NewSQL?
