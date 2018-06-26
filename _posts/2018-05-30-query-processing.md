@@ -23,9 +23,17 @@ typora-root-url: ../../yummyliu.github.io
 
    对ParserTree进行语义分析，生成QueryTree
 
+   > 并且可以（但不一定做）一些权限检查和约束检查，放在执行的时候检查更全面
+
 3. Rewriter
 
    基于定义的[规则](https://www.postgresql.org/docs/current/static/rules.html)，进行查询重写
+
+   + 视图展开
+   + 常量计算
+   + 逻辑断言重写
+   + 语义优化，根据一些约束条件，修改语义
+   + 子查询展开
 
 4. Planer
 
