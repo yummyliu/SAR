@@ -1,6 +1,6 @@
 ---
 layout: post
-title: PostgreSQL的主从切换操作记录
+title: （实践）PostgreSQL的主从切换操作记录
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update

@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 调整PostgreSQL的IO性能
+title: (实践)调整PostgreSQL的IO性能
 date: 2018-06-25 20:46
 header-img: "img/head.jpg"
 categories: jekyll update

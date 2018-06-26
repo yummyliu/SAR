@@ -1,6 +1,6 @@
 ---
 layout: post
-title: PostgreSQL+Pgbouncer架构下的查询超时设置
+title: （实践）PostgreSQL+Pgbouncer架构下的查询超时设置
 subtitle: 超时是架构设计中必须要考虑的问题，当使用多个系统时，可能要考虑不同的超时设置
 date: 2018-05-30 11:43
 header-img: "img/head.jpg"

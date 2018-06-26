@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 添加索引误导PostgreSQL的查询计划
+title: （实践）添加索引误导PostgreSQL的查询计划
 subtitle: 大部分的人不知道SELECT的性能也会被一个新的索引影响，大部分人只是认为新索引没有用到是个浪费；这里展示一个添加索引会让性能变坏的case
 date: 2018-06-12 10:30
 header-img: "img/head.jpg"

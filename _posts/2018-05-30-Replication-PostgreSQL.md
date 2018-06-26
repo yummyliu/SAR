@@ -1,7 +1,7 @@
 ---
 ayout: post
-title: PostgreSQL中的Replication SLot详解
-subtitle: PostgreSQL中不管是物理复制还是逻辑复制都可能用到Replication Slot，这又是一个关键技术点
+title: Replication in PostgreSQL
+subtitle: 数据库的复制是可靠性，可用性的保证
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -52,6 +52,12 @@ slot的引入可以解决的这个问题，即使slave断开连接，master就�
 6. 任何`wal_keep_segments`降级为最小，来维护wal。
 
 因此，在物理复制中，使用slot是一个权衡方案。你不需要管理archive，但是需要监控master系统的状态，避免master挂掉。
+
+
+
+
+
+
 
 #### 逻辑复制
 

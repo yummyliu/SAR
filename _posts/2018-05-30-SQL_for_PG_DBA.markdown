@@ -9,10 +9,6 @@ tags:
     - PostgreSQL
 ---
 
-
-
-# 常用命令
-
 +  查看表的大小
 
    ```sql
@@ -49,6 +45,19 @@ tags:
     USING (indexrelid)
     WHERE idx_scan = 0
       AND indisunique IS FALSE order by pg_relation_size(indexrelid);
+      
+    SELECT s.schemaname,
+          s.relname AS tablename,
+          s.indexrelname AS indexname,
+          pg_size_pretty(pg_relation_size(s.indexrelid)) AS index_size
+   FROM pg_catalog.pg_stat_user_indexes s
+      JOIN pg_catalog.pg_index i ON s.indexrelid = i.indexrelid
+   WHERE s.idx_scan = 0      -- has never been scanned
+     AND 0 <>ALL (i.indkey)  -- no index column is an expression
+     AND NOT EXISTS          -- does not enforce a constraint
+            (SELECT 1 FROM pg_catalog.pg_constraint c
+             WHERE c.conindid = s.indexrelid)
+   ORDER BY pg_relation_size(s.indexrelid) DESC;
    ```
 
 + find multiple index
@@ -176,41 +185,11 @@ tags:
 + 删除某几列上重复的记录，只保留ctid或者id或者updatetime等最大的
 
     ```sql
-    WITH counts AS
-      (SELECT 	user_id, a_id, a_user_id,
-      			last_value(id) over (partition BY user_id, aaa_id, aaa_user_id ORDER BY updated_time) as reserve_id,
-    			array_agg(id) over (partition BY user_id, aaa_id, aaa_user_id order BY updated_time)  as ids,
-              	count(*) over (partition BY user_id, aaa_id, aaa_user_id) AS c
-       FROM t1)
-    SELECT unnest(ids) from counts except select  reserve_id  from counts;
+    with keys as ( select last_value(id) over (partition by user_id, moment_id, moment_user_id order by updated_time), count(*) over (partition by user_id, moment_id, moment_user_id) as c
+    from tablename)
+    select * from keys where c > 1;
 
-    WITH counts AS
-      (SELECT 	user_id, moment_id, moment_user_id,
-      			max(id) over (partition BY user_id, moment_id, moment_user_id ) as reserve_id,
-    			array_agg(id) over (partition BY user_id, moment_id, moment_user_id )  as ids,
-              	count(*) over (partition BY user_id, moment_id, moment_user_id) AS c
-       FROM rel_8192_8107.feeds)
-    SELECT unnest(ids) from counts except select  reserve_id  from counts;
-
-
-    WITH candidate as (
-    SELECT id
-    FROM t1
-    WHERE (user_id,
-           aaa_id,
-           aaa_user_id) IN
-        (SELECT user_id,
-                aaa_id,
-                aaa_user_id
-         FROM t1
-         GROUP BY user_id,
-                  aaa_id,
-                  aaa_user_id HAVING count(*) >1)
-        ),
-    reserveids as (
-    	SELECT max(id) as id from candidate
-    )
-    SELECT id as todelete_id from candidate except SELECT id from reserveids;
+    delete from tablename where id in (select id from keys where c > 1);
     ```
 
 

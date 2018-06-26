@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 事务隔离级别
+title: （TODO）事务隔离级别
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -49,5 +49,5 @@ SQL标准和PostgreSQL中实现的事务隔离级别比较：
 
 **NOTE**：在PG里一些数据类型和函数有特殊的事务行为，特别地，对一个sequence的修改，其他事务里面可见，当前事务意外终止，也不会回滚。
 
-
+[TODO](	A Critique of ANSI SQL Isolation Level)
 

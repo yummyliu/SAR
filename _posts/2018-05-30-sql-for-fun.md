@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 一个例子——compute in SQL or APP ??
+title: SQL for Fun(0)
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -8,14 +8,11 @@ tags:
     - PostgreSQL
 ---
 
-### 在SQL中计算，还是在APP中计算
-
-有时同样的业务需求可以在DB，也可以在APP server中计算，如何决定；
-
-+ 计算复杂度；在app server中是水平扩展，在dbserver中是垂直扩展
-+ 数据量；在db端可以节省很多带宽和磁盘IO;
-+ 便利性；SQL不适合复杂的工作；
-
+> ###### 在SQL中计算，还是在APP中计算
+>
+> - 计算复杂度；在app server中是水平扩展，在dbserver中是垂直扩展
+> - 数据量；在db端可以节省很多带宽和磁盘IO;
+> - 便利性；SQL不适合复杂的工作；
 
 
 #### 测试数据

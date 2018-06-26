@@ -1,6 +1,6 @@
 ---
 layout: post
-title: (译) PostgreSQL查询解析
+title: (译) Query Processing
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update

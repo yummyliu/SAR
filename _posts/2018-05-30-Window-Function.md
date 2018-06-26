@@ -1,7 +1,7 @@
 ---
 layout: post
-title: SQL的窗口函数
-subtitle: SQL中的骚操作，对于查询结果进行进一步分析;
+title: 窗口函数
+subtitle: 
 date: 2018-02-05 18:06
 header-img: "img/head.jpg"
 categories: jekyll update

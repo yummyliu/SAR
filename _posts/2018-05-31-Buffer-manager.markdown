@@ -1,6 +1,6 @@
 ---
 layout: post
-title: (译)PostgreSQL的Buffer Manager
+title: (译)Buffer Manager
 date: 2018-05-31 14:36
 header-img: "img/head.jpg"
 categories: jekyll update
