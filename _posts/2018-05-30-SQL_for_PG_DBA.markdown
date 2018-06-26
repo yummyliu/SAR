@@ -176,11 +176,41 @@ tags:
 + 删除某几列上重复的记录，只保留ctid或者id或者updatetime等最大的
 
     ```sql
-    with keys as ( select last_value(id) over (partition by user_id, moment_id, moment_user_id order by updated_time), count(*) over (partition by user_id, moment_id, moment_user_id) as c
-    from tablename)
-    select * from keys where c > 1;
+    WITH counts AS
+      (SELECT 	user_id, a_id, a_user_id,
+      			last_value(id) over (partition BY user_id, aaa_id, aaa_user_id ORDER BY updated_time) as reserve_id,
+    			array_agg(id) over (partition BY user_id, aaa_id, aaa_user_id order BY updated_time)  as ids,
+              	count(*) over (partition BY user_id, aaa_id, aaa_user_id) AS c
+       FROM t1)
+    SELECT unnest(ids) from counts except select  reserve_id  from counts;
 
-    delete from tablename where id in (select id from keys where c > 1);
+    WITH counts AS
+      (SELECT 	user_id, moment_id, moment_user_id,
+      			max(id) over (partition BY user_id, moment_id, moment_user_id ) as reserve_id,
+    			array_agg(id) over (partition BY user_id, moment_id, moment_user_id )  as ids,
+              	count(*) over (partition BY user_id, moment_id, moment_user_id) AS c
+       FROM rel_8192_8107.feeds)
+    SELECT unnest(ids) from counts except select  reserve_id  from counts;
+
+
+    WITH candidate as (
+    SELECT id
+    FROM t1
+    WHERE (user_id,
+           aaa_id,
+           aaa_user_id) IN
+        (SELECT user_id,
+                aaa_id,
+                aaa_user_id
+         FROM t1
+         GROUP BY user_id,
+                  aaa_id,
+                  aaa_user_id HAVING count(*) >1)
+        ),
+    reserveids as (
+    	SELECT max(id) as id from candidate
+    )
+    SELECT id as todelete_id from candidate except SELECT id from reserveids;
     ```
 
 
