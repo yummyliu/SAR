@@ -8,7 +8,7 @@ categories: jekyll update
 tags:
     - DataBase
     - PostgreSQL
-typora-root-url: ../../SAR
+typora-root-url: ../../yummyliu.github.io
 ---
 
 > 数据库解决两个问题：存储和计算；这两个任务能够有效的做好，完备的监控是必须的；本文从三个角度，按照自己的理解，概述一下PostgreSQL：
