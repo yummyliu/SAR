@@ -6,6 +6,7 @@ date: 2018-05-30 11:43
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
+ - Pgbouncer
 ---
 
 pgbouncer设置了query_timeout=60，超时了日志报错（Pooler Error: query_timeout）之后

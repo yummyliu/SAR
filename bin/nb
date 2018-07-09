@@ -1,6 +1,7 @@
 # 创建一个新的博客文件，按照 yyyy-mm-dd-title.markdown创建
-curDir="$(cd "$(dirname "$0")"; pwd)"
-postpath="${curDir}/../_posts"
+#curDir="$(cd "$(dirname "$0")"; pwd)"
+curDir="/Users/liuyangming/yummyliu.github.io"
+postpath="${curDir}/_todoblog"
 if [ $# -lt 1 ]
 then
     echo "missing blogname"
