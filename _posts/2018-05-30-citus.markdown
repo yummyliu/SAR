@@ -204,7 +204,7 @@ CitusDB的SQL查询计划分为两个阶段。
 \! pg_dump -s -t github_events_102072 > /tmp/github_events_102072.sql
 \i /tmp/github_events_102072.sql
 # 在元数据表上，插入一条新的记录，并标记这个shard为inactive，以及shard的新groupid
-insert into pg_dist_placement(shardid , shardstate , shardlength , groupid) values (102073,3,0,1);
+insert into pg_dist_placement(shardid , shardstate , shardlength , groupid) values (102088,3,0,1);
 
 begin;
 # lock old shard
@@ -215,5 +215,53 @@ SELECT master_copy_shard_placement(102073, '10.9.144.141', 5433, '10.9.144.141',
 update pg_dist_placement set shardstate = 3 where shardid = 102073 and groupid =3;
 commit;
 ```
-如果真正实现move，需要考虑锁的问题；
+如果真正实现move，需要考虑锁的问题，其实citus的企业版已经实现了move的方法，但是社区版没有这个功能；
 
+```
+/*
+ * master_move_shard_placement moves given shard (and its co-located shards) from one
+ * node to the other node.
+ */
+Datum
+master_move_shard_placement(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					errmsg("master_move_shard_placement() is only supported on "
+						   "Citus Enterprise")));
+}
+```
+
+经测试：
+
+在两个node上，按照上述方法，创建同一个shard后，新的数据会双写；那么有如下可能的迁移方案
+
+
+
+### 可能的方案:
+
+需要将$4\times64$个shard；扩容到$8\times 32$组中；即，将一个node，拆成两个node；以其中一组为例；
+
+1. 按照上述方法，创建新shard的shema，此时新shard都是inactive的
+
+   ```
+   \! pg_dump -s -t github_events_102072 > /tmp/github_events_102072.sql
+   \i /tmp/github_events_102072.sql
+   # 在元数据表上，插入一条新的记录，并标记这个shard为inactive，以及shard的新groupid
+   insert into pg_dist_placement(shardid , shardstate , shardlength , groupid) values (102088,3,0,1);
+   ```
+
+2. copy it；此时迁移的shard在集群中，有两份双写的数据；
+
+   ```
+   SELECT master_copy_shard_placement(102073, '10.9.144.141', 5433, '10.9.144.141', 5432);
+   ```
+
+3. 将老node上的已经迁移的shard，标记为inactive；经测试，标记为inactive后，老shard片不再写入
+
+   ```
+   update pg_dist_placement set shardstate = 3 where shardid = 102073 and groupid =3;
+   ```
+
+###### 图1 老数据不再更新
+
+![](/image/citus-copy.png)
