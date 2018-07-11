@@ -75,7 +75,7 @@ SELECT * from pg_dist_shard_placement;
 类似于HDFS存储策略，若其中有一个节点宕机了，但是别的节点上存在这个数据，那么就可以将，查询这些数据的请求发到其他有这些数据的节点上。
 如果这个节点是永久宕机，那么rebalance这些数据即可。
 
-### 分布式DDL和DML
+## 分布式DDL和DML
 
 CitusDB是基于PostgreSQL的hook和扩展API开提供分布式功能的。这就允许用户从PostgreSQL丰富的生态圈中受益。比如，
 
@@ -88,7 +88,7 @@ CitusDB是基于PostgreSQL的hook和扩展API开提供分布式功能的。这�
 
 CitusDB中的Distributed Column都有一个列作为Distributed Column，Master维护这个列在每个节点统计信息。
 分布式查询计划优化器可以基于这个信息来优化查询。一般选经常作为连接条件，或者过滤条件的列。
-这样可以减少网络传输的代价，让一些操作下推到单个节点上执行。比如，比较常用的列就是：  
+这样可以减少网络传输的代价，让一些操作下推到单个节点上执行。比如，比较常用的列就是：
 
 1. 时间列
 2. ID列
@@ -97,10 +97,10 @@ CitusDB中的Distributed Column都有一个列作为Distributed Column，Master�
 
 选好数据列后，就是选择Distributed Method：append或者hash。CitusDB同样也支持 range Distribution，但是需要手动设置。
 
-1. Append Distribution  
+1. Append Distribution
 
 从名字上来理解，append Distribution适合于**append-only**的例子，比如，按时间顺序加载的数据，像网站日志这种的。
-append Distribution支持高效的范围查询。  
+append Distribution支持高效的范围查询。
 
 ``` sql
 CREATE TABLE github_events
@@ -114,12 +114,12 @@ CREATE TABLE github_events
     actor jsonb,
     org jsonb,
     created_at timestamp
-) 
+)
 -- DISTRIBUTE BY APPEND (created_at);这种方法是在4.0里，现在已经过时了
 SELECT master_create_distributed_table('github_events', 'created_at', 'append');
 ```
 
-2. Hash Distribution  
+2. Hash Distribution
 
 比如userid这种并没有顺序的列，用户能够实时的分析，插入的case。这样CitusDB维护了每个hash range shard的min/max。当一个行被`insert delete update`的时候，直接找到对应的node，本地执行。这种方式适合于co-located join和等值查询
 
@@ -159,12 +159,12 @@ CREATE TABLE github_events
     actor jsonb,
     org jsonb,
     created_at timestamp
-) 
+)
 -- DISTRIBUTE BY RANGE (repo_id);
 SELECT master_create_distributed_table('github_events', 'repo_id', 'range');
 ```
 
-### 查询执行
+## 查询执行
 
 用户的查询请求，被master node分割成很多的查询片段，被发给每个shard，在每个shard上可以独立执行。这允许CitusDB来将每个查询分布到集群的各个节点上执行，用尽每一个参与节点以及参与节点的每个cpu。将查询请求发给每个节点后，Master负责监视节点的执行以及合并他们的结果，然后返回给用户；
 
@@ -176,7 +176,7 @@ CitusDB的SQL查询计划分为两个阶段。
 
 #### Aggregate Functions
 
-如果是Distribution Column，那么就可以下推到每个节点执行。如果不是，那么需要重新划分底层数据。 
+如果是Distribution Column，那么就可以下推到每个节点执行。如果不是，那么需要重新划分底层数据。
 
 针对这一问题，CitusDB提供了基于**HyperLoglog**算法，来计算非分布式列的近似值
 
@@ -193,7 +193,27 @@ CitusDB的SQL查询计划分为两个阶段。
 两个大表Join ，满足条件 **Distributed Column上的Join，并且表是Hash Distributed **。
 这样Master可以知道哪些shard和哪些shard是匹配的。排除掉不可能结果的shard之间的join。
 
-3. Repartition join 
+3. Repartition join
 
 不满足上述条件的大表Join。增加一个repartition的shuffle过程。
+
+## citus的shard迁移方案
+> citus的社区版不支持Rebalance，也不支持move_shard;只有一个copyshard的方法；我们如果有moveshard的方案，就可以自己控制Rebalance了；这里自己探索了一个简单的方式，move shard；
+
+```
+\! pg_dump -s -t github_events_102072 > /tmp/github_events_102072.sql
+\i /tmp/github_events_102072.sql
+# 在元数据表上，插入一条新的记录，并标记这个shard为inactive，以及shard的新groupid
+insert into pg_dist_placement(shardid , shardstate , shardlength , groupid) values (102073,3,0,1);
+
+begin;
+# lock old shard
+lock shard_old_23425
+# copy 这个shard
+SELECT master_copy_shard_placement(102073, '10.9.144.141', 5433, '10.9.144.141', 5432);
+# 标记老shard为inactive
+update pg_dist_placement set shardstate = 3 where shardid = 102073 and groupid =3;
+commit;
+```
+如果真正实现move，需要考虑锁的问题；
 
