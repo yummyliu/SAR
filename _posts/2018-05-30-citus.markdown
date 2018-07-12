@@ -200,7 +200,7 @@ CitusDB的SQL查询计划分为两个阶段。
 ## citus的shard迁移方案
 > citus的社区版不支持Rebalance，也不支持move_shard;只有一个copyshard的方法；我们如果有moveshard的方案，就可以自己控制Rebalance了；这里自己探索了一个简单的方式，move shard；
 
-```
+```sql
 \! pg_dump -s -t github_events_102072 > /tmp/github_events_102072.sql
 \i /tmp/github_events_102072.sql
 # 在元数据表上，插入一条新的记录，并标记这个shard为inactive，以及shard的新groupid
@@ -239,7 +239,7 @@ master_move_shard_placement(PG_FUNCTION_ARGS)
 
 ### 可能的方案:
 
-需要将$4\times64$个shard；扩容到$8\times 32$组中；即，将一个node，拆成两个node；以其中一组为例；
+需要将$4\times 64 $个shard；扩容到$8\times 32$组中；即，将一个node，拆成两个node；以其中一组为例；
 
 1. 按照上述方法，创建新shard的shema，此时新shard都是inactive的
 
@@ -265,3 +265,81 @@ master_move_shard_placement(PG_FUNCTION_ARGS)
 ###### 图1 老数据不再更新
 
 ![](/image/citus-copy.png)
+
+### 方案中的问题
+
+#### 如果相应shard片正在写入，copy shard的过程中是否有数据不一致？
+
+##### 测试
+
+```sql
+postgres=# select get_shard_id_for_distribution_column('github_events',28229924);
+ get_shard_id_for_distribution_column
+--------------------------------------
+                               102085
+(1 row)
+
+postgres=# select * from pg_dist_placement where shardid = 102085;
+ placementid | shardid | shardstate | shardlength | groupid
+-------------+---------+------------+-------------+---------
+          78 |  102085 |          1 |           0 |       3
+(1 row)
+```
+
+测试方案，将102085分片从 groupid=3 迁移到 groupid=1；迁移过程中，在copy阶段采用事务的方式，执行插入，观察是否成功，以及此时的锁
+
+发现insert等待，；
+
+当copy事务回滚后，insert执行成功，但是，只有groupid=3的成功了，1并没有成功；但确实复制过去了，如图
+
+```
+postgres=# select * from pg_dist_placement where shardid = 102085;
+ placementid | shardid | shardstate | shardlength | groupid
+-------------+---------+------------+-------------+---------
+          78 |  102085 |          1 |           0 |       3
+         101 |  102085 |          3 |           0 |       1
+(2 rows)
+```
+
+![](/image/citus-r.jpeg)
+
+`insert 0 2` 是因为我测试数据是插入两条，一个属于这个shard，一个不属于；
+
+##### 结论
+
+在copy的过程中会对shard加锁（可读不可写）；
+
+##### 附录
+
+当copy成功后，两个shard都是可用的，shardstate=1;
+
+```
+COMMIT
+postgres=# select * from pg_dist_placement where shardid = 102085;
+ placementid | shardid | shardstate | shardlength | groupid
+-------------+---------+------------+-------------+---------
+          78 |  102085 |          1 |           0 |       3
+         101 |  102085 |          1 |           0 |       1
+(2 rows)
+```
+
+> `master_copy_shard_placement`
+>
+> If a shard placement fails to be updated during a modification command or a DDL operation, then it gets marked as inactive. The master_copy_shard_placement function can then be called to repair an inactive shard placement using data from a healthy placement.
+>
+> 我们现在各个分片没有逻辑冗余片，而是采用pg自身的流复制冗余；关于这个copy函数本身的作用是，当有逻辑冗余片损坏是，repair用的；这里迁移的方法就是，手动做一个inactive的坏冗余片，利用这个`master_copy_shard_placement`函数，将数据迁移过来，让后把老的inactive即可；
+
+![](/image/citus-repair.png)
+
+**因此，迁移过程不必一次完成，可以慢慢的一个个观察着迁移；**
+
+### 回滚方案
+
+由于可以灰度的迁移，如果出现问题可以及时回滚；针对某个shard的回滚方案如下：
+
+```sql
+# 其实就是讲新shard片inactive，将老shard片active；可能会有少量数据丢失，可以后期补回来
+update pg_dist_placement set shardstate = 3 where shardid = thisshardid and groupid =newshardgroup;
+update pg_dist_placement set shardstate = 1 where shardid = thisshardid and groupid =oldshardgroup;
+```
+
