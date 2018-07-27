@@ -8,13 +8,14 @@ header-img: "img/head.jpg"
 tags:
     - PostgreSQL
     - Program
+typora-root-url: ../../yummyliu.github.io
 ---
 
-### 进程简述
+## 1. 进程简述
 
-##### 进程
+### 1.1. PG进程
 
-```
+```bash
 /home/liuyangming/postgresql-9.5.3/build/bin/postgres -D data
 postgres: checkpointer process
 postgres: writer process
@@ -24,12 +25,12 @@ postgres: stats collector process
 postgres: liuyangming tpcds [local] EXPLAIN // 响应客户端请求fork的进程，其他为常驻的后台辅助服务进程
 ```
 
-##### 对应文件
+### 1.2. 对应文件
 
 ```
-autovacuum.c      // 系统自动清理进程的源文件
-bgworker.c        // 维护一个BackgroundWorkerArray,其中维护着后台工作进程的列表
-		  // 各个进程都可以访问，postmaster无锁访问，其他进程要或得排它锁才能写，共享锁才能读
+autovacuum.c     // 系统自动清理进程的源文件
+bgworker.c       // 维护一个BackgroundWorkerArray,其中维护着后台工作进程的列表
+		  		// 各个进程都可以访问，postmaster无锁访问，其他进程要或得排它锁才能写，共享锁才能读
 bgwriter.c        // 后台写进程的源文件
 checkpointer.c    // 检查点进程，掌控系统的所有的检查点，pg 9.2后新加的
 fork_process.c    // 启动进程工具函数
@@ -40,22 +41,22 @@ startup.c
 syslogger.c       // 系统日志进程的源文件
 walwriter.c       // 预写式日志写进程的源文件
 ```
-看了一天进程启动的代码，想看看在哪个地方可以修改
-可以创建一个新的后台进程，
-最终没想到在postgresql 中已经提供了一个Custom Background Workers
-这是在 postgresql 9.3中新加的新特性[background worker][bwp]
-开始没有把bgworker.c和进程对应上，没注意看源文件里的注释啊！！！
-**// POSTGRES pluggable background workers implementation**
+看了一天进程启动的代码，想看看在哪个地方可以修改，从而创建一个新的后台进程，
+最终没想到在postgresql 中已经提供了一个Custom Background Workers，这是在 postgresql 9.3中新加的新特性[background worker][bwp]，开始没有把bgworker.c和进程对应上，没注意看源文件里的注释啊！！！
 
-### postgresql 启动流程
+```
+// POSTGRES pluggable background workers implementation
+```
+
+### 1.3. postgresql 启动流程
 > postgresql 9.5 版本不同顺序不同
 
 虽然找到了接口，附带追了一下postgresql启动创建进程的流程，以下是我简单画了一个流程图，供君指点 :)
 ![pgstartup](/image/postgres启动.jpg)
 
-### 正题 background worker
+## 2. background worker
 
-##### postgresql 9.3 commit
+**postgresql 9.3 commit**
 
 ```
 commit da07a1e856511dca59cbb1357616e26baa64428e
@@ -107,9 +108,9 @@ An elementary sample module is supplied.
 可以申请访问share_memory的权限，访问数据库的数据，或者直接使用libpg来访问数据库
 添加这一个feature，我们就可以利用这一特性做一些我们想要的功能，特别是后台维护性质的任务
 
-### 编写一个custome background worker
+### 2.1. 编写一个custome background worker
 
-#### pg 内部bgw相关数据结构代码
+#### 2.1.1 bgw相关数据结构代码
 
 ##### BackgroundWorker结构体
 
@@ -162,10 +163,10 @@ typedetruct BackgroundWorker
     entrypt(worker->bgw_main_arg);
 ```
 
-#### 一个例子 Hello world
+#### 2.1.2. 一个例子 Hello world
 > 创建一个 custome background worker ,循环输出 "hello world"
 
-##### Header file
+##### Header
 
 ``` c
 /*  编写bgw，最少需要添加的头文件，如果需要别的功能再添加别的头文件
@@ -178,7 +179,7 @@ typedetruct BackgroundWorker
 #include "fmgr.h"
 ```
 
-##### Declarations
+##### Declaration
 
 ``` c
 /* Essential for shared libs! */
@@ -259,13 +260,13 @@ include $(PGXS)
 
 #### New feature
 
-除此之外,在pg9.4之后添加了新的特性，动态加载bgworker,以插件的方式, create extension 具体例子可以参考，pg 源码的 src/test/modules/worker_spi
+除此之外,在pg9.4之后添加了新的特性，动态加载bgworker,以插件的方式, create extension 具体例子可以参考源码的 src/test/modules/worker_spi
 
 
-#### 一句话
+### 2.2 一句话
 
 在没有这个特性之前，如果我们自己需要创建一个新的后台维护任务，就要自己额外启动一个进程，
 并管理好该进程的生命周期。有了bgworker之后，pg启动的时候顺带启动了我们自定义的后台任务进程
 并且pgstop顺带stop，更加有整体性
 
-[bwp]: https://wiki.postgresql.org/wiki/What's_new_in_PostgreSQL_9.3#Custom_Background_Workers
+[bwp]: https://wiki.postgresql.org/wiki/What&#39;s_new_in_PostgreSQL_9.3#Custom_Background_Workers

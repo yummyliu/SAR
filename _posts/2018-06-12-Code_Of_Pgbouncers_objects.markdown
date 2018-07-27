@@ -12,17 +12,76 @@ tags:
 
 >  本模块实现在不同的list之间，操作pgbouncer的objects
 
-#### Objects
+# Objects
+
+## AAtree
 
 ```c
+/**
+ * Tree header, for storing helper functions.
+ */
+struct AATree {
+	struct AANode *root;
+	int count;
+	aatree_cmp_f node_cmp;
+	aatree_walker_f release_cb;
+};
+/**
+ * Tree node.  Embeddable, parent structure should be taken
+ * with container_of().
+ *
+ * Techinally, the full level is not needed and 2-lowest
+ * bits of either ->left or ->right would be enough
+ * to keep track of structure.  Currently this is not
+ * done to keep code simple.
+ */
+struct AANode {
+	struct AANode *left;	/**<  smaller values */
+	struct AANode *right;	/**<  larger values */
+	int level;		/**<  number of black nodes to leaf */
+};
+
 extern struct AATree user_tree;
+```
+
+AAtree是红黑树的变种，通过添加了约束（红节点只能是右节点），减少了树的可能形状；
+
+## StatList
+
+```c
+/**
+ * Header structure for StatList.
+ */
+struct StatList {
+	/** Actual list head */
+	struct List head;
+	/** Count of objects currently in list */
+	int cur_count;
+#ifdef LIST_DEBUG
+	/** List name */
+	const char *name;
+#endif
+};
+
+/** Define and initialize StatList head */
+#ifdef LIST_DEBUG
+#define STATLIST(var) struct StatList var = { {&var.head, &var.head}, 0, #var }
+#else
+#define STATLIST(var) struct StatList var = { {&var.head, &var.head}, 0 }
+#endif
 
 extern struct StatList user_list;
 extern struct StatList pool_list;
 extern struct StatList database_list;
 extern struct StatList autodatabase_idle_list;
 extern struct StatList login_client_list;
+```
 
+带统计信息的双向链表，不同对象的容器；
+
+## Slab
+
+```c
 extern struct Slab *client_cache;
 extern struct Slab *server_cache;
 extern struct Slab *db_cache;
@@ -31,11 +90,17 @@ extern struct Slab *user_cache;
 extern struct Slab *iobuf_cache;
 ```
 
-#### Functions
+预先初始化的对象集合，在后期需要的时候直接从相应cache中获取对象，比如：；
 
-Pgbouncer使用<db,user>可以唯一确定一个pool；每个pguser对应一个pool set `poolForUser_n`；每个pgdatabase对应一个pool set `poolForDatabase_m`；
+```c
+	server = slab_alloc(server_cache);
+	if (!server)
+		return false;
+```
 
-`poolForuser_n ∩ poolForDatabase_m` 这个交集，就是某一个<db-user> 对应的pool；
+# Functions
+
+Pgbouncer使用<db,user>组合可以唯一确定一个pool；每个pguser对应一个pool集合 $poolForUser_n$；每个pgdatabase对应一个pool 集合$poolForDatabase_m$；$poolForuser_n ∩ poolForDatabase_m$ 这个交集，就是某一个<db,user> 对应的pool；
 
 objects模块，提供了若干函数，对pgbouncer的objects进行增删改查
 

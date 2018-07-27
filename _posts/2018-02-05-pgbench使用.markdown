@@ -10,7 +10,7 @@ tags:
 
 # pgbench
 
-###### 简介
+## 简介
 
 - 动作：在pg上，不断运行相同的sql（可以并行执行，sql也可以自己定义），最终计算出tps（transaction per second）。
 
@@ -30,7 +30,7 @@ tags:
   tps = 85.296346 (excluding connections establishing)
   ```
 
-###### 测试
+## 测试
 
 - 初始化数据集：
 
@@ -85,7 +85,7 @@ tags:
   0 85 2465 0 1412881037 919759 740
   ```
 
-###### scaler factor公式
+### scaler factor公式
 
 | Target object                | Scale Formula                |
 | ---------------------------- | ---------------------------- |
@@ -93,7 +93,7 @@ tags:
 | Table(pgbench_accounts)      | 0.0781*Table_Size_Target_MB  |
 | Index(pgbench_accounts_pkey) | 0.4668*Index_Size_Target_MB  |
 
-###### 其他
+### 其他
 
 - tpc-b-like benchmark
 
@@ -125,7 +125,7 @@ tags:
   END;
   ```
 
-###### Custom Script
+### Custom Script
 
 sql文件中，sql语句以换行符作为结束标志；pg10中可以以分号作为结束标志；但是如果要两者兼容，我们换行的时候，加一个分号
 
@@ -187,7 +187,7 @@ sql文件中，sql语句以换行符作为结束标志；pg10中可以以分号�
    interval_start num_transactions sum_latency sum_latency_2 min_latency max_latency [ sum_lag sum_lag_2 min_lag max_lag [ skipped ] ]
    ```
 
-##### NOTE
+## NOTE
 
 1. 测试时间不要太短，要不噪声比较多，至少几分钟，取个平均
 2. 应该关注一下vacuum，对测试效果的影响
