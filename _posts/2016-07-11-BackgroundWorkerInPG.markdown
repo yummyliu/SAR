@@ -270,3 +270,51 @@ include $(PGXS)
 并且pgstop顺带stop，更加有整体性
 
 [bwp]: https://wiki.postgresql.org/wiki/What&#39;s_new_in_PostgreSQL_9.3#Custom_Background_Workers
+
+### 3. bgw开发指导 in osx
+
+#### 3.1 安装开发包
+
+osx上brew没有找到postgresql-server-dev-all包，直接cmm源码安装
+
+```bash
+» pg_config      
+BINDIR = /usr/local/pgsql/bin
+DOCDIR = /usr/local/pgsql/share/doc
+HTMLDIR = /usr/local/pgsql/share/doc
+INCLUDEDIR = /usr/local/pgsql/include
+PKGINCLUDEDIR = /usr/local/pgsql/include
+INCLUDEDIR-SERVER = /usr/local/pgsql/include/server
+LIBDIR = /usr/local/pgsql/lib
+PKGLIBDIR = /usr/local/pgsql/lib
+LOCALEDIR = /usr/local/pgsql/share/locale
+MANDIR = /usr/local/pgsql/share/man
+SHAREDIR = /usr/local/pgsql/share
+SYSCONFDIR = /usr/local/pgsql/etc
+PGXS = /usr/local/pgsql/lib/pgxs/src/makefiles/pgxs.mk
+CONFIGURE =
+CC = gcc
+CPPFLAGS = -DFRONTEND
+CFLAGS = -Wall -Wmissing-prototypes -Wpointer-arith -Wdeclaration-after-statement -Wendif-labels -Wmissing-format-attribute -Wformat-security -fno-strict-aliasing -fwrapv -Wno-unused-command-line-argument -O2
+CFLAGS_SL =
+LDFLAGS = -L../../src/common -Wl,-dead_strip_dylibs
+LDFLAGS_EX =
+LDFLAGS_SL =
+LIBS = -lpgcommon -lpgport -lz -lreadline -lm
+VERSION = PostgreSQL 10.3
+```
+
+#### 3.2 写makefile
+
+简单期间，直接把源码中的例子拿过来
+
+```bash
+cd  ~/go/src/github.com/yummyliu/patrol/commander
+cp ~/src/postgresql-10.3/src/test/modules/worker_spi/* .
+USE_PGXS=1 make
+ll worker_spi.so
+-rwxr-xr-x  1 liuyangming  staff    16K  7 27 13:00 worker_spi.so
+```
+
+#### 3.3 按照自己的需求参考文档开干吧
+
