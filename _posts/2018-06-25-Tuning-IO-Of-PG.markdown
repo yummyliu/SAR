@@ -9,7 +9,14 @@ tags:
 typora-root-url: ../../yummyliu.github.io
 ---
 
-为了确保数据库在指定规模下，有期望的响应时间，需要认证调整一些参数；然而，数据库的性能会因为许多原因变坏，比如基础设施的规模限制，低效地数据库维护策略，不好的SQL代码或者数据库进程配置不当导致不能完全利用硬件（CPU 内存，网络带宽，磁盘IO）性能；
+# 一点废话
+
+为了确保数据库在指定规模下，有期望的响应时间，需要认真调整一些参数；
+然而，数据库的性能会因为许多原因变坏，比如:
+
++ 基础设施的规模限制，
++ 低效地数据库维护策略，
++ 不好的SQL代码或者数据库进程配置不当导致不能完全利用硬件（CPU 内存，网络带宽，磁盘IO）性能；
 
 #### 导致数据库性能下降的原因有哪些？
 
@@ -22,9 +29,9 @@ typora-root-url: ../../yummyliu.github.io
 
 因此，这有很多可能导致数据库性能下降；本文中，主要讲其中最重要的——调整PostgreSQL的IO性能，这是很重要的，特别是在高事务量的OLTP应用中，或者多去大量数据的数据仓库环境中；
 
-​	很多时候，数据库的性能瓶颈就是高IO，确保数据库是针对IO优化的很重要。      
+​	很多时候，数据库的性能瓶颈就是高IO，确保数据库是针对IO优化的很重要。
 
-#### 调整PostgreSQL的IO
+# 调整PostgreSQL的IO
 
 ##### 索引
 
@@ -130,7 +137,7 @@ VACUUM和ANALYZE需要全表扫描来对表做维护操作，详细情况可以�
 + 将表和索引放在不同的表空间中
 + 表空间放在不同的磁盘中
 + pg_wal放在单独的磁盘中
-+ 确保*_cost的配置和底层是相同的
++ 确保`*_cost`的配置和底层是相同的
 + 使用iostat或者mpstat等监控工具，时常关注读写状态；
 
 ##### 批量数据加载的建议
@@ -141,14 +148,14 @@ VACUUM和ANALYZE需要全表扫描来对表做维护操作，详细情况可以�
 + 关闭`full_page_write`
 + 关闭wal归档
 + 关闭`synchronous_commit`
-+ 去掉索引和约束，后面基于很大的work_mem重新创建
++ 去掉索引和约束，后面基于很大的*work_mem*重新创建
 + 如果从csv中加载，调大`maintenance_work_mem`
 + **不要关闭**fsync，尽管这有很大的性能提升，但是会导致数据损坏。
 
 
+## 引用
 
 [ref](https://severalnines.com/blog/tuning-io-operations-postgresql)
-
 [ref](https://www.postgresql.org/docs/10/static/wal-configuration.html)
 
 
@@ -161,5 +168,5 @@ VACUUM和ANALYZE需要全表扫描来对表做维护操作，详细情况可以�
 
 
 
- 
+
 
