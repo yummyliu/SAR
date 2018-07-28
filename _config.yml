@@ -45,15 +45,6 @@ disqus_username: yummyliu
 # Netease settings
 netease_comment: true
 
-
-# Duoshuo settings
-duoshuo_username: yummmyliu
-# Share component is depend on Comment so we can NOT use share only.
-duoshuo_share: true                  # set to false if you want to use Comment without Sharing
-
-
-
-
 # Analytics settings
 # Baidu Analytics
 ba_track_id: 59b5c72c98ed6bb90d190b2bf7cd2cbb
