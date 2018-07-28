@@ -1,8 +1,8 @@
 ---
 layout: post
 title: PostgreSQL浅见
-subtitle: 作为DBA的第六个月，以PostgreSQL为例，梳理一下若干概念
-date: 2018-06-14 13:46
+subtitle: 以PostgreSQL为例，梳理一下数据库实现中的若干概念
+date: 2018-07-14 13:46
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
