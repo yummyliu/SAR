@@ -11,36 +11,51 @@ tags:
 typora-root-url: ../../yummyliu.github.io
 ---
 
-> 数据库解决两个问题：存储和计算；这两个任务能够有效的做好，完备的监控是必须的；本文从三个角度，按照自己的理解，概述一下PostgreSQL：
+> 大部分的应用，说到底都是要处理数据的；而处理数据的需求，大概率会由数据库承担；
+>
+> 作为一个数据库，有两个使命：可靠的存储和高效的计算，这两个任务是不是做好了，完备的监控也是必不可少，否则你对自己的数据岂能放心？因此，本文从三个角度，简述下PostgreSQL是如何完成它的使命的：
 >
 > 1. 有效的存储
->    1. 存储介质
->    2. 存储结构
->    3. 存储冗余
+>    1. 内存管理器（Memory Manager）
+>    2. 缓冲区管理（Buffer Manager）
+>    3. 访问方法（Access Method）
 > 2. 高效的计算
->    1. 单个计算
->    2. 多个计算
+>    1. 过程管理器（Process Manager）
+>    2. 关系查询处理器（Relational Query Processor）
+>       1. 查询解析
+>       2. 查询分析
+>       3. 查询重写
+>       4. 查询优化
+>       5. 查询执行
+>       6. DDL等功能命令
+>    3. 事务性存储管理器（Transactional Storage Manager）
+>       1. 锁管理器（Lock Manager）
+>       2. 日志管理器（Log Manager）
+>    4. 
 > 3. 完备的监控
->    1. 当前的状态
->    2. 历史的状态
+>    1. 系统表
+>    2. DBA监控工具和命令
+> 4. 其他
+>    1. 复制服务
+>    2. 批量加载工具
+
+**图1. 数据库的主要模块（图来自论文Architecture of db）**
 
 ![adb](/image/arch_db.jpeg)
 
-## *有效*的存储
-
-> 先把数据放好
+## 有效的存储
 
 ### 存储介质
 
-###### 内存
+#### 内存
 
-热数据的buffer，pg_prewarm预热
+热数据的buffer，可以用pg_prewarm预热
 
-###### SSD
+#### SSD
 
 有条件的公司，重要的业务放在SSD上，随机IO与顺序IO没太大差别；可以有针对的调整一下`random_page_cost = 1.1`
 
-###### 磁盘
+#### 磁盘
 
 比SSD还冷的数据，放在这，比如每天的备份和归档
 
@@ -486,7 +501,10 @@ pg_stat_*
 
 ##### 监控指标
 
+## 参考文献
+
 [PostgreSQL监控指标整理](http://yummyliu.github.io/jekyll/update/2018/06/01/pgwatch2%E8%A7%A3%E6%9E%90/)
 
-[ref](https://www.cl.cam.ac.uk/teaching/2000/ConcSys/csig2/57.html)
+[**Concurrency Control**](https://www.cl.cam.ac.uk/teaching/2000/ConcSys/csig2/57.html)
 
+[architecture of db](http://db.cs.berkeley.edu/papers/fntdb07-architecture.pdf)
