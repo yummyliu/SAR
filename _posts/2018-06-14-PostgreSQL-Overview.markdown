@@ -474,3 +474,5 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
 [architecture of db](http://db.cs.berkeley.edu/papers/fntdb07-architecture.pdf)
 
 [Adaptive Query Processing](http://www.vldb.org/conf/2007/papers/tutorials/p1426-deshpande.pdf)
+
+[Pull&push](https://arxiv.org/abs/1610.09166)
