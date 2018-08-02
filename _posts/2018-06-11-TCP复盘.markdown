@@ -6,12 +6,12 @@ header-img: "img/head.jpg"
 categories: jekyll update
 tags:
   - Network
-typora-root-url: ../../SAR
+typora-root-url: ../../yummmyliu.github.io
 ---
 
-# TCP 状态转换图
+**图1 TCP 状态转换图**
 
-![](/image/tcp.gif)
+![](/../yummyliu.github.io/image/tcp.gif)
 
 ### 3次握手🤝：
 
@@ -167,7 +167,7 @@ listen(fd, backlog);
 >       denial-of-service attacks.
 > ```
 
-
+## 参考文献
 
 [ref](https://www.ibm.com/support/knowledgecenter/en/SSLTBW_2.1.0/com.ibm.zos.v2r1.halu101/constatus.htm)
 

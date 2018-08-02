@@ -6,6 +6,7 @@ date: 2015-09-29 22:23
 categories: jekyll update
 tags:
     - Program
+typora-root-url: ../../yummyliu.github.io
 ---
 
 ### 关于分布式一致性算法的一些言论
@@ -43,7 +44,7 @@ Basic Paxos 中有三个角色，Proposer,Acceptor,Learner。Learner使用最后
 1. 回应Prepare(proposalnumber),如果该proposalnumber比当前的Proposalnumber大，更新min Proposalnumber;
 始终返回accepted proposal 和 value
 2. 回应accept(n,value),若n不必minproposalnumber小，那么更新 min proposalnumber,acceptednumber,acceptedvalue,始终返回当前的min Proposal number
-![Basic Paxos 的详细过程/image/2Basicpaxos.jpg)
+![Basic Paxos 的详细过程](/image/2Basicpaxos.jpg)
 
 ## Multi Paxos
 
@@ -53,7 +54,7 @@ Basic Paxos 中有三个角色，Proposer,Acceptor,Learner。Learner使用最后
 
 > 场景是 现在有好多的server，每个server上都有一个log序列，由于Multi-paxos发送的Prepare中带有了Index，那么现在acceptor节点上的log序列接受了某个Proposer的Prepare的话，记录下来就呈现如下的形式:
 
-![log in acceptor/image/log-in-acceptor.jpg)
+![log in acceptor](/image/log-in-acceptor.jpg)
 
 在Multi-paxos要保证最终的log序列的一致性，某个server接收了Client的一个请求，该server就要执行一致性算法，确认这个请求在log中最终的偏移。
 
@@ -107,7 +108,7 @@ acceptor 查找自己的**log中小于firstUnchoosedInde**x的log entry中,**acc
 
 这样，acceptor能够得知大多说已经被选中的entry,见下图：
 
-![fistunchoosedentry](/image/firsiunchoosedentry.jpg)
+![](/image/firsiunchoosedentry.jpg)
 
 4.Proposer接收的Accept返回值中，加上acceptor的firstunchoosedindex，如果proposer.fist~ > acceptor.first~ 那么就在后台发送Success RPC
 Success(index,v),如果需要会发送很多次

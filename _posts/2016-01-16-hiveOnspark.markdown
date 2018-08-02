@@ -15,7 +15,7 @@ tags:
     hive 有三种执行引擎 mr tez spark
     spark 有三种资源调度策略 standalone mesos yarn
     我要搭建的hive on spark，hive 作为hadoop中数据仓库的组件，其完成HQL到查询计划的生成，具体的执行成为一个spark的job spark执行的时候需要向yarn申请所需要的资源
-
+    
     常规的安装步骤 网上有很多，但是还是看官方文档比较好，自己偷懒找了别人得二手知识，有的时候总是会误导你
 
 ## 一些值得注意的配置
@@ -26,29 +26,29 @@ tags:
 ###### yarn的相关资源参数
 
     **yarn 的资源都是从nodemanager中获得 需要根据各个nodemanager的实际情况配好可用的mem和cpu**
-
+    
     + nodemanager的yarn最大可用内存大小
-
+    
     + nodemanager的虚拟内存/物理内存比率
-
+    
     + nodemanager的cpu核数
-
+    
     + nodemanager的最大可分配cpucore
 
 ###### spark 相关资源参数
 
     **spark在submit的时候 会指定一些参数，这些参数也可以在配置文件中配置**
-
+    
     + driver-memory :
-
+    
     + executor-memory
-
+    
     + executor-cores
-
+    
     + SPARK_WORKER_INSTANCES
-
+    
     + SPARK_WORKER_CORES
-
+    
     + SPARK_WORKER_MEMORY
 
 > First, you should know that 1 Worker (you can say 1 machine or 1 Worker Node) can launch multiple Executors (or multiple Worker Instances - the term they use in the docs).
