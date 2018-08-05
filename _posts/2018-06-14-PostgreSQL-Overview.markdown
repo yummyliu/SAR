@@ -170,11 +170,11 @@ drwx------ 2 postgres postgres  12288 Jun 15 09:19 pg_xact ： commit log
 
 + 353947 : Heap Table
 
-  > 堆表 vs 索引组织表
+  > **堆表 vs 索引组织表**
   >
-  > 堆表，页中有新数据，直接插入进去就行，省去了调整索引的代价；但是索引上没有tmin tmax信息，tuple的事务可见性不知道，虽然可以通过vm来知道部分信息，但是还是不能避免二次读表；
+  > 堆表，插入的时候不需要调整，比上面的快，但是查询的时候就慢了， 相应就不会有二级索引了，因为都是一级索引。可能会有人说了，这样表数据的更新会影响到和该表相关的所有索引，但也只是更新了索引字段的数据才会更新，在PG里，新旧数据放在一起， 放在同一页中,即为产生该数据的一个新版本。但是索引上没有tmin tmax信息，tuple的事务可见性不知道，虽然可以通过vm来知道部分信息，但是还是不能避免二次读表；
   >
-  > 相对应地，索引组织表表是一个有结构的东西，有结构就会有维护结构的代价；但是良好的结构能够提高查询的速度，但是前提是查询时按照这个结构来的；换句话说，索引组织表，对于按照主键来的查询效果比较好，但是如果表上的索引多了，利用二级索引的查询效果就没那么好；
+  > 相对应地，索引组织表表是一个有结构的东西，有结构就会有维护结构的代价；但是良好的结构能够提高查询的速度，但是前提是查询时按照这个结构来的；换句话说，索引组织表，对于按照主键来的查询效果比较好，但是其他二级索引都是基于主键键值的逻辑rowid建立的。因此，二级索引要范围查找数据需要找到主键，然后，按照主键索引来找，这时候有可能就是离散IO，效率似乎就不是很好了。
   >
   > 但是，在大内存中，差别就没那么大了，不同场景可以测试一下；
 
@@ -292,7 +292,7 @@ nestloop、 hash、 sort-merge；PostgreSQL中的join算法还比较全，Mysql�
 
 #### 2.1.6 Executor
 
-##### 2.1.6.1 Pull模型
+##### 2.1.6.1 Pull——demand-driven pipeline 
 
 PostgreSQL等常见的DB中，基本都是Pull模型；
 
@@ -301,7 +301,14 @@ PostgreSQL等常见的DB中，基本都是Pull模型；
 > ​											—— Hellerstein, Architecture of a Database System
 >
 
-每个节点实现`hasNext(), Next()` 接口，从上往下逐级pull。这种模型产生时，也是一开始造出DB系统的年代，那时IO代价比CPU代价高；
+这种模型产生时，也是一开始造出DB系统的年代，那时IO代价比CPU代价高；位于执行计划树顶端的操作，需要tuple的时候，向下面的操作符上请求tuple，以此类推, **pull from top**， 在这个模型中每个operator 都可以作为一个实现一个iterator接口，提供 open next close 的操作
+
+使用pipeline的时候，某些join算法，比如sort-merge 需要在之前对关系进行排序，需要得到全部的tuple，这个时候pipeline就和其冲突了，所以针对pipeline相应的算法也要进行改变。
+主要是join算法：
+
+1. `only one of the inputs to a join is pipelined`：其中一个有索引，那么pipe的表就可以作为probe的，或者两个是有序的，就可以merge；
+
+2. `Both inputs to the join are pipelined`：同样如果有序就好说，否则有个pipeline-join 的算法，存好两个表所有元组在队列中，然后需要建立索引；
 
 在这种模型中，每个tuple都需要一个next调用；其次，这个next的调用往往是一个虚拟函数或者函数指针的方式，因此，这种方式的代码本地性（code locality）也不好；并且会有复制的虚拟函数和函数指针记录的逻辑（book-keeping）；整体CPU代价比较高。
 
@@ -311,7 +318,7 @@ PostgreSQL等常见的DB中，基本都是Pull模型；
 >
 > ![nogoto](/image/nogoto.jpeg)
 
-##### 2.1.6.2 Push
+##### 2.1.6.2 Push——producer driven
 
 在Push中，查询计划中有一些materialization points，也叫pipeline breaks；数据不是从前往后拉，是从后向前推，直到遇到某个pipeline breaks；如下图，原来的执行计划，分成了四段；
 
