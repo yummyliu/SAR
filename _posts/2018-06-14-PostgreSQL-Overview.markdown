@@ -180,7 +180,7 @@ drwx------ 2 postgres postgres  12288 Jun 15 09:19 pg_xact ： commit log
 
 ##### 1.3.2.3 PostgreSQL的页的结构
 
-![h](/image/heap_file_page.png)
+![h](/image/heap_file_page.jpg)
 
 + PageHeader：page中各个部分的偏移
 + iterm，对应的tuple的（offset，length）

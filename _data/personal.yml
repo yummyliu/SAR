@@ -1,0 +1,49 @@
+---
+  name: "Liu Yangming"
+  position: "DBA"
+  company: "Tantan"
+  location: "Beijing, China"
+  email: "sdwhlym@gmail.com"
+  gravatar: "/image/about-me.jpg"
+  bio: "Beware the barrenness of a busy life"
+  #activate the social buttons you like by removing the comment
+  social:
+    google:
+        url: "https://plus.google.com/107588997443390135711"
+        text: "阳明"
+        btnClass: "btn-google"
+        logo: "fa-google"
+    # facebook:
+    #  url: "http://facebook.com/yourid"
+    #  text: "/yourid"
+    #  btnClass: "btn-facebook"
+    #  logo: "fa-facebook"
+    #twitter:
+    #  url: "http://twitter.com/yourid"
+    #  text: "Yummy"
+    #  btnClass: "btn-twitter"
+    #  logo: "fa-twitter"
+    # linkedin:
+    #   url: "https://www.linkedin.com/in/yourid"
+    #   text: "/yourid"
+    #   btnClass: "btn-linkedin"
+    #   logo: "fa-linkedin"
+    github:
+      url: "http://github.com/yummyliu"
+      text: "yummyliu"
+      btnClass: "btn-github"
+      logo: "fa-github"
+    stackoverflow:
+      url: "http://stackoverflow.com/users/4116391/young"
+      text: "young"
+      btnClass: "btn-stackoverflow"
+      logo: "fa-stack-overflow"
+    # soundcloud:
+    #   url: "http://soundcloud.com/yourid"
+    #   text: "/yourid"
+    #   btnClass: "btn-soundcloud"
+    #   logo: "fa-soundcloud"
+
+# Featured Tags
+featured-tags: true                     # whether or not using Feature-Tags
+featured-condition-size: 0              # A tag will be featured if the size of it is more than this condition value

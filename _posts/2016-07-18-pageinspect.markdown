@@ -43,7 +43,7 @@ init: The initialization fork is an empty table or index of the appropriate type
 
 ###### Page
 
-![page](/image/heap_file_page.png)
+![page](/image/heap_file_page.jpg)
 Pageheader后面的items是一些(offset,length)对，指向真正的数据位置  
 指向一个item的指针叫做 CTID，包含一个页号和item的索引
 

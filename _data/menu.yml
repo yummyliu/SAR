@@ -1,0 +1,16 @@
+
+mainmenu:
+  home:
+    url: "/"
+    text: "AllPost"
+    icon_class: "fa-home"
+    #  tags:
+    #      url: "/tags/"
+    #      text: "Tags"
+    #      icon_class: "fa-tags"
+  aboutme:
+    url: "/about/"
+    text: "AboutMe"
+    #    icon_class: "fa-info-circle"
+    icon_class: "fa-user"
+

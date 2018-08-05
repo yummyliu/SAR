@@ -1,13 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
-    {% include head.html %}
-
     <body>
-        {% include header.html %}
+        {% include blog_left.html %}
 
         {{ content }}
-
-        {% include footer.html%}
 
         <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
         <script src="//netdna.bootstrapcdn.com/bootstrap/3.2.0/js/bootstrap.min.js"></script>
@@ -15,5 +11,4 @@
         <script src="{{ "/assets/js/site.js" | prepend: site.baseurl }}"></script>
 
     </body>
-
 </html>

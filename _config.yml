@@ -1,50 +1,32 @@
 # Site settings
-title: Sun After Rain
-SEOTitle: SAR | LiuYangming's Blog
-header-img: img/home-bg.jpg
-email: sdwhlym@ruc.edu.cn
-description: "当幸福来敲门"
-keyword: ""
-url: "http://yummyliu.github.io"              # your host, for absolute URL
+title: SAR
+email: sdwhlym@gmail.com
+description: "open up the wasteland of brain"
+logo_location: "/image/sar.png"
 
-# SNS settings
-RSS: false
-weibo_username:     yummmyliu
-zhihu_username:     ljl-d-d-d-d-d
-github_username:    yummyliu
-facebook_username:  
-
-
+#baseurl: "" # the subpath of your site, e.g. /blog/
+url: "" # the base hostname & protocol for your site
 
 # Build settings
-# from 2016, 'pygments' is unsupported on GitHub Pages. Use 'rouge' for highlighting instead.
-highlighter: rouge
-permalink: pretty
-paginate: 6
-exclude: ["less","node_modules","Gruntfile.js","package.json","README.md"]
-anchorjs: true                          # if you want to customize anchor. check out line:181 of `post.html`
-
-
-
-# Gems
-# from PR#40, to support local preview for Jekyll 3.0
-gems: [jekyll-paginate]
-
-
-
-# Markdown settings
-# replace redcarpet to kramdown,
-# although redcarpet can auto highlight code, the lack of header-id make the catalog impossible, so I switch to kramdown
-# document: http://jekyllrb.com/docs/configuration/#kramdown
 markdown: kramdown
 kramdown:
-  input: GFM                            # use Github Flavored Markdown !important
+  input: GFM
+
+highlighter: rouge
+
+#Other Global Configuration
+exclude: ['README.md']
+
+excerpt_separator: <!--more-->
+
+#show the jumbotron header on index page
+show_blog_header: false
 
 # Disqus settings
-disqus_username: yummyliu
-# Netease settings
-netease_comment: true
-
+#disqus_username: yummyliu
+disqus: yes
+disqus_id: yummyliu
+org_site: yummyliu.github.io
 # Analytics settings
 # Baidu Analytics
 ba_track_id: 59b5c72c98ed6bb90d190b2bf7cd2cbb
@@ -54,24 +36,3 @@ ga_track_id: 'UA-80816254-1'            # Format: UA-xxxxxx-xx-80816254-1
 ga_domain: yummyliu.github.io
 
 
-
-# Sidebar settings
-sidebar: true                          # whether or not using Sidebar.
-sidebar-about-description: "Do more with less"
-sidebar-avatar: /img/me.jpg     # use absolute URL, seeing it's used in both `/` and `/about/`
-
-
-
-# Featured Tags
-featured-tags: true                     # whether or not using Feature-Tags
-featured-condition-size: 0              # A tag will be featured if the size of it is more than this condition value
-
-
-
-# Friends
-friends: [
-    {
-        title: "zhenYang",
-        href: "https://sunnycat2013.gitbooks.io/blogs/"
-    }
-]

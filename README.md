@@ -1,1 +1,18 @@
-工作不饱和的时候，充实自己的地方
+# README #
+
+A simple blog template for <a href="http://jekyllrb.com" target="_blank">Jekyll</a>.
+
+Uses:
+* Twitter Bootstrap 3.2.0
+* Font Awesome 4.2.0
+
+
+To get started:
+* Fork this repo
+* Edit [_config.yml](_config.yml):
+  * Change logo_location
+* Edit [_data/menu.yml](_data/menu.yml) to edit menu
+* Edit [_data/personal.yml](_data/personal.yml) to edit persnoal info to show in about me page.
+
+To create a post:
+* Create a **.md** or **.markdown** file in the _post directory. Add a thumbnail image for the post in the yml front matter, its shown as the post thumbnail in the homepage
