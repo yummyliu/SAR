@@ -3,20 +3,22 @@ layout: default
 date: 2014-10-19 23:51
 ---
 <div class="container">
-    <div class="row">
-        <div class="col-xs-12 col-sm-12 col-md-offset-0 col-md-10 col-lg-offset-2 col-lg-8">
-            {% for post in site.posts %}
-            <div class="blog-short">
-                <h4><a href="{{post.url | prepend: site.baseurl}}">{{post.title}}</a>
-                    <small>
-                        <i class="fa fa-tag"></i>
-                        {% for tag in post.tags %}
-                        <span class="label label-tag">{{tag}}</span>
-                        {% endfor %}
-                    </small>
-                </h3>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
+	<div class="row">
+		<div class="col-xs-12 col-sm-12 col-md-offset-0 col-md-10 col-lg-offset-2 col-lg-8">
+			{% for post in site.posts %}
+			<div class="blog-short">
+				<h4>
+					<a href="{{post.url | prepend: site.baseurl}}">
+						{{post.title}} |</a>
+					<small>
+						<i class="fa fa-tag"></i>
+						{% for tag in post.tags %}
+						<span class="label label-default">{{tag}}</span>
+						{% endfor %}
+					</small>
+				</h4>
+			</div>
+			{% endfor %}
+		</div>
+	</div>
 </div>
