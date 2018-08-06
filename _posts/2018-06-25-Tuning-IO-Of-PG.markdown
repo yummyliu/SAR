@@ -1,6 +1,6 @@
 ---
 layout: post
-title: (实践)调整PostgreSQL的IO性能
+title: PostgreSQL的IO调优
 date: 2018-06-25 20:46
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -150,8 +150,8 @@ VACUUM和ANALYZE需要全表扫描来对表做维护操作，详细情况可以�
 
 ## 引用
 
-[ref](https://severalnines.com/blog/tuning-io-operations-postgresql)
-[ref](https://www.postgresql.org/docs/10/static/wal-configuration.html)
+[tuning-io-operations](https://severalnines.com/blog/tuning-io-operations-postgresql)
+[WAL Configuration](https://www.postgresql.org/docs/10/static/wal-configuration.html)
 
 
 

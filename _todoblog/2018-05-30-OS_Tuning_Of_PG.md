@@ -40,3 +40,5 @@ tags:
 
 ## OS 参数
 
+shared-memory-error
+http://postgresql.freeideas.cz/shared-memory-error/

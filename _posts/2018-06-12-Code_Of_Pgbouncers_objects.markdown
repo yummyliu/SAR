@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Pgbouncer代码解析——内部对象的管理
+title: 读源码之Pgboucer内部对象管理
 subtitle: Pgbouncer内部对象的状态转换与管理
 date: 2018-06-12 13:35
 header-img: "img/head.jpg"
