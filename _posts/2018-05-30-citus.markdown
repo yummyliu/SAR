@@ -1,7 +1,7 @@
 ---
 layout: post
 title: 深入了解CitusDB与CitusDB迁移
-date: 2016-08-16 16:31
+date: 2017-08-16 16:31
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
