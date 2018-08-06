@@ -2,8 +2,8 @@
 mainmenu:
   home:
     url: "/"
-    text: "AllPost"
-    icon_class: "fa-home"
+    text: "Archive"
+    icon_class: "fa-archive"
     #  tags:
     #      url: "/tags/"
     #      text: "Tags"
@@ -11,6 +11,5 @@ mainmenu:
   aboutme:
     url: "/about/"
     text: "AboutMe"
-    #    icon_class: "fa-info-circle"
-    icon_class: "fa-user"
+    icon_class: "fa-id-card-o"
 

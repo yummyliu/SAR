@@ -6,10 +6,10 @@ date: 2014-10-19 23:51
 	<div class="row">
 		<div class="col-xs-12 col-sm-12 col-md-offset-0 col-md-10 col-lg-offset-2 col-lg-8">
 			{% for post in site.posts %}
-			<div class="blog-short tab-pane">
+			<div class="blog-short">
 				<h4>
 					<li class="list-inline">
-						<small> <i class="fa fa-calendar"></i>
+						<small> <i class="fa fa-calendar-check-o"></i>
 							<time>
 								{{ post.date | date:'%A, %B %d, %Y'}}
 							</time>
@@ -17,9 +17,9 @@ date: 2014-10-19 23:51
 					</li>
 					<li>
 						<a href="{{post.url | prepend: site.baseurl}}">
-							{{post.title}} |</a>
+							{{post.title}} </a>
 						<small>
-							<i class="fa fa-tag"></i>
+							<i class="fa fa-tags"></i>
 							{% for tag in post.tags %}
 							<span class="label label-default">{{tag}}</span>
 							{% endfor %}
