@@ -14,9 +14,9 @@ layout: default
                                 {{ page.date | date:'%A, %B %d, %Y'}}
                             </time>
                         </div>
-                        <div> <i class="fa fa-tag"></i>
+                        <div> <i class="fa fa-tags"></i>
                             {% for tag in page.tags %}
-                            <span class="label label-tag" href="{{ site.baseurl }}/tags/#{{ tag }}" title="{{ tag }}">{{tag}}</span>
+                            <span class="label label-default" href="{{ site.baseurl }}/tags/#{{ tag }}" title="{{ tag }}">{{tag}}</span>
                             {% endfor %}
                         </div>
                     </div>

@@ -43,11 +43,12 @@ SQL标准和PostgreSQL中实现的事务隔离级别比较：
 | 重复读  | Not Possible          | Not Possible | Allowed，But not in PG | Possible     |
 | 串行化  | Not Possible          | Not Possible | Not Possible          | Not Possible |
 
-在PG中，开启一个事务可以请求上述四种隔离级别(SERIALIZABLE | REPEATABLE READ | READ COMMITTED | READ UNCOMMITTED); 但是RU这个级别，其实就是RC。这是将标准隔离级别映射到PG的MVCC的明智方式。
+
+在PG中，开启一个事务可以请求上述四种隔离级别(SERIALIZABLE,REPEATABLE READ, READ COMMITTED , READ UNCOMMITTED); 但是RU这个级别，其实就是RC。这是将标准隔离级别映射到PG的MVCC的明智方式。
 
 在PG里，重复读同样避免了幻读；SQL标准允许严格的行为，四个隔离级别只是定义个哪些现象不能发生，没有说哪些现象一定发生。
 
-**NOTE**：在PG里一些数据类型和函数有特殊的事务行为，特别地，对一个sequence的修改，其他事务里面可见，当前事务意外终止，也不会回滚。
+> **NOTE**：在PG里一些数据类型和函数有特殊的事务行为，特别地，对一个sequence的修改，其他事务里面可见，当前事务意外终止，也不会回滚。
 
 [TODO](	A Critique of ANSI SQL Isolation Level)
 

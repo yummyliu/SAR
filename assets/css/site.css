@@ -7,6 +7,22 @@ body {
 	padding-top:0px;
 }
 
+table {
+	border-collapse: collapse;
+	table-layout: fixed;
+	width: 100%;
+	border-collapse: collapse;
+	border: 2px solid #f5f5f5;
+	background-color: #f5f5f5;
+}
+tr {
+	border-bottom: 1px solid #ccc;
+}
+th, td {
+	text-align: left;
+	padding: 4px;
+}
+
 .page-header{
 	margin: 10px 0;
 	text-align:center;
@@ -15,7 +31,6 @@ body {
 .page-header h1{
 	margin: 0;
 }
-
 
 /*navbar stuff*/
 .name-holder{
@@ -173,15 +188,15 @@ blockquote{
 /* from http://stackoverflow.com/a/23393920 */
 
 .highlight pre code * {
-  white-space: nowrap;    // this sets all children inside to nowrap
+	white-space: nowrap;    // this sets all children inside to nowrap
 }
 
 .highlight pre {
-  overflow-x: auto;       // this sets the scrolling in x
+	overflow-x: auto;       // this sets the scrolling in x
 }
 
 .highlight pre code {
-  white-space: pre;       // forces <code> to respect <pre> formatting
+	white-space: pre;       // forces <code> to respect <pre> formatting
 }
 
 /*
