@@ -1,6 +1,6 @@
 ---
 layout: post
-title: redis-cluster
+title: redis-cluster初识
 date: 2017-07-17 23:35
 header-img: "img/head.jpg"
 categories: jekyll update

@@ -163,24 +163,4 @@ pg如何生成自己的targetlist和这个bug的不会产生这个bug，这个bu
 如上bug消失，tpcds Q5成功执行 it works!
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 [pt]: http://www.runoob.com/manual/PostgreSQL/catalog-pg-type.html

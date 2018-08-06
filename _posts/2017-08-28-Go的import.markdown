@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Go的import
+title: 初识Go开发
 date: 2017-08-28 15:58
 header-img: "img/head.jpg"
 categories: jekyll update

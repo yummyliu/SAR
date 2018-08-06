@@ -1,6 +1,6 @@
 ---
 layout: post
-title: c++内存管理
+title: 了解C++内存管理
 date: 2016-08-10 15:58
 header-img: "img/head.jpg"
 categories: jekyll update

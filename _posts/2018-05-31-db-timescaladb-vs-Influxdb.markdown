@@ -1,6 +1,6 @@
 ---
 layout: post
-title: timescaladb和influxdb的初步对比
+title: timescaladb vs influxdb
 subtitle: pgwatch3中加一个timescaladb的数据源的工作
 date: 2018-05-31 15:43
 header-img: "img/head.jpg"
@@ -132,7 +132,3 @@ create_hypertable()
        [Install]
        WantedBy=timers.target
        ```
-
-## insert
-
-influx

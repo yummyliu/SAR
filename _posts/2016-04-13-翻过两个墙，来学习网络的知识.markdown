@@ -9,7 +9,7 @@ typora-root-url: ../../yummyliu.github.io
 ---
 
 
-### 翻墙记
+### 记
 
 之前一直用买的shadowsock来翻墙，到了这个公司，翻不出去了。放弃翻墙了，但是找资料效率低下。
 发现有人用aws+shadowsock 在公司内部可以翻墙，于是，决定研究研究，看看能不能翻了这个局域网的墙。

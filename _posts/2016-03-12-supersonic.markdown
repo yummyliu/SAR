@@ -1,6 +1,6 @@
 ---
 layout: post
-title: supersonic
+title: supersonic简述
 date: 2016-03-12 15:46
 categories: jekyll update
 tags:

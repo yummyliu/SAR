@@ -1,6 +1,6 @@
 ---
 layout: post
-title: PostgreSQL的并发控制——MVCC
+title: 认识PostgreSQL的MVCC
 subtitle: PostgreSQL中，对DML语句使用快照隔离，对DDL语句使用2PL，本文中主要介绍PostgreSQL的快照隔离，即MVCC；
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
@@ -17,7 +17,7 @@ typora-root-url: ../../yummyliu.github.io
 通常MVCC的是实现方式，大概有两种，关键就在于将旧数据放在什么地方；
 
  	1. 将多版本的记录都存储在数据库中，垃圾收集器清理不需要的记录。PostgreSQL/Firebird/Interbase 使用这种方式，SQL Server将其存储在tempdb中；
- 	2. 将最新的记录放在数据库中，通过恢复undo日志，来重建旧版本的数据。在Oracle、MySQL(innodb)中采用这一种方式。
+		2. 将最新的记录放在数据库中，通过恢复undo日志，来重建旧版本的数据。在Oracle、MySQL(innodb)中采用这一种方式。
 
 SI不允许出现在ANSI SQL-92标准中定义的三种异常，即脏读，不可重复读和幻读。但是，SI不能实现真正的可串行化，因为它允许**序列化异常**，比如 *Write Skew* 和 *Read-only Transaction Skew*。为了解决这个问题，从版本9.1开始添加了可序列化快照隔离（SSI）。 SSI可以检测序列化异常，并且可以解决由这种异常引起的冲突。因此，PostgreSQL 9.1及更高版本提供了真正的SERIALIZABLE隔离级别。 （另外，SQL Server也使用SSI，Oracle仍然只使用SI。）
 
@@ -181,9 +181,9 @@ testdb=# SELECT txid_current_snapshot();
 + lazy vacuum执行的时候，会通过visible map，判断page中是否有垃圾需要清理；所以在lazy mode的时候，可能不会完全冻结表中的元组。
 + anti-wraparound vacuum，会扫描所有的page，由于没有相应VM机制，执行比较慢；在pg9.6中，visible map加了一个bit位：all-frozen，提高anti-wraparound vacuum的性能。
 
-​	每个表都有一个`pg_class.relfrozenxid`值（整个数据库有一个`pg_database.datfrozenxid`，是`pg_class.relfrozenxid`中最小的）。通过比较当前xid（当前所有的运行事务的xid最老的，如果只有VACUUM那么就是是vacuum事务的xid），relfrozenxid与配置有三个参数，决定你发起的vacuum是在那种模式下工作：
+		每个表都有一个`pg_class.relfrozenxid`值（整个数据库有一个`pg_database.datfrozenxid`，是`pg_class.relfrozenxid`中最小的）。通过比较当前xid（当前所有的运行事务的xid最老的，如果只有VACUUM那么就是是vacuum事务的xid），relfrozenxid与配置有三个参数，决定你发起的vacuum是在那种模式下工作：
 
-​	表的`relfrozenxid`超过 `vacuum_freeze_min_age`时，vacuum就要进行freeze的操作，freeze的时候可以通过vm中的信息，来跳过一些page；而当relfrozenxid超`vacuum_freeze_table_age`时，执行vacuum的时候，就不能跳过page，必须全表freeze；而当达到`autovacuum_freeze_max_age`，为了避免xid回卷，autovacuum freeze会强制执行；
+		表的`relfrozenxid`超过 `vacuum_freeze_min_age`时，vacuum就要进行freeze的操作，freeze的时候可以通过vm中的信息，来跳过一些page；而当relfrozenxid超`vacuum_freeze_table_age`时，执行vacuum的时候，就不能跳过page，必须全表freeze；而当达到`autovacuum_freeze_max_age`，为了避免xid回卷，autovacuum freeze会强制执行；
 
 ![anti](/image/anti-wa.jpeg)
 

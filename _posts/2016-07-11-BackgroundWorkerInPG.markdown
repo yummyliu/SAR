@@ -1,6 +1,6 @@
 ---
 layout: post
-title: postgresql创建新进程
+title: 认识postgresql的BGW
 subtitle: 现在需要在现有postgresql进程的基础上，另加上一个服务进程，来做元数据信息同步，首先来整理一下 pg的现有的进程结构，以及相互之间的关系
 date: 2016-07-11 21:07
 header-img: "img/head.jpg"
@@ -269,7 +269,7 @@ include $(PGXS)
 并管理好该进程的生命周期。有了bgworker之后，pg启动的时候顺带启动了我们自定义的后台任务进程
 并且pgstop顺带stop，更加有整体性
 
-[bwp]: https://wiki.postgresql.org/wiki/What&#39;s_new_in_PostgreSQL_9.3#Custom_Background_Workers
+[bwp]: https://wiki.postgresql.org/wiki/What&amp;#39;s_new_in_PostgreSQL_9.3#Custom_Background_Workers
 
 ### 3. bgw开发指导 in osx
 

@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Linux文件系统
+title: 了解Linux文件系统
 date: 2018-05-30 11:31
 header-img: "img/head.jpg"
 categories: jekyll update

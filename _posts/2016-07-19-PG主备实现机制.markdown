@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 数据库复制机制与PG
+title: 初识PostgreSQL的数据库复制
 subtitle: 容灾，备份以及提高整体查询吞吐
 date: 2016-07-19 10:41
 header-img: "img/head.jpg"

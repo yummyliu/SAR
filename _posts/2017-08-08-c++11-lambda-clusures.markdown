@@ -1,6 +1,6 @@
 ---
 layout: post
-title: c++11-lambda-clusures
+title: C++11的匿名函数与函数式编程一窥
 date: 2017-08-08 09:29
 header-img: "img/head.jpg"
 categories: jekyll update

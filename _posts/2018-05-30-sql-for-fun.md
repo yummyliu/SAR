@@ -1,6 +1,6 @@
 ---
 layout: post
-title: SQL for Fun(0)
+title: SQL Puzzles
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update

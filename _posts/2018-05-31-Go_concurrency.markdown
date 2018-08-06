@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Go并发
+title: 初识Go并发
 date: 2018-05-31 13:24
 header-img: "img/head.jpg"
 categories: jekyll update

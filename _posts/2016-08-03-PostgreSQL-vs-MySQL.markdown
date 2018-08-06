@@ -144,4 +144,4 @@ NoSQL和JSON现在很流行，并且NoSQL数据库变得很常见；JSON是一�
 | -------------------------------------------------- | ----- |
 | 有一些支持扩展的特性：添加新类型，新函数，新索引等 | No    |
 
-[ref](https://www.2ndquadrant.com/en/postgresql/postgresql-vs-mysql/#SUMMARY)
+[原文链接](https://www.2ndquadrant.com/en/postgresql/postgresql-vs-mysql/#SUMMARY)

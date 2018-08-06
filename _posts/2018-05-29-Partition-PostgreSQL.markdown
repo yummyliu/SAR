@@ -1,6 +1,6 @@
 ---
 layout: post
-title: PostgreSQL的分区表
+title: 初识PostgreSQL的分区表
 date: 2018-05-29 15:13
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -262,13 +262,14 @@ ALTER TABLE measurement ATTACH PARTITION measurement_y2008m02
    END;
    $$
    LANGUAGE plpgsql;
+   ```
 
 
    CREATE TRIGGER insert_measurement_trigger
        BEFORE INSERT ON measurement
        FOR EACH ROW EXECUTE PROCEDURE measurement_insert_trigger();
        
-      
+​      
 
    CREATE RULE measurement_insert_y2006m02 AS
    ON INSERT TO measurement WHERE
@@ -293,10 +294,10 @@ ALTER TABLE measurement ATTACH PARTITION measurement_y2008m02
 
 1. 删除分区
 
-```sql
+​```sql
 DROP TABLE measurement_y2006m02;
 ALTER TABLE measurement_y2006m02 NO INHERIT measurement;`
-```
+   ```
 
 2. 添加分区
 

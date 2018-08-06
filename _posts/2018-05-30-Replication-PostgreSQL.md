@@ -1,6 +1,6 @@
 ---
 ayout: post
-title: Replication in PostgreSQL
+title: 认识PostgreSQL的Replication Slot
 subtitle: 数据库的复制是可靠性，可用性的保证
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"

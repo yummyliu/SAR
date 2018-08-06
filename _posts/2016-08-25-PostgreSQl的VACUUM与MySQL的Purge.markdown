@@ -1,6 +1,6 @@
 ---
 layout: post
-title: PostgreSQl的VACUUM与MySQL的Purge
+title: PostgreSQl与MySQL中的垃圾回收对比
 subtitle: 因为实现多版本，需要保留一些旧版本的数据，不同的是保存的位置, 但是同样随时间增长，如果不及时清理，一个表占用的空间会膨胀
 date: 2016-08-25 09:26
 header-img: "img/head.jpg"

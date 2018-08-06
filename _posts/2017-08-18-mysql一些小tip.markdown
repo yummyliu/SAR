@@ -1,6 +1,6 @@
 ---
 layout: post
-title: MySQL一些小tip
+title: MySQL知识点持续整理
 subtitle: MySQL使用的时候，不少坑，持续整理
 date: 2017-08-18 15:16
 header-img: "img/head.jpg"

@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 
+title: PostgreSQL的FDW初识
 date: 2018-02-05 18:06
 header-img: "img/head.jpg"
 categories: jekyll update

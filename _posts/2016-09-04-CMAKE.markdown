@@ -1,6 +1,6 @@
 ---
 layout: post
-title: CMAKE
+title: 了解CMAKE
 date: 2016-09-04 22:59
 header-img: "img/head.jpg"
 categories: jekyll update

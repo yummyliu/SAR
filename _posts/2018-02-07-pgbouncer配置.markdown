@@ -1,6 +1,6 @@
 ---
 layout: post
-title:
+title: 了解Pgbouncer的配置
 date: 2018-02-07 10:52
 header-img: "img/head.jpg"
 categories: jekyll update
