@@ -112,15 +112,19 @@ INFO:  msg: [{"id":1,"maxage":19234,"name":"postgres"},{"id":2,"maxage":1239082,
 
 #### 解决：类型不对
 
-text转ctring，调用函数时再做转化。
+text转ctring，调用函数时再做转化（似乎有点别扭，先能用再说）。
 
 ```sql
 CREATE OR REPLACE FUNCTION getjson () 
     RETURNS cstring
 AS 'commander.so',
 'getjson'
-LANGUAGE C ;
 
+select
+    getjson::json ->> 1
+from (
+    select
+        getjson ()::text) as a;
 ```
 
 
