@@ -26,7 +26,7 @@ show_blog_header: false
 # Disqus settings
 #disqus_username: yummyliu
 disqus: yes
-disqus_id: yummyliu
+disqus_id: yummyliu-github-io-1
 org_site: yummyliu.github.io
 # Analytics settings
 # Baidu Analytics
