@@ -29,3 +29,5 @@ for i in $*; do
 echo "    - $i" >> $blogfile
 done
 echo "---" >> $blogfile
+echo "> * TOC" >> $blogfile
+echo "> {:toc}" >> $blogfile
