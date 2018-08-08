@@ -197,7 +197,7 @@ tags:
 
   ```sql
   $ cat updateoffset.sql
-
+  
   WITH updateid AS
     (SELECT *
      FROM table_bk
@@ -206,18 +206,29 @@ tags:
   SET created_time = u.created_time
   FROM updateid u
   WHERE table.id = u.id;
-
+  
   for (( i = 0; i < 54; i++ )); do
   psql -f updateoffset.sql -v offset=$((i*500));
   Sleep 60;
   done
-
+  
   ```
 
-  ​
-- 视图展开
-- 常量计算
-- 逻辑断言重写
-- 语义优化，根据一些约束条件，修改语义
-- 子查询展开
-QueryTree描述了每个节点该做什么，PlanTree描述了每个节点具体的算法，比如使用IndexScan还是SeqScan）
++ slave获得masterhost
+
+  ```bash
+  MHOST=$(grep primary_conninfo recovery.conf | awk -F 'host=' '{print $2}' | awk '{print $1}')
+  ```
+
++ 
+
++ 视图展开
+
++ 常量计算
+
++ 逻辑断言重写
+
++ 语义优化，根据一些约束条件，修改语义
+
++ 子查询展开
+  QueryTree描述了每个节点该做什么，PlanTree描述了每个节点具体的算法，比如使用IndexScan还是SeqScan）
