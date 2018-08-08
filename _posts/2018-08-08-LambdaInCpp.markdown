@@ -1,21 +1,48 @@
 ---
 layout: post
-title: C++11的匿名函数与函数式编程一窥
-date: 2017-08-08 09:29
+title: C++的Lambda浅析
+date: 2017-08-08 16:22
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-    - C++
+typora-root-url: ../../yummyliu.github.io
 ---
+> * TOC
+{:toc}
 
-# 0. 前言
+## 前言
 
-c++11，java8 这些老语言的新版本，以及go这些新语言都是加上了一下函数式编程的特性，为啥要有函数式编程？和过程式编程有啥区别？又出现在哪些场景中呢？
-函数式编程的
+### 编程范式
 
-> 关于函数对象和闭包的区别： 对象是附带行为的数据，闭包是附带数据的行为
+#### How to get——命令式编程
 
-**函数对象的一个弊端**
+##### 面向对象
+
+将行为绑定到操作的数据上。
+
+##### 面向过程
+
+将命令封装到函数中。
+
+#### What to get—— 声明式编程
+
+##### 规则式编程
+
+基于定义好的rule和control
+
+##### 函数式编程
+
+对于同一输入，有相同输出，没有副作用。
+
+### 函数式编程的基石——λ演算
+
+在[A Correspondence between ALGOL 60 and Church's Lambda-notatio](https://dl.acm.org/citation.cfm?id=363749&coll=portal&dl=ACM)中，说明了可以通过λ演算理解过程式编程，这就意味着过程式编程的逻辑可以基于λ演算实现。函数式编程中函数是第一对象。 声明一个函数，然后传入一些参数来引用这个函数。相比于过程式模型，函数式更加偏向于软件层面，而不是硬件层面。
+
+#### 匿名函数（又叫lambda表达式）
+
+#### 对象与闭包
+
+> 对象是附带行为的数据，闭包是附带数据的行为
 
 创建函数对象太不方便了，必须在另外一个地方定义一个类，然后才能用
 
@@ -38,7 +65,9 @@ return value : 并不需要明确指出，c++11中，编译器可以推断出lam
 
 **NOTE**: auto关键使我们用起来更方便，比起原来重载一个()操作符，来实现函数对象，这样更加灵活方便
 
-## Variable Capture with Lambdas
+## C++的匿名函数
+
+### 匿名函数调用外部变量
 
 ``` cpp
 vector<string> findAddressesFromOrgs ()
@@ -63,7 +92,7 @@ return global_address_book.findMatchingAddresses(
 上面是定义了一个函数 找到 key为 "org"的对象，下者可以引用函数外的对象，比起只查找固定的name，这里name是函数外的变量
 通过[&]来定义匿名函数，编译器就开始捕获变量。
 
-## Lambda and STL
+### 匿名函数和STL
 
 ``` cpp
 vector<int> v;
@@ -90,22 +119,42 @@ for_each( v.begin(), v.end(), [] (int val)
 下者的实现方式有更好的代码可读性，并且结构清晰。并且在性能上不会有损失，并且有时候会有优势，因为利用了循环展开的优化,
 通过STL的实例，不能简单的认为lambda仅仅是一个创建函数的特性，这是一种新的编程方式。将函数作为参数，将数据访问的方法独立出来
 
-## More of New Lambda Syntax
+### 匿名函数语法糖
 
-## return values :
+#### 返回值
 
 ``` cpp
 [] () -> int { return 1; } //// now we're telling the compiler what we want
 [] () { return 1; } // compiler knows this returns an integer
 ```
 
-## Throw Specifications
+#### 抛出异常
 
 ``` cpp
 [] () throw () { /* code that you don't expect to throw an exception*/ }
 ```
 
-# How are Lambda Closures Implemented
+#### lambda的委托
+
+```cpp
+EmailProcessor processor;
+MessageSizeStore size_store;
+processor.setHandlerFunc( checkMessage ); // this won't work
+```
+
+VS
+
+```cpp
+EmailProcessor processor;
+MessageSizeStore size_store;
+processor.setHandlerFunc(
+        [&] (const std::string& message) { size_store.checkMessage( message ); }
+);
+```
+
+
+
+### 如何实现匿名闭包
 
 本质上就是创建了一个类，实现了()操作符。当时在c++11中，比起另外定义一个函数类，我们可以随着使用这一特性
 
@@ -118,7 +167,7 @@ for_each( v.begin(), v.end(), [] (int val)
 + [bar] : 将bar复制一份，不管其他的
 + [this] : 将this只想的整个类，copy一下
 
-# What type is a Lambda
+### Lambda是什么类型？
 
 上面是通过auto 来接的Lambda，但是每个Lambda实现方式都是一个单独的类, 这似乎会产生很多类，
 
@@ -190,25 +239,16 @@ class AddressBook
 };
 ```
 
-# Make delegate with lambda
-
-``` cpp
-EmailProcessor processor;
-MessageSizeStore size_store;
-processor.setHandlerFunc( checkMessage ); // this won't work
-```
-VS
-``` cpp
-EmailProcessor processor;
-MessageSizeStore size_store;
-processor.setHandlerFunc(
-        [&] (const std::string& message) { size_store.checkMessage( message ); }
-);
-```
-
-# In the End
+## 总结
 
 通过c++匿名函数，我们可以减少代码量，提升单元测试, 有的时候能够替代一些之前用宏实现的功能
 
-[c++lambda][youtube]
-[c++lambda]:http://www.cprogramming.com/c++11/c++11-lambda-closures.html
+#### 参考文献
+
+[c++lambda](http://www.cprogramming.com/c++11/c++11-lambda-closures.html)
+
+[declarative](https://en.wikipedia.org/wiki/Declarative_programming)
+
+[imperative](https://en.wikipedia.org/wiki/Imperative_programming)
+
+[functional](https://en.wikipedia.org/wiki/Functional_programming)
