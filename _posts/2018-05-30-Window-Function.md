@@ -9,6 +9,9 @@ tags:
     - PostgreSQL
 ---
 
+> * TOC
+> {:toc}
+
 #  Window function
 
 与当前行相关行的跨行计算；

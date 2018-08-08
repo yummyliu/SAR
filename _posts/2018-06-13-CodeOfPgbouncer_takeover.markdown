@@ -10,6 +10,9 @@ tags:
   - Pgbouncer
 ---
 
+> * TOC
+> {:toc}
+
 ## 背景
 
 在pgbouncer启动的时候，会创建一个dbname为pgbouncer的的假连接池，作为admin pool；当pgbouncer使用`-R`参数online reboot的时候，启动另一个进程，接管原来的socket fd 和 objects，具体的接管流程在takeover模块中，分为两个部分：

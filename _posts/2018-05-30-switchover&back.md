@@ -8,6 +8,9 @@ tags:
     - PostgreSQL
 ---
 
+> * TOC
+> {:toc}
+
 ## 主从切换
 
 流复制的主从之间是通过wal日志，来同步数据；

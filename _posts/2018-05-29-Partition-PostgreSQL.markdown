@@ -8,6 +8,9 @@ tags:
     - PostgreSQL
 ---
 
+> * TOC
+> {:toc}
+
 # Table Partition 
 
 将一个逻辑的大表，分割成物理的小表。从而获得几点优势：

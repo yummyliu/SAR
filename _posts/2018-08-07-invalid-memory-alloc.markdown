@@ -8,14 +8,19 @@ tags:
   - C++
 ---
 
-> 最近想折腾一下PostgreSQL Extension，毕竟PostgreSQL正是由于其强大的可扩展性，变得越来越牛逼；
->
-> 从做一个巡检的插件（[patrol](https://github.com/yummyliu/patrol)）开始；需要使用C++的json以及网络库，所以采用C/C++混编的方式实现，该插件分为两部分：
->
-> + Commander: PostgreSQL的一个background worker，维护巡检的信息表，以及与patrol通信获取数据；
-> + Patrol：实现的AgentServer（Golang），Commander向这些agent服务询问db及os的巡检信息。
->
-> 目前各个环节初步调通，整理下花时间比较多的坑（未完待续）。
+> * TOC
+> {:toc}
+
+## 前言
+
+最近想折腾一下PostgreSQL Extension，毕竟PostgreSQL正是由于其强大的可扩展性，变得越来越牛逼；
+
+从做一个巡检的插件（[patrol](https://github.com/yummyliu/patrol)）开始；需要使用C++的json以及网络库，所以采用C/C++混编的方式实现，该插件分为两部分：
+
++ Commander: PostgreSQL的一个background worker，维护巡检的信息表，以及与patrol通信获取数据；
++ Patrol：实现的AgentServer（Golang），Commander向这些agent服务询问db及os的巡检信息。
+
+目前各个环节初步调通，整理下花时间比较多的坑（未完待续）。
 
 ## 搭建一个PostgreSQL的开发环境
 

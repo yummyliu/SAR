@@ -9,6 +9,9 @@ tags:
    - DataBase
 ---
 
+> * TOC
+> {:toc}
+
 # 时序数据库
 
 这个有当前可能的所有的时序数据库：[tsdb-list](https://misfra.me/2016/04/09/tsdb-list/) 。为什么还要有timescaledb[why](https://blog.timescale.com/what-the-heck-is-time-series-data-and-why-do-i-need-a-time-series-database-dcf3b1b18563)?

@@ -10,6 +10,9 @@ tags:
 typora-root-url: ../../yummyliu.github.io
 ---
 
+> * TOC
+> {:toc}
+
 ## What: 什么是checkpoint
 
 checkpoint会将某个时间点前的全部脏数据刷新到磁盘，以实现数据的一致性与完整性。保证数据已经同步到磁盘中了，这样可以**回收wal日志**，**节省磁盘空间**并且**恢复的时候可以快一些**。

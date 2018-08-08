@@ -6,9 +6,12 @@ header-img: "img/head.jpg"
 categories: jekyll update
 tags:
     - PostgreSQL
-    
+
 typora-root-url: ../../yummyliu.github.io
 ---
+
+> * TOC
+> {:toc}
 
 ### ANSI SQL的隔离级别
 
@@ -21,7 +24,7 @@ ANSI SQL 为了预防三种不同的异常现象，定义了四个隔离级别�
 | 重复读   | Not Possible           | Not Possible | Allowed，But not in PG | Possible     |
 | 串行化   | Not Possible           | Not Possible | Not Possible           | Not Possible |
 
-SQL标准定义了四个级别的事务隔离。 最严格的是Serializable，即，任何一个Serializable事务的并发执行都能保证产生和**按某一顺序串行**地执行它们相同的效果。 
+SQL标准定义了四个级别的事务隔离。 最严格的是Serializable，即，任何一个Serializable事务的并发执行都能保证产生和**按某一顺序串行**地执行它们相同的效果。
 
 另外三个级别是根据现象来定义的，这是由**并发事务之间的交互**产生的，而这并不是每个层次都会发生的。 由于Serializable的定义，在这个级别上这些现象都是不可能的。 （这并不奇怪：如果交易的效果必须与一次运行一致，那么您怎么看到交互造成的现象？）
 

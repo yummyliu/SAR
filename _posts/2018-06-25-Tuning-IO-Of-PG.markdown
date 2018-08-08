@@ -8,6 +8,8 @@ tags:
   - PostgreSQL
 typora-root-url: ../../yummyliu.github.io
 ---
+> * TOC
+> {:toc}
 
 # 一点废话
 
