@@ -10,7 +10,7 @@ tags:
 typora-root-url: ../../yummyliu.github.io
 ---
 
-> * TOC
+* TOC
 {:toc}
 
 ## What: 什么是checkpoint
