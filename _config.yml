@@ -7,6 +7,7 @@ logo_location: "/image/sar.png"
 
 #baseurl: "" # the subpath of your site, e.g. /blog/
 url: "" # the base hostname & protocol for your site
+permalink:        /:month-:year/:title:output_ext
 
 # Build settings
 markdown: kramdown
