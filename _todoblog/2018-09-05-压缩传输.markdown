@@ -1,0 +1,21 @@
+---
+layout: post
+title: 运维操作——传输数据
+date: 2018-09-05 18:46
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+typora-root-url: ../../yummyliu.github.io
+---
+
+> * TOC
+> {:toc}
+
+``` bash
+\copy (select user_id,build_info_json from user_build_infos limit 3 ) to PROGRAM 'gzip | nc -w 1 10.189.0.40 7899'
+
+#
+
+nc -l 7899 > buidlinfo.gz
+```
+

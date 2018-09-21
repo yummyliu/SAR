@@ -361,7 +361,7 @@ pcs constraint order start master-ip then promote pgsql-master
 > ```
 
 ```
-   pcs constraint location pgsql-master prefers db1=0 db2=0
+   pcs constraint location pgsql prefers db1=0 db2=0 --force
    pcs constraint location master-ip prefers db1=0 db2=0
 ```
 
@@ -416,6 +416,7 @@ Last updated: Wed Aug 29 18:25:58 2018
 Last change: Wed Aug 29 18:22:29 2018 by root via cibadmin on db1
 
 3 nodes configured
+
 5 resources configured
 
 Online: [ db1 db2 quorum1 ]
