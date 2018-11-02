@@ -9,63 +9,59 @@ tags:
     - PostgreSQL
 ---
 
-> * TOC
 {:toc}
 
 PostgreSQL提供了**各种级别的锁**来控制对**各种数据对象**的并发访问。大多数PostgreSQL命令会自动获取适当模式的锁，以确保引用的对象不会在执行命令时，被冲突的事务删除或修改。本文简单介绍下PostgreSQL中的各种锁，以及可能的应用。如果读了这个文章对PostgreSQL中的锁感兴趣，可以参考官方文档或者PostgreSQL源码。
 
-## 类型
+PostgreSQL中有多种类型的锁，本文中按照用户是否可见将其分为两种。
 
 ### 用户可见的（pg_locks）
 
+用户可见的锁，是用户自己能够主动调用，并且在pg_locks中看到是否grant的锁，有regular lock和咨询锁。
+
 #### regular Lock
+
+regular lock分为表级别和行级别两种。
 
 ##### 表级别
 
-一些操作可以自动的获得一些锁，也可以用`LOCK`语句显示的获得某些锁。
+一些操作可以自动的获得一些锁，也可以用`LOCK`语句显示的获得某些锁。在一个事务中可以定义 很多savepoint，当rollback to 某个sp时，会释放该sp之后获得的锁。
 
-在一个事务中可以定义 很多savepoint，当rollback to 某个sp时，会释放该sp之后获得的锁。
+##### 行级别
 
-##### 行锁
-
-通过一些数据库操作自动获得一些行锁，行锁并不阻塞数据查询，只阻塞writes和locker。
+通过一些数据库操作自动获得一些行锁，行锁并不阻塞数据查询，只阻塞writes和locker，比如如下操作。
 
 - FOR UPDATE
-  - Delete/Update/select  for update
 - FOR NO KEY UPFATE
 - FOR SHARE
 - FOR KEY SHARE
 
-PG不再内存中，存储行的修改信息，因此同一时间修改的行数没有限制。因此，锁住一个行会导致磁盘写，select for update标记的row，这些行会开始写磁盘。
+PostgreSQL同一时间修改的行数没有限制，这里如果想避免获得不了锁的等待，可以采用`FOR UPDATE NOWAIT` ，或 `FOR UPDATE SKIP LOCKED`的方式。
 
-> To prevent the operation from waiting for other transactions to commit, use either the `NOWAIT` or `SKIP LOCKED` option. With `NOWAIT`, the statement reports an error, rather than waiting, if a selected row cannot be locked immediately. With `SKIP LOCKED`, any selected rows that cannot be immediately locked are skipped.
+##### 死锁
 
-#### 死锁
-
-​	显式加锁会提高死锁的发生的概率。
-
-​	` This means it is a bad idea for applications to hold transactions open for long periods of time (e.g., while waiting for user input).`
+​	显式加锁可能会导致死锁，PostgreSQL检测到死锁会cancel其中的一个事务，日志中会有相应的记录；为了避免死锁，一定要注意长事务的监控。
 
 #### 咨询锁
 
-​	当MVCC模型和锁策略不符合时，采用咨询锁。在表中存储一个标记位能够实现同样的功能，但是咨询锁更快，避免表膨胀，会话（或事务）结束后能够被Pg自动清理。
+​	当MVCC模型和锁策略不符合应用时，采用咨询锁。咨询锁是提供给应用层显示调用的锁方法，在表中存储一个标记位能够实现同样的功能，但是咨询锁更快；其能避免表膨胀，且会话（或事务）结束后能够被Pg自动清理。
 
 获得咨询锁：
 
 1. 会话级别：该级别获得的咨询锁，没有事务特征，事务回滚或者取消，之前获得的咨询锁不会被unlock，一个咨询锁可以多次获得，相应的要多次取消。
 2. 事务级别：事务级别获得的锁，事务结束后会自动unlock。
 
-两种方式获得的咨询锁，如果锁在了一个识别符上，那么他们也是互相block的，比如秒杀场景中强制串行化。
+两种方式获得的咨询锁，如果锁在了一个识别符上，那么他们也是互相block的；咨询锁可以用在业务需要强制串行化等场景中，比如秒杀。
 
-##### 观察
+#### 注意点
 
-pg_locks
+##### 内存耗尽
 
-##### NOTE
+锁是存储在内存中的，上限由参数max_locks_per_transaction 和 max_connections控制，要避免空间耗尽，导致无法获取新的Lock。
 
-Care must be taken not to exhaust this memory or the server will be unable to grant any locks at all
+##### 咨询锁与limit
 
-[max_locks_per_transaction](runtime-config-locks.html#GUC-MAX-LOCKS-PER-TRANSACTION) 和 [max_connections](runtime-config-connection.html#GUC-MAX-CONNECTIONS).
+使用咨询锁时，如果有limit操作，要注意可能pg_advisory_lock在limit操作之前调用，那么如下的情况可能并不是锁了100个对象。
 
 ```sql
 SELECT pg_advisory_lock(id) FROM foo WHERE id = 12345; -- ok
@@ -76,32 +72,20 @@ SELECT pg_advisory_lock(q.id) FROM
 ) q; -- ok
 ```
 
-### 用户不可见
+##### 禁止加带默认值的列
 
-#### 页锁（lightweight lock）
-
-​	PG中，有对于表的数据页的共享/互斥锁，一旦这些行读取或者更改完成后，相应锁就被释放。应用开发者一般不用考虑这个锁。
-
-https://www.percona.com/blog/2018/10/30/postgresql-locking-part-3-lightweight-locks/
-
-#### 自旋锁
-
-Vs 原子操作
-
-## 操作注意点
-
-### 禁止添加一个列的时候设定一个默认值
+>（PostgreSQL10之前）
 
 PostgreSQL10之前，果你添加的列带有默认值，PostgreSQL会重写整张表，来对每一行设置默认值，在大表上可能会是几个小时的工作，这样所有查询就会被阻塞，数据库不可用；
 
-+ DO NOT
+DO NOT
 
 ```SQL
 -- 读写都会被阻塞
 ALTER TABLE items ADD COLUMN last_update timestamptz DEFAULT now();
 ```
 
-+ INSTEAD
+INSTEAD
 
 ```SQL
 -- select, update, insert, 和 delete 都会阻塞
@@ -110,32 +94,20 @@ ALTER TABLE items ADD COLUMN last_update timestamptz;
 UPDATE items SET last_update = now();
 ```
 
-+ BETTER
+BETTER
 
-  ```c
-  do {
-    numRowsUpdated = executeUpdate(
-      "UPDATE items SET last_update = ? " +
-      "WHERE ctid IN (SELECT ctid FROM items WHERE last_update IS NULL LIMIT 5000)",
-      now);
-  } while (numRowsUpdate > 0);
-  ```
-
-  为了避免阻塞update和delete，可以一小批的更新，这样添加一个新列，减少对用户的影响
-
-### 理解锁队列，使用lock timeout
-
-每个PostgreSQL中的锁都有一个锁队列。如果一个锁是排他的，事务A占有，事务B获取的时候，就会在锁队列中等待。有趣的是，如果这时候事务C同样要获取该锁，那么它不仅要和A检查冲突性，也要和B检查冲突性，以及队列中其他的事务；
-
-利用以下查询，可以看出哪些数据库上有锁在等待，其中granted列表示有些锁现在还没有被授予；
-
-```sql
-select relation::regclass, locktype, mode, granted FROM pg_locks where relation::regclass::text != 'pg_locks';
+```c
+do {
+  numRowsUpdated = executeUpdate(
+    "UPDATE items SET last_update = ? " +
+    "WHERE ctid IN (SELECT ctid FROM items WHERE last_update IS NULL LIMIT 5000)",
+    now);
+} while (numRowsUpdate > 0);
 ```
 
-这就意味着，即使你的DDL语句可以很快的执行，但是它可能会在队列中等待很久，直到前面的查询结束。并且该DDL操作会将后续的查询阻塞；
+##### 理解锁队列，使用lock_timeout
 
-当你在一个表上，执行一个长查询的时候；
+每个PostgreSQL中的锁都有一个锁队列。如果一个锁是排他的，事务A占有，事务B获取的时候，就会在锁队列中等待。有趣的是，如果这时候事务C同样要获取该锁，那么它不仅要和A检查冲突性，也要和B检查冲突性，以及队列中其他的事务；这就意味着，即使你的DDL语句可以很快的执行，但是它可能会在队列中等待很久，直到前面的查询结束。并且该DDL操作会将后续的查询阻塞；
 
 DO NOT
 
@@ -150,31 +122,13 @@ SET lock_timeout TO '2s'
 ALTER TABLE items ADD COLUMN last_update timestamptz;
 ```
 
-通过设置`lock_timeout`，这个DDL语句如果遇到锁等待，最终会失败，进而后续的查询只会阻塞2s；这样不好的一点就是，alter table 可能会失败，但是你可以重试；并且可以查看pg_stat_activity看看，是不是有慢查询；
-
-### CREATE INDEX CONCURRENTLY
-
-另一个黄金定律：永远并发的建索引
+##### CREATE INDEX CONCURRENTLY
 
 在一个大数据集上建索引，有可能会花费数小时甚至数天的时间；常规的create index会阻塞所有的写操作；尽管不阻塞select，但是这还是不好的；
 
-NO
-
-```SQL
--- blocks all writes
-CREATE INDEX items_value_idx ON items USING GIN (value jsonb_path_ops);
-```
-
-INSTEAD
-
-```SQL
--- only blocks other DDL
-CREATE INDEX CONCURRENTLY items_value_idx ON items USING GIN (value jsonb_path_ops);
-```
-
 并行的创建索引确实有缺点。如果出了问题，它不会回滚，这会留下一个未完成的index；但是不用担心，`DROP INDEX CONCURRENTLY items_value_idx`，重新创建即可。
 
-### 越晚使用激进锁策略越好
+##### 晚点使用激进的锁
 
 当在一个表上执行需要获得激进策略锁的时候，越晚越好，影响越小；比如如果你想替换一个表的内容；
 
@@ -210,7 +164,7 @@ LOCK items IN EXCLUSIVE MODE;
 ...
 ```
 
-### 添加主键的时候最小化锁阻塞
+##### 添加主键的时候最小化锁阻塞
 
 在表上添加一个主键是有意义的，PostgreSQL中，可以通过alter table很方便的添加一个主键，但是当主键索引创建的时候，会花费很长时间，这样会阻塞查询；
 
@@ -229,11 +183,7 @@ ALTER TABLE items ADD CONSTRAINT items_pk PRIMARY KEY USING INDEX items_pk;  -- 
 
 通过将主键索引的创建，分成两步；这样繁重的创建索引的工作不会影响业务查询；
 
-### 禁止VACUUM FULL
-
-比起这个操作，我们应该调整AUTOVACUUM设置和使用index来提升查询，定时的使用VACUUM，而不是VACUUM FULL
-
-### 调整命令顺序，避免死锁
+##### 调整命令顺序，避免死锁
 
 如下两个事务,会导致死锁
 
@@ -253,8 +203,18 @@ END;
 
 在一应用中，调整调用顺序，避免互相锁住对方
 
+### 用户不可见
 
+#### 自旋锁
 
-ref：
+Vs 原子操作
 
-[tipsfordeallocks](https://www.citusdata.com/blog/2018/02/22/seven-tips-for-dealing-with-postgres-locks/)
+#### 页锁（lightweight lock）
+
+​	PG中，有对于表的数据页的共享/互斥锁，一旦这些行读取或者更改完成后，相应锁就被释放。应用开发者一般不用考虑这个锁。
+
+https://www.percona.com/blog/2018/10/30/postgresql-locking-part-3-lightweight-locks/
+
+### 参考
+
+[tips_for_deal_locks](https://www.citusdata.com/blog/2018/02/22/seven-tips-for-dealing-with-postgres-locks/)
