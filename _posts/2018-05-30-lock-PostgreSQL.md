@@ -10,65 +10,35 @@ tags:
 ---
 
 > * TOC
-> {:toc}
+{:toc}
 
-PostgreSQL提供了各种锁定模式来控制对表中数据的并发访问。 锁可用于当MVCC不满足MVCC不满足需求时，由应用程序控制锁定。 此外，大多数PostgreSQL命令会自动获取适当模式的锁定，以确保引用的表不会在执行命令时，被冲突的事务删除或修改。 （例如，当同一个表上有其他操作在执行时，TRUNCATE不能同时执行，所以它会在表上获得排它锁后，执行该操作。）
+PostgreSQL提供了**各种级别的锁**来控制对**各种数据对象**的并发访问。大多数PostgreSQL命令会自动获取适当模式的锁，以确保引用的对象不会在执行命令时，被冲突的事务删除或修改。本文简单介绍下PostgreSQL中的各种锁，以及可能的应用。如果读了这个文章对PostgreSQL中的锁感兴趣，可以参考官方文档或者PostgreSQL源码。
 
-​	使用pg_locks系统视图，可以看到现在系统中的锁。
+## 类型
 
-#### 表锁
+### 用户可见的（pg_locks）
+
+#### regular Lock
+
+##### 表级别
 
 一些操作可以自动的获得一些锁，也可以用`LOCK`语句显示的获得某些锁。
 
-- ACCESS SHARE
-  - 只读的查询在相应的表上，获得这个锁
-  - ！EXCLUSIVE
-- ROW SHARE
-  - SELECT FOR UPDATE/ FOR SHARE
-  - ! EXCLUSIVE
-- ROW EXCLUSIVE
-  - 修改表的操作
-  - ！ SHARE, SHARE ROW EXCLUSIVE, EXCLUSIVE, ACCESS EXCLUSIVE
-- SHARE UPDATE EXCLUSIVE
-  - VACUUM (without FULL), ANALYZE, CREATE INDEX CONCURRENTLY, ALTER TABLE VALIDATE and other ALTER TABLE variants
-  - ! SHARE UPDATE EXCLUSIVE, SHARE, SHARE ROW EXCLUSIVE, EXCLUSIVE, and ACCESS EXCLUSIVE
-- SHARE
-  - Create index； 阻止当前表数据的更改
-  - ！ ROW EXCLUSIVE, SHARE UPDATE EXCLUSIVE, SHARE ROW EXCLUSIVE, EXCLUSIVE, and ACCESS EXCLUSIVE
-- SHARE ROW EXCLUSIVE
-  - CREATE TRIGGER / ALTER TABLE
-  - ! ROW EXCLUSIVE, SHARE UPDATE EXCLUSIVE, SHARE, SHARE ROW EXCLUSIVE, EXCLUSIVE, and ACCESS EXCLUSIVE lock
-- EXCLUSIVE
-  - REFRESH MATERIALIZED VIEW CONCURRENTLY（锁是在视图上，还是在底层的表上？）
-  - ！ ROW SHARE, ROW EXCLUSIVE, SHARE UPDATE EXCLUSIVE, SHARE, SHARE ROW EXCLUSIVE, EXCLUSIVE, and ACCESS EXCLUSIVE
-- ACCESS EXCLUSIVE
-  - DROP TABLE, TRUNCATE, REINDEX, CLUSTER, VACUUM FULL, and REFRESH MATERIALIZED VIEW (without CONCURRENTLY)
-  - 和所有的模式冲突，只能有一个事务访问当前这个表
-  - tip：只有这个锁才能阻塞 select（without for update、share）查询
-
 在一个事务中可以定义 很多savepoint，当rollback to 某个sp时，会释放该sp之后获得的锁。
 
-#### 行锁
+##### 行锁
 
 通过一些数据库操作自动获得一些行锁，行锁并不阻塞数据查询，只阻塞writes和locker。
 
 - FOR UPDATE
-  - 会阻塞这些操作`UPDATE`, `DELETE`, `SELECT FOR UPDATE`, `SELECT FOR NO KEY UPDATE`, `SELECT FOR SHARE`or `SELECT FOR KEY SHARE`，防止这些操作 修改、删除、锁定这些行。
-  - Delete某一行； Update某一行的某一列（该列上有唯一索引）；select  for update；这三中情况都会锁住相应的行
+  - Delete/Update/select  for update
 - FOR NO KEY UPFATE
-  - 比FOR UPDATE，级别低，不会阻塞其他 select for key share。
-  - update的时候没有获得FOR update 锁的，会会获得这个锁
 - FOR SHARE
-  - 和FOR UPDATE相似，但是获得的是SHARE锁，而不会EXCLUSIVE锁
-  - 阻塞其他的`UPDATE`, `DELETE`, `SELECT FOR UPDATE` or `SELECT FOR NO KEY UPDATE`
 - FOR KEY SHARE
-  - 和FOR SHARE相似，但是弱。
 
 PG不再内存中，存储行的修改信息，因此同一时间修改的行数没有限制。因此，锁住一个行会导致磁盘写，select for update标记的row，这些行会开始写磁盘。
 
-#### 页锁
-
-​	PG中，有对于表的数据页的共享/互斥锁，一旦这些行读取或者更改完成后，相应锁就被释放。应用开发者一般不用考虑这个锁。
+> To prevent the operation from waiting for other transactions to commit, use either the `NOWAIT` or `SKIP LOCKED` option. With `NOWAIT`, the statement reports an error, rather than waiting, if a selected row cannot be locked immediately. With `SKIP LOCKED`, any selected rows that cannot be immediately locked are skipped.
 
 #### 死锁
 
@@ -78,22 +48,51 @@ PG不再内存中，存储行的修改信息，因此同一时间修改的行数
 
 #### 咨询锁
 
-​	当MVCC模型和锁策略不符合时，采用咨询锁。在表中存储一个标记位能够实现同样的功能，但是咨询锁更快，避免表膨胀，会话结束后能够被Pg自动清理。
+​	当MVCC模型和锁策略不符合时，采用咨询锁。在表中存储一个标记位能够实现同样的功能，但是咨询锁更快，避免表膨胀，会话（或事务）结束后能够被Pg自动清理。
 
 获得咨询锁：
 
 1. 会话级别：该级别获得的咨询锁，没有事务特征，事务回滚或者取消，之前获得的咨询锁不会被unlock，一个咨询锁可以多次获得，相应的要多次取消。
 2. 事务级别：事务级别获得的锁，事务结束后会自动unlock。
 
-两种方式获得的咨询锁，如果锁在了一个识别符上，那么他们也是互相block的。
+两种方式获得的咨询锁，如果锁在了一个识别符上，那么他们也是互相block的，比如秒杀场景中强制串行化。
 
+##### 观察
 
+pg_locks
 
-#### 禁止添加一个列的时候设定一个默认值
+##### NOTE
 
-这是一个黄金定律：在生产环境中，添加一个列的时候，不要指定一个默认值
+Care must be taken not to exhaust this memory or the server will be unable to grant any locks at all
 
-添加列，会采用非常激进的锁策略，这会阻塞读写；如果你添加的列带有默认值，PostgreSQL会重写整张表，来对每一行设置默认值，在大表上可能会是几个小时的工作，这样所有查询就会被阻塞，数据库不可用；
+[max_locks_per_transaction](runtime-config-locks.html#GUC-MAX-LOCKS-PER-TRANSACTION) 和 [max_connections](runtime-config-connection.html#GUC-MAX-CONNECTIONS).
+
+```sql
+SELECT pg_advisory_lock(id) FROM foo WHERE id = 12345; -- ok
+SELECT pg_advisory_lock(id) FROM foo WHERE id > 12345 LIMIT 100; -- danger!
+SELECT pg_advisory_lock(q.id) FROM
+(
+  SELECT id FROM foo WHERE id > 12345 LIMIT 100
+) q; -- ok
+```
+
+### 用户不可见
+
+#### 页锁（lightweight lock）
+
+​	PG中，有对于表的数据页的共享/互斥锁，一旦这些行读取或者更改完成后，相应锁就被释放。应用开发者一般不用考虑这个锁。
+
+https://www.percona.com/blog/2018/10/30/postgresql-locking-part-3-lightweight-locks/
+
+#### 自旋锁
+
+Vs 原子操作
+
+## 操作注意点
+
+### 禁止添加一个列的时候设定一个默认值
+
+PostgreSQL10之前，果你添加的列带有默认值，PostgreSQL会重写整张表，来对每一行设置默认值，在大表上可能会是几个小时的工作，这样所有查询就会被阻塞，数据库不可用；
 
 + DO NOT
 
@@ -124,7 +123,7 @@ UPDATE items SET last_update = now();
 
   为了避免阻塞update和delete，可以一小批的更新，这样添加一个新列，减少对用户的影响
 
-#### 理解锁队列，使用lock timeout
+### 理解锁队列，使用lock timeout
 
 每个PostgreSQL中的锁都有一个锁队列。如果一个锁是排他的，事务A占有，事务B获取的时候，就会在锁队列中等待。有趣的是，如果这时候事务C同样要获取该锁，那么它不仅要和A检查冲突性，也要和B检查冲突性，以及队列中其他的事务；
 
@@ -153,7 +152,7 @@ ALTER TABLE items ADD COLUMN last_update timestamptz;
 
 通过设置`lock_timeout`，这个DDL语句如果遇到锁等待，最终会失败，进而后续的查询只会阻塞2s；这样不好的一点就是，alter table 可能会失败，但是你可以重试；并且可以查看pg_stat_activity看看，是不是有慢查询；
 
-#### CREATE INDEX CONCURRENTLY
+### CREATE INDEX CONCURRENTLY
 
 另一个黄金定律：永远并发的建索引
 
@@ -175,7 +174,7 @@ CREATE INDEX CONCURRENTLY items_value_idx ON items USING GIN (value jsonb_path_o
 
 并行的创建索引确实有缺点。如果出了问题，它不会回滚，这会留下一个未完成的index；但是不用担心，`DROP INDEX CONCURRENTLY items_value_idx`，重新创建即可。
 
-#### 越晚使用激进锁策略越好
+### 越晚使用激进锁策略越好
 
 当在一个表上执行需要获得激进策略锁的时候，越晚越好，影响越小；比如如果你想替换一个表的内容；
 
@@ -211,7 +210,7 @@ LOCK items IN EXCLUSIVE MODE;
 ...
 ```
 
-#### 添加主键的时候最小化锁阻塞
+### 添加主键的时候最小化锁阻塞
 
 在表上添加一个主键是有意义的，PostgreSQL中，可以通过alter table很方便的添加一个主键，但是当主键索引创建的时候，会花费很长时间，这样会阻塞查询；
 
@@ -230,11 +229,11 @@ ALTER TABLE items ADD CONSTRAINT items_pk PRIMARY KEY USING INDEX items_pk;  -- 
 
 通过将主键索引的创建，分成两步；这样繁重的创建索引的工作不会影响业务查询；
 
-#### 禁止VACUUM FULL
+### 禁止VACUUM FULL
 
 比起这个操作，我们应该调整AUTOVACUUM设置和使用index来提升查询，定时的使用VACUUM，而不是VACUUM FULL
 
-#### 调整命令顺序，避免死锁
+### 调整命令顺序，避免死锁
 
 如下两个事务,会导致死锁
 
