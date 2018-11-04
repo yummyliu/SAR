@@ -11,11 +11,13 @@ tags:
 
 {:toc}
 
-PostgreSQL提供了**各种级别的锁**来控制对**各种数据对象**的并发访问。大多数PostgreSQL命令会自动获取适当模式的锁，以确保引用的对象不会在执行命令时，被冲突的事务删除或修改。本文简单介绍下PostgreSQL中的各种锁，以及可能的应用。如果读了这个文章对PostgreSQL中的锁感兴趣，可以参考官方文档或者PostgreSQL源码。
+PostgreSQL提供了**各种级别的锁**来控制对**各种数据对象**的并发访问。大多数PostgreSQL命令会自动获取适当模式的锁，以确保引用的对象不会在执行命令时，被冲突的事务删除或修改。本文简单介绍下PostgreSQL中的各种锁，以及一点使用经验。如果读了这个文章对PostgreSQL中的锁感兴趣，可以参考官方文档甚至PostgreSQL源码。
 
-PostgreSQL中有多种类型的锁，本文中按照用户是否可见将其分为两种。
+本文中按照用户是否可见，将PostgreSQL中有多种类型的锁分为两种。
 
-### 用户可见的（pg_locks）
+### 用户可见的
+
+> 从系统视图pg_locks中可见
 
 用户可见的锁，是用户自己能够主动调用，并且在pg_locks中看到是否grant的锁，有regular lock和咨询锁。
 
@@ -38,10 +40,6 @@ regular lock分为表级别和行级别两种。
 
 PostgreSQL同一时间修改的行数没有限制，这里如果想避免获得不了锁的等待，可以采用`FOR UPDATE NOWAIT` ，或 `FOR UPDATE SKIP LOCKED`的方式。
 
-##### 死锁
-
-​	显式加锁可能会导致死锁，PostgreSQL检测到死锁会cancel其中的一个事务，日志中会有相应的记录；为了避免死锁，一定要注意长事务的监控。
-
 #### 咨询锁
 
 ​	当MVCC模型和锁策略不符合应用时，采用咨询锁。咨询锁是提供给应用层显示调用的锁方法，在表中存储一个标记位能够实现同样的功能，但是咨询锁更快；其能避免表膨胀，且会话（或事务）结束后能够被Pg自动清理。
@@ -53,7 +51,19 @@ PostgreSQL同一时间修改的行数没有限制，这里如果想避免获得�
 
 两种方式获得的咨询锁，如果锁在了一个识别符上，那么他们也是互相block的；咨询锁可以用在业务需要强制串行化等场景中，比如秒杀。
 
-#### 注意点
+#### 死锁检测
+
+​	用户可见的锁一般加锁的方式是LOCK语句直接请求或者SQL语句间接调用，可能会导致死锁；死锁检测的代价比较昂贵，PostgreSQL发生锁等待时，会等待deadlock_timeout后，才检测死锁；默认是1s，负载比较中，一般可以将deadlock_timeout设置为稍大于业务通常事务的执行时间；
+
+```log
+ERROR:  deadlock detected
+DETAIL:  Process 1181 waits for ShareLock on transaction 579; blocked by process 1148.
+Process 1148 waits for ShareLock on transaction 578; blocked by process 1181.
+```
+
+​	检测到死锁，PostgreSQL就会回滚事务，这就要求应用一定要对这种错误进行重试处理。
+
+#### 一些建议
 
 ##### 内存耗尽
 
@@ -72,7 +82,7 @@ SELECT pg_advisory_lock(q.id) FROM
 ) q; -- ok
 ```
 
-##### 禁止加带默认值的列
+##### 加带默认值的列
 
 >（PostgreSQL10之前）
 
@@ -105,7 +115,7 @@ do {
 } while (numRowsUpdate > 0);
 ```
 
-##### 理解锁队列，使用lock_timeout
+##### lock_timeout
 
 每个PostgreSQL中的锁都有一个锁队列。如果一个锁是排他的，事务A占有，事务B获取的时候，就会在锁队列中等待。有趣的是，如果这时候事务C同样要获取该锁，那么它不仅要和A检查冲突性，也要和B检查冲突性，以及队列中其他的事务；这就意味着，即使你的DDL语句可以很快的执行，但是它可能会在队列中等待很久，直到前面的查询结束。并且该DDL操作会将后续的查询阻塞；
 
@@ -128,7 +138,7 @@ ALTER TABLE items ADD COLUMN last_update timestamptz;
 
 并行的创建索引确实有缺点。如果出了问题，它不会回滚，这会留下一个未完成的index；但是不用担心，`DROP INDEX CONCURRENTLY items_value_idx`，重新创建即可。
 
-##### 晚点使用激进的锁
+##### 慎用激进的锁
 
 当在一个表上执行需要获得激进策略锁的时候，越晚越好，影响越小；比如如果你想替换一个表的内容；
 
@@ -164,7 +174,7 @@ LOCK items IN EXCLUSIVE MODE;
 ...
 ```
 
-##### 添加主键的时候最小化锁阻塞
+##### 添加主键
 
 在表上添加一个主键是有意义的，PostgreSQL中，可以通过alter table很方便的添加一个主键，但是当主键索引创建的时候，会花费很长时间，这样会阻塞查询；
 
@@ -205,15 +215,54 @@ END;
 
 ### 用户不可见
 
+除了可以在SQL中直接或间接请求的锁以外，PostgreSQL中还有一些底层的锁，比如编程中常听说的自旋锁，以及控制共享内存的轻量锁，还有PostgreSQL的MVCC机制中的 SIReadLock。
+
 #### 自旋锁
 
-Vs 原子操作
+不像上述锁有多种模式，自旋锁只有获得和没获得两种状态，在程序中的同步操作中经常用到。和自旋锁（spinlock）类似的概念还有mutex（binary semaphore），atomic（原子操作）。
+
+> spinlock：得不到，忙等
+>
+> mutex：得不到，阻塞等待唤醒
+>
+> atomic：把竞态条件作为一个操作，i++(read i; add i; write i; 作为一个操作)
+
+在PostgreSQL中spinlock主要用来作为lightweight lock的基础设施。（PostgreSQL 9.5之后spinlock换成了atomic）
 
 #### 页锁（lightweight lock）
 
 ​	PG中，有对于表的数据页的共享/互斥锁，一旦这些行读取或者更改完成后，相应锁就被释放。应用开发者一般不用考虑这个锁。
 
-https://www.percona.com/blog/2018/10/30/postgresql-locking-part-3-lightweight-locks/
+如果轻量锁成为了系统瓶颈，我们可以从pg_stat_activity中的wait_event_type和wait_event字段看到相关查询在等待某些轻量锁，这里简单介绍几个：
+
++ WALInsertLock：wal buffer是固定大小的，向wal buffer中写wal record需要竞争的锁，如果把synchronous_commit关闭，这个锁的竞争会更加激烈。
+
++ WALWriteLock：一般都是同步提交，要保证commit时，wal是刷盘的，那么刷盘就会竞争这个锁。
+
++ ProcArrayLock：保护PostgreSQL服务进程共享的ProcArray结构。
+
++ CLogControlLock：clog缓存在共享缓存中，保护clog的读写。
+
++ SInvalidReadLock：每个PostgreSQL进程维护了一个共享内存的数据子集的cache，如果修改了共享的元组，需要知会其他进程，这通过一个*SICleanupQueue*来传递消息。
+
+  ```c
+  typedef union
+  {
+  	int8		id;				/* type field --- must be first */
+  	SharedInvalCatcacheMsg cc;
+  	SharedInvalCatalogMsg cat;
+  	SharedInvalRelcacheMsg rc;
+  	SharedInvalSmgrMsg sm;
+  	SharedInvalRelmapMsg rm;
+  	SharedInvalSnapshotMsg sn;
+  } SharedInvalidationMessage;
+  ```
+
+  如果这个锁成为系统瓶颈，说明共享内存的进程会被不同的进程修改，可以通过提高shard_buffers来减少竞争。
+
++ BufMappingLocks：共享内存的管理有一个buffer map；这个map分为128个区（在PostgreSQL 9.5 之前是16个区）。通过这个锁来保护这个map。
+
+#### SIReadLock
 
 ### 参考
 
