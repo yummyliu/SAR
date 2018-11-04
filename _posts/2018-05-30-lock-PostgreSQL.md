@@ -264,6 +264,76 @@ END;
 
 #### SIReadLock
 
-### 参考
+对于regular lock，如果锁了很长时间，我们可以执行querycancel来终止获得相应的锁，而对于轻量锁，如果经常等待很久，或者经常执行querycancel都是不可接受的。在PostgreSQL中，对同一份数据的访问，采用的是多版本快照隔离的方式进行并发控制。
 
-[tips_for_deal_locks](https://www.citusdata.com/blog/2018/02/22/seven-tips-for-dealing-with-postgres-locks/)
+##### 快照隔离中的串行化异常
+
+​	基于快照隔离的并发控制，看到的数据取决于获取的何时的数据版本。在RC和RR级别中，分别是在语句和事务级别获取的快照。在PostgreSQL 9.1之前，SERIALIZABLE级别的实际上就是RR级别，这已经不会出现SQL标准中的dirty read/unrepeatable read/phantom read三种异常，但是基于快照隔离还是会出现一些串行化异常，典型的有写偏（write-skew）。
+
+###### 写偏
+
+| 事务1 tidx    | 事务2   tidy  |
+| ------------- | ------------- |
+| begin；       |               |
+| read   A；    | begin；       |
+|               | read   B；    |
+| update   B=A; |               |
+|               | update   A=B; |
+| commit;       |               |
+|               | commit        |
+
+如上两个事务，分别是读A写B和读B写A。一开始A!=B，如果串行化正确的话，结果应该是A=B；然而在RR级别中，一开始分别获取了A和B的旧快照，按照如上执行的结果还是A!=B，这就产生了写偏异常。
+
+##### 串行化异常检测
+
+事务时间有三种依赖：
+
++ T1-(ww)->T2 ：T1 Write A，T2 Write A
+
++ T1-(wr)->T2 ： T1 Write A， T2 Read A
+
++ T1-(rw)->T2：T1 Read A，T2 Write A 
+
+在论文*Making Snapshot Isolation Serializable*中解释了如何在快照隔离中实现序列化，其中有一个重要的结论：
+
+结论：事务依赖图中，如果**有环**且环中**有T1-(rw)->T2-(rw)->T3**，就可能出现序列化异常。
+
+那么，在DB中可以检测上述两个条件来检测串行化异常，而检测是否有环的代价较大，在PostgreSQL中只检查其中一个条件。虽然会产生误判，但在保证性能的前提下，能够保证不会产生序列化异常。
+
+![image-20181105070206853](/Users/liuyangming/yummyliu.github.io/image/image-20181105070206853.png)
+
+#### SIREADLOCK
+
+PostgreSQL如何检测序列化异常，就是通过SIREADLOCK来进行的，在有些DB中，有自己的意向锁机制，这个锁有点像PostgreSQL中的意向锁，其中保存了两种信息（{object1，...}，tid），即，那个tid要访问那些object。对于SIREADLOCK主要有下面四个操作，这里结合前面的例子进行简单阐述：
+
+| 事务1 tidx  | 事务2 tidy  |
+| ----------- | ----------- |
+| begin；     |             |
+| read A；    | begin；     |
+|             | read B；    |
+| update B=A; |             |
+|             | update A=B; |
+| commit;     |             |
+|             | abort       |
+
+##### 1.  创建
+
++ tidx创建一个SIREAD lock {A, {tidx}}。
+
++ tidy创建一个SIREAD lock {B, {tidy}}。
+
+##### 2. 合并
+
+SIREADLOCK分别三个级别（tuple、page、relation），存储在内存中，为了节省空间，当低级别够了一个高级别时，会合并为一个高级别的锁；比如，当某个page中所有的tuple都加了SIREADLOCK，那么tuple锁就会合并为一个page锁。
+
+##### 3. RW依赖检测
+
+当执行写操作时，发现有rw依赖，那么创建一个rw依赖结构，这里两个事务在update的时候分别创建两个RW conflict结构。
+
++ {r=tidy, w=tidx, {B}} 
+
++ {r=tidx, w=tidy, {A}}
+
+##### 4. 提交
+
+当前事务作为Tpivot，检测是否有一个rw出边和一个rw入边，有则按照**first-commiter-win**进行处理，而另一个就Rollback。
