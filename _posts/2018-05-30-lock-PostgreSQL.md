@@ -7,6 +7,7 @@ header-img: "img/head.jpg"
 categories: jekyll update
 tags:
     - PostgreSQL
+typora-root-url: ../../yummyliu.github.io
 ---
 
 {:toc}
@@ -300,7 +301,7 @@ END;
 
 那么，在DB中可以检测上述两个条件来检测串行化异常，而检测是否有环的代价较大，在PostgreSQL中只检查其中一个条件。虽然会产生误判，但在保证性能的前提下，能够保证不会产生序列化异常。
 
-![image-20181105070206853](/Users/liuyangming/yummyliu.github.io/image/image-20181105070206853.png)
+![image-20181105070206853](/image/image-20181105070206853.png)
 
 #### SIREADLOCK
 
