@@ -10,7 +10,7 @@ typora-root-url: ../../yummmyliu.github.io
 ---
 
 > * TOC
-> {:toc}
+{:toc}
 
 
 **图1 TCP 状态转换图**
@@ -170,6 +170,14 @@ listen(fd, backlog);
 >       violation of the TCP specification, but required to prevent
 >       denial-of-service attacks.
 > ```
+
+#### SO_REUSEADDR
+
+https://stackoverflow.com/questions/3229860/what-is-the-meaning-of-so-reuseaddr-setsockopt-option-linux
+
+#### TCP_DEFER_ACCEPT || SO_ACCEPTFILTER
+
+
 
 ## 参考文献
 

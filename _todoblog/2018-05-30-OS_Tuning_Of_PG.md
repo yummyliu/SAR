@@ -14,6 +14,8 @@ tags:
 
 ##Memory 
 
+So while, in general, the recommended setting for typical workloads is 25% of RAM, it could be set to >= 75% for special cases, but not in between.
+
 + NUMA
 
   非对称性内存访问；每个CPU有自己的Memory，访问自己的很快，访问别人的慢。
@@ -38,7 +40,15 @@ tags:
 
 + Swap
 
++ 
+
 ## OS 参数
 
 shared-memory-error
 http://postgresql.freeideas.cz/shared-memory-error/
+
+
+
+overcommit_memory
+
+http://engineering.pivotal.io/post/virtual_memory_settings_in_linux_-_the_problem_with_overcommit/
