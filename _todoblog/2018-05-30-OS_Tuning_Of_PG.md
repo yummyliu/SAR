@@ -40,7 +40,7 @@ So while, in general, the recommended setting for typical workloads is 25% of RA
 
 + Swap
 
-+ 
++ TLB
 
 ## OS 参数
 
