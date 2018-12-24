@@ -1,11 +1,12 @@
 ---
 layout: post
-title: 
-date: 2018-03-30 18:06
+title: 在Linux系统中，PostgreSQL调优详解
+date: 2018-12-24 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
     - PostgreSQL
+    - Linux
 ---
 
 #  在Linux系统中，PostgreSQL调优详解
