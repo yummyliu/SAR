@@ -193,11 +193,3 @@ docker run -p 4000:80 yummyliu/get-started:part2
 # docker run -p 4000:80 username/repository:tag
 ```
 
-## 构建app——services
-
-## 多机多容器：Swarm clusters
-
-## 构建app——stacks
-
-## 部署app
-
