@@ -8,6 +8,10 @@ tags:
     - Database
 ---
 
+
+
+[TOC]
+
 CockroachDB是一个开源全球分布式的，可扩展且一致性的数据库。目前兼容PostgreSQL协议；[官方介绍](https://www.cockroachlabs.com/docs/stable/architecture/overview.html#glossary)
 
 # 设计目标
@@ -66,11 +70,11 @@ XXX? 最后，数据存储在一个有效的存储引擎中，确保能够追溯
 
 # SQL层
 
-## 概述
+## SQL层概述
 
 对外提供SQL API，将SQL请求，转换成KV操作，发到下一层Transactional（主要是将planNodes发送到Transaction layer）。
 
-## 组件
+## SQL组件
 
 该层主要有以下几个组件：
 
@@ -83,7 +87,7 @@ XXX? 最后，数据存储在一个有效的存储引擎中，确保能够追溯
 
 # Transactional层
 
-## 概述
+## 事务概述
 
 CRDB最看重DB的一致性特性。这是数据库可依赖的重要条件，否则会出很多奇怪的异常。
 
@@ -98,11 +102,60 @@ CRDB支持完全的ACID特性，并且每条语句一个事务，都是autocommi
 1. 事务记录（Transaction record）：存储在第一次写发生的range中，并记录事务当前的状态（启动时为PENDING，结束时为COMMITTED或ABORTED）。
 2. 写意向（Write intents）：代表临时未提交的状态，和MVCC概念类似。创建写意向后，CRDB检查是否存在事务冲突，冲突就restart当前事务。如果事务由于其他原因结束（比如违反约束），就aborted。
 
-## 组件
+### 阶段2：提交
 
-https://www.cockroachlabs.com/docs/stable/contribute-to-cockroachdb.html
+检查running的事务，确认这些事务是不是已经`ABORTED`，是的话，就重做这个事务；
+
+如果事务通过了检查，那么状态就是`COMMITED`。
+
+### 阶段3：清理
+
+当事务结束后，coordinator节点将MVCC中的写意向清理掉；（写意向用来检查事务之间的冲突，清理操作的一个优化点是：清理操作可以在检查事务记录的任何时间执行，避免统一执行）。
+
+
+
+## 事务标识
+
+> distributed problem: ordering & causality
+
+### HLC
+
+在分布式环境中，顺序性和因果性是很关键的问题；在CRDB中，基于*Logical Physical Clocks
+and Consistent Snapshots in Globally Distributed Databases*实现的混合逻辑时钟解决这些问题。对于事务来说，每个事务开始是获取一个HLCtime，用在数据的版本和事务隔离中。
+
+### 时钟同步
+
+通过[NTP](http://www.ntp.org/)协议或者其他时钟同步中间件来确保时间在一定的偏离（Max clock offset enforcement）里是同步的；否则就会出现一些序列化异常，如stale read和write skew。
 
 # Distribution层
+
+CRDB将集群中的**所有数据**存储在一整个sorted_map中，并将整个key-space划分为若干个range；因此，每个key都能在一个range中发现。有了这个大的sortedmap，CRDB可以实现快速定位于高效扫描。
+
+### SortedMap结构
+
+#### 元数据
+
+> system data
+
+位于meta range中，是一个两层的索引；第一层叫meta1，第二层叫meta2；每个node都知道meta1的位置，通过meta1找到meta2，从而找到具体数据的位置。
+
+meta range和普通range的存储方式相同；
+
+#### 表数据
+
+> user data
+
+每个表都是一个有序的一级索引，同时表上还有相应的二级索引；每个表以及相应的二级索引一开始**都对应一个**range，range中的每个kv对，要么是表中或者二级索引中的一行元组。
+
+当range到达64MB后，将进行分裂成多个range。之后，可能表和索引的数据将会分开存储，也可能还在一起。
+
+默认的64MB，确保多节点通信的效率；如果数据访问的局部性比较好，可以设置的大一点。同样地，每个range都有一个Replica。
+
+### SortedMap操作
+
+对于每个SortedMap的数据请求，通过比较meta2的key找到具体数据的位置；meta2在节点之间是有缓存的，并且缓存很大，确保大部分的route查询可以命中缓存。
+
+如果从meta2缓存中，找到了数据的range的leaseholder。那么将请求转发过去；如果，转发过去发现没有相应的数据，那么更新缓存。
 
 # Replication层
 
