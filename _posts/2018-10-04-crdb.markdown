@@ -2,7 +2,7 @@
 layout: post
 title: 难得有DB优先兼容PostgreSQL协议——CockroachDB(简译)
 subtitle: 全球分布式数据库CockroachDB简介
-date: 2015-10-04 09:44
+date: 2018-10-04 09:44
 categories: jekyll update
 tags:
     - Database
