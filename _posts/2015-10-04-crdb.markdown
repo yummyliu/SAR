@@ -6,6 +6,7 @@ date: 2015-10-04 09:44
 categories: jekyll update
 tags:
     - Database
+    - CockroachDB
 ---
 
 
@@ -32,7 +33,7 @@ CockroachDB是一个开源全球分布式的，可扩展且一致性的数据库
 | Node        | CockroachDB中的一个机器                                      |
 | Range       | CockroachDB将**所有**table和index以及系统信息都存储在一个大的有序的kv映射表中 |
 | Replica     | 将每个range，存储大于等于三个副本，放在不同的node上          |
-| Leaseholder | 对于每个range，只有一个副本获得该range的lease（租赁权）；到达这个副本的读可以直接返回，写要与其他副本同步； |
+| Leaseholder | 对于每个range，只有一个副本获得该range的lease（租赁权）；到达这个副本的读可以直接返回，写要与其他副本同步（向raft group leader提议，从而知道是否可以写）； |
 | Raft Leader | 一般就是leaseholder，对于写请求，要通过raft协议确认大部分replica同意后，才提交写； |
 | Raft Log    | 对于每个range，都有一个该range相关的replica同意的基于时间顺序的log；这个log就是每个replica的复制依据，保存在磁盘中。 |
 
@@ -159,4 +160,50 @@ meta range和普通range的存储方式相同；
 
 # Replication层
 
+> 基于一致性算法，实现多个node上的copy的一致性。
+
+CRDB实现的是强一致性（C），当出现节点失效时，为了保证分区容忍性（P），CRDB自动停止失效节点的处理，并进行数据重新分布（rebalance）。同样地，如果加入了新的节点，同样要进行数据重新分布。
+
+### Raft
+
+数据的序列化一致性是基于Raft协议实现的。对于每个range的多个replica，将其组织在一个Raft Group中。Group中的每个replica要么是leader（leader一般也就是leaseholder），要么是follower，leader和follower之间维护了心跳链接，如果follower很久没有收到leader的心跳，那么就会变成candidate，进行重新选举。
+
+每个node收到的`BatchRequest`会将其转换成raft command，并发送到leader节点，leader决定是否可以写入，可以的话将其写在RaftLog中。
+
+有了RaftLog，失效的节点就可以恢复了，落后的节点就可以追溯了。
+
+### Snapshot
+
+在rebalance时，复制一个新的replica，可以复制一个数据的快照。后续根据raft log进行追溯。
+
+### Lease
+
+每个range对应一个raftgroup，其中只有一个节点是leaseholder。对于读，leaseholder可以直接跳过raft协议，写的话leaseholder和raft group leader需要进行确认，为了避免这个开销，往往这两个角色是一个节点。
+
+对于用户数据采用`Epoch-based leases`，对于系统数据采用`Expiration-based leases`。
+
+### rebalance
+
+节点的add/del都会触发rebalance，rebalance是从leaseholder处，复制一个数据的snapshot。当复制结束后，该节点就会加入到raft group中，加入后发现自己的数据版本太旧，就会根据raft log进行追溯。
+
 # Storage层
+
+每个节点启动的时候都要指定自己的`store`，这个store就是RocksDB。对于节点上的数据需要有三个RocksDB实例分别存储三种不同的数据，三种数据共享一个缓存：
+
+1. Raft Log
+2. 分布式SQL的临时数据
+3. 其他数据
+
+每个range的多个副本不会放在同一个store中。
+
+### RocksDB
+
+KV存储引擎支持批量原子写和快照功能。通过前缀压缩，实现高效的Key存储。
+
+### MVCC
+
+​	Storage层的MVCC值，确保了CRDB的tranaction层的数据一致性。比如，CRDB保存了一个timestamp cache，其中记录了key被读取的最新timestamp，如果有晚于该时间戳的write，那么该write事务进行restart。
+
+### 垃圾回收
+
+可以设置集群，数据库以及表级别的垃圾回收，避免磁盘数据垃圾太多，默认是24小时一次。
