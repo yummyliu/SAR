@@ -1,0 +1,113 @@
+---
+layout: post
+title: 
+date: 2019-01-07 17:40
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+typora-root-url: ../../yummyliu.github.io
+---
+> * TOC
+> {:toc}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Medium Length Professional CV
+% LaTeX Template
+% Version 2.0 (8/5/13)
+%
+% This template has been downloaded from:
+% http://www.LaTeXTemplates.com
+%
+% Original author:
+% Trey Hunner (http://www.treyhunner.com/)
+%
+% Important note:
+% This template requires the resume.cls file to be in the same directory as the
+% .tex file. The resume.cls file provides the resume style used for structuring the
+% document.
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%----------------------------------------------------------------------------------------
+%    PACKAGES AND OTHER DOCUMENT CONFIGURATIONS
+%----------------------------------------------------------------------------------------
+
+\documentclass{resume} % Use the custom resume.cls style
+
+\usepackage[left=0.7in,top=0.5in,right=0.7in,bottom=0.5in]{geometry} % Document margins
+\usepackage[fontset=ubuntu]{ctex}
+\name{刘阳明} % Your name
+\address{18515376616 \\ http://yummyliu.github.io \\ sdwhlym@gmail.com} % Your phone number and email
+
+\begin{document}
+%----------------------------------------------------------------------------------------
+%    WORK EXPERIENCE SECTION
+%----------------------------------------------------------------------------------------
+
+\begin{rSection}{学习与工作经历}
+%------------------------------------------------
+\begin{rSubsection}{探探科技}{2017.12-today}{工作}{PostgreSQL DBA}
+\item PostgreSQL监控与运维管理。
+\item 涉及技术：shell、python、Go脚本；Prometheus、Grafana监控；
+\end{rSubsection}
+\begin{rSubsection}{360}{2017.10-2017.12}{工作}{DevOps}
+\item 二级引擎的运维平台开发。
+\item 涉及技术：shell，python脚本。
+\end{rSubsection}
+\begin{rSubsection}{尚德}{2016.9-2017.10}{实习}{C++后台开发}
+\item EHR系统、IM系统开发。
+\item 涉及技术：c++多线程网络编程；使用MySQL，Redis，Protobuf。
+\end{rSubsection}
+%------------------------------------------------
+\begin{rSubsection}{中科天玑}{2016.3-2016.7}{实习}{C数据库开发}
+\item 实现分布式数据库的Portal模块；调研并测试Cstorefdw开源列存储插件；
+\item 涉及技术：PostgreSQL源码阅读、PG的HOOK接口。解决Cstorefdw测试中出现的bug。
+\end{rSubsection}
+%------------------------------------------------
+\begin{rSubsection}{搜狐}{2015.7-2015.12}{实习}{C++后台开发}
+\item 广告数据索引引擎开发（IndexServer、IndexServerGate）
+\item 涉及技术：C++编程；LevelDB、Thrift；
+\end{rSubsection}
+%------------------------------------------------
+\begin{rSubsection}{华为-人大合作项目}{2014.3-2015.6}{学校项目}{C++开发}
+\item 学习数据库内核原理以及PostgreSQL源码；
+\item 实现简单的SQL执行器Demo；基于Supersonic框架，参与开发基于协处理器的并行SQL解析执行引擎。
+\end{rSubsection}
+%------------------------------------------------
+\end{rSection}
+%----------------------------------------------------------------------------------------
+%    EDUCATION SECTION
+%----------------------------------------------------------------------------------------
+
+\begin{rSection}{教育背景}
+
+{\bf 中国人民大学} \hfill {\bf 计算机软件与理论}\hfill {\em 2014.9-2017.7} \\ 
+{\bf 青岛大学}\hfill {\bf 软件工程} \hfill {\em 2010.9-2014.7}
+\end{rSection}
+%----------------------------------------------------------------------------------------
+%    TECHNICAL STRENGTHS SECTION
+%----------------------------------------------------------------------------------------
+\begin{rSection}{个人综述}
+\begin{tabular}{ @{} >{\bfseries}l @{\hspace{3ex}} l }
+了解的编程语言 & \textbf{C++}, Shell, Python, \textbf{Go}, Java\\
+了解的数据库 & MySQL/\textbf{PostgreSQL}/Redis/Hive/CitusDB/TimeScalaDB/PipelineDB/GreenPlum\\
+适合的工作工具与平台 & \textbf{Vim, Git, Linux}\\
+性格与目标 & \textbf{性格踏实稳重，喜欢钻研技术；期待加入一个技术氛围浓厚的公司，与公司共同发展。}\\
+\end{tabular}
+\end{rSection}
+
+
+%----------------------------------------------------------------------------------------
+%    EXAMPLE SECTION
+%----------------------------------------------------------------------------------------
+
+%\begin{rSection}{Section Name}
+
+%Section content\ldots
+
+%\end{rSection}
+
+%----------------------------------------------------------------------------------------
+
+\end{document}
+
