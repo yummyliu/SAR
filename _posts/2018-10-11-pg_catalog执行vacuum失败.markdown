@@ -7,9 +7,9 @@ categories: jekyll update
 tags:
 typora-root-url: ../../yummyliu.github.io
 ---
-> * TOC
-{:toc}
 
+* TOC
+{:toc}
 
 
 # 现象
