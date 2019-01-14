@@ -5,6 +5,7 @@ date: 2018-12-03 17:06
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
+  - life
 typora-root-url: ../../yummyliu.github.io
 ---
 {:toc}
