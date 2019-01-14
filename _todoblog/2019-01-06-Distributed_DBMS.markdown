@@ -1,4 +1,5 @@
 ---
+
 layout: post
 title: 
 date: 2019-01-06 11:25
@@ -21,17 +22,20 @@ typora-root-url: ../../yummyliu.github.io
 {:toc}
 # Why Distributed
 
-| 考虑因素 | 单机                             | 分布式                 |
-| -------- | -------------------------------- | ---------------------- |
-| 性能瓶颈 | 单机的资源上限：CPU核数/磁盘带宽 | 通信代价               |
-| 可用性   | 单点问题                         | 多活副本               |
-| 伸缩性   | 受限于单个机器                   | 集群理论上没有伸缩上限 |
+| 考虑因素 | 单机                             | 分布式                                       |
+| -------- | -------------------------------- | -------------------------------------------- |
+| 性能瓶颈 | 单机的资源上限：CPU核数/磁盘带宽 | 通信代价                                     |
+| 可用性   | 单点问题                         | 多活副本                                     |
+| 伸缩性   | 受限于单个机器                   | 集群理论上没有伸缩上限                       |
+| 数据热点 |                                  | 公司的不同地方的不同部门，将数据放在自己这里 |
 
 # Distributed Problems
 
-老生常谈的CAP理论，是分布式系统基石。当你将
+分布式数据库有好处，同样也会存在问题；比如系统设计就会更加复杂，并且需要处理多节点之间通信的额外开销；很难保障多节点的数据完整性，以及多节点的数据分布方式会影响分布式查询的性能。
 
 ## CAP理论
+
+> 老生常谈的CAP理论，是分布式系统基石。
 
 对于无状态的分布式系统，系统间的协调几乎就没有必要了；但是对于像数据库这种有状态的，就需要在C/A/P之间权衡了（Principles of Distributed Computing ——Eric Brewer）。
 
@@ -91,19 +95,64 @@ typora-root-url: ../../yummyliu.github.io
 
 #### 分布式死锁检测
 
-## 分布式日志
+## 数据分布
 
-## 向上透明
+对于数据库中的表数据有不同的分布方式：
 
-## 分布式的查询计划优化
+- 无副本，无分段
+- 副本
+  - Snapshot replica
+  - Near-real-time replica
+  - Pull replica
+- 分段
+  - 水平分段
+  - 垂直分段
+  - 混合分段
+- 混合：分段且冗余
+
+## 用户透明
+
++ 位置透明：用户对待远程的分布式数据库，和对待本地数据库相同。
+
++ 分段透明：用户不知道数据被分割存储。
+
++ 副本透明：用户不知道数据有多个副本。
+
+## 查询计划优化
 
 ![Distributed Query Processing Architecture](/image/distributed_query_architecture.png)
 
-# AllStar of Distributed DBMS
++ 查询算子： Projection/Selection/Union/Intersection/Minus/Join
 
-## NoSQL
+单机查询计划，基于统计信息进行启发式搜索。
+
+分布式查询计划
+
++ 最大化集群资源利用率
+
+![Optimal Utilization Distributed System](/image/optimal_utilization_distributed_system.png)
+
+对于第三种，左侧收到操作符，但是将数据传递给计算性能更好（ie. 多核）的右侧机器
+
+计算，然后返回结果。
+
++ 减少整个的返回结果集，进而减少网络代价。
 
 
 
-## NewSQL
+
+
+
+
+# Distributed DBMS
+
+分布式数据库可以分为同构和异构两种.同构的分布式数据库又分为自治的（**Autonomous**）和非自治的。异构数据数据库有分为联合的（**Federated**）和非联合的；
+
+
+
+分布式
+
+
+
+
 
