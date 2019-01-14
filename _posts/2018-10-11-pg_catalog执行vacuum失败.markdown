@@ -66,9 +66,149 @@ postgres=# select relname,relfrozenxid from pg_class where relname ~ 'pg_statist
 (2 rows)
 ```
 
+## 另外一个问题
+
+datfrozenxid/relfrozenxid是每个表中最老的没有frozen的行版本。pg_database中的datfrozenxid是pg_class中所有relfrozenxid中最老的，
+
+> To track the age of the oldest unfrozen XIDs in a database, `VACUUM` stores XID statistics in the system tables `pg_class` and `pg_database`
+
+上述出现问题的是系统共享的表，所以所有的库的年龄都一样的大：
+
+```sql
+postgres=# select datname,datfrozenxid,age(datfrozenxid) from pg_database ;
+  datname  | datfrozenxid |    age
+-----------+--------------+-----------
+ mydb      |   2018400456 | 455335315
+ template0 |   2018400456 | 455335315
+ postgres  |   2018400456 | 455335315
+ template1 |   2018400456 | 455335315
+(4 rows)
+```
+
+在找问题的过程中，创建一个普通的表a，将其中三个元组删除了。
+
+```sql
+postgres=# \d a
+                 Table "public.a"
+ Column |  Type   | Collation | Nullable | Default
+--------+---------+-----------+----------+---------
+ a      | integer |           |          |
+ b      | integer |           |          |
+
+postgres=# table a;
+ a | b
+---+---
+ 1 | 1
+(1 row)
+
+postgres=# select lp , lp_off , t_xmin,   t_xmax, t_field3, t_ctid, t_infomask2, t_infomask from heap_page_items(get_raw_page('a', 0));
+ lp | lp_off |   t_xmin   |   t_xmax   | t_field3 | t_ctid | t_infomask2 | t_infomask
+----+--------+------------+------------+----------+--------+-------------+------------
+  1 |   8160 | 2473735754 |          0 |        0 | (0,1)  |           2 |       2304
+  2 |   8128 | 2473735754 | 2473735755 |        0 | (0,2)  |        8194 |       1280
+  3 |   8096 | 2473735754 | 2473735756 |        0 | (0,3)  |        8194 |       1280
+  4 |   8064 | 2473735754 | 2473735763 |        0 | (0,4)  |        8194 |       1280
+(4 rows)
+```
+
+然后进行vacuum freeze ，居然说已经删除的三个元组居然不能被freeze。
+
+```sql
+postgres=# vacuum VERBOSE a;
+INFO:  vacuuming "public.a"
+2473685768INFO:  "a": found 0 removable, 4 nonremovable row versions in 1 out of 1 pages
+DETAIL:  3 dead row versions cannot be removed yet, oldest xmin: 2473685768
+There were 0 unused item pointers.
+Skipped 0 pages due to buffer pins, 0 frozen pages.
+0 pages are entirely empty.
+CPU: user: 0.00 s, system: 0.00 s, elapsed: 426.94 s.
+VACUUM
+```
+
+通过debug，发现原因是这三个元组的t_xmax的在OldXmin之后的（HEAPTUPLE_RECENTLY_DEAD）。
+
+```c
+	/*
+	 * Deleter committed, but perhaps it was recent enough that some open
+	 * transactions could still see the tuple.
+	 */
+	if (!TransactionIdPrecedes(HeapTupleHeaderGetRawXmax(tuple), OldestXmin))
+		return HEAPTUPLE_RECENTLY_DEAD;
+```
+
+TransactionIdPrecedes(2473735755,2473685768) = 0。
+
+```c
+(gdb) finish
+Run till exit from #0  TransactionIdPrecedes (id1=2473735755, id2=2473685768) at transam.c:308
+0x0000000000a342d0 in HeapTupleSatisfiesVacuum (htup=0x7ffe5082ccc0, OldestXmin=2473685768, buffer=163) at tqual.c:1377
+1377    tqual.c: No such file or directory.
+        in tqual.c
+Value returned is $16 = 0 '\000'
+```
+
+在PgSQL中的txid是unsigned int32类型，但是判断行版本新旧的方式是通过**将做差，然后转换为int型**的方式比较。
+
+```c
+    diff = (int32) (id1 - id2);
+    return (diff < 0);
+```
+
+其实就是判断两个长度为32的补码表示的二进制数的大小，补码中的头尾相接。
+
+符号相同的话好理解，差值如果大于2^31，就会变号；
+
+如果符号不同，可以看成(正数-0 + 2,147,483,648+负数)
+
+> 比如长度为4的二进制数，用补码表示0010 - 1001=0111。
+>
+> => 0010 - 0 + 10000-1001
+
+
+
+### 问题
+
+描述了这么多，问题是2473685768是从哪来的？
+
+```
+ * GetOldestXmin -- returns oldest transaction that was running
+ *					when any current transaction was started.
+
+```
+
+`GetOldestXmin() - vacuum_defer_cleanup_age`
+
+```sql
+postgres=# show vacuum_defer_cleanup_age ;
+ vacuum_defer_cleanup_age
+--------------------------
+ 50000
+(1 row)
+
+postgres=# select 2473685778+50000;
+  ?column?
+------------
+ 2473735778
+(1 row)
+
+postgres=# select txid_current();
+ txid_current
+--------------
+   2473735778
+(1 row)
+```
+
+
+
 # 解决方案
 
 由于之前出现这种问题，通过删除数据的方式解决，现在没有找到删除数据的方法。决定通过逻辑复制的方式，将业务数据复制出来，而不是直接修复系统表。
+
+由于出现问题的是有两个系统表，在没有迁移业务数据之前，该库上这两个表的Autovacuum都会受到影响。之前每天晚上的vacuum任务是对整个库的vacuum，由于出现上述报错，导致vacuum中止。因此，现在每晚的vacuum变成，将每个表进行分别vacuum。
+
+> 虽然整体库的年龄在不断增长，但是业务表的年龄并不大，只是运维起来比较麻烦。
+>
+> 对于每次查询得到一个txid，只要没有行版本<(txid_current-2billion)，那么就不会出现错误情况（过去的数据，出现在将来了）。
 
 留下的有问题的老库，作为一个研究对象，后期进行研究。
 
