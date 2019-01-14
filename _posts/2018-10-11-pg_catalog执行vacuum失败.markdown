@@ -71,3 +71,4 @@ postgres=# select relname,relfrozenxid from pg_class where relname ~ 'pg_statist
 由于之前出现这种问题，通过删除数据的方式解决，现在没有找到删除数据的方法。决定通过逻辑复制的方式，将业务数据复制出来，而不是直接修复系统表。
 
 留下的有问题的老库，作为一个研究对象，后期进行研究。
+
