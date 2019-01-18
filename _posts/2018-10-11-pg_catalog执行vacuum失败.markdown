@@ -203,6 +203,8 @@ postgres=# select txid_current();
 
 # 解决方案
 
+## 迁移用户数据
+
 由于之前出现这种问题，通过删除数据的方式解决，现在没有找到删除数据的方法。决定通过逻辑复制的方式，将业务数据复制出来，而不是直接修复系统表。
 
 由于出现问题的是有两个系统表，在没有迁移业务数据之前，该库上这两个表的Autovacuum都会受到影响。之前每天晚上的vacuum任务是对整个库的vacuum，由于出现上述报错，导致vacuum中止。因此，现在每晚的vacuum变成，将每个表进行分别vacuum。
@@ -213,3 +215,102 @@ postgres=# select txid_current();
 
 留下的有问题的老库，作为一个研究对象，后期进行研究。
 
+## 二进制打开硬改xmin
+
+```sql
+postgres=# select lp , lp_off , t_xmin,   t_xmax, t_field3, t_ctid, t_infomask2, t_infomask from heap_page_items(get_raw_page('pg_shdescription',0));
+ lp | lp_off |   t_xmin   | t_xmax | t_field3 | t_ctid | t_infomask2 | t_infomask
+----+--------+------------+--------+----------+--------+-------------+------------
+  1 |      5 |            |        |          |        |             |
+  2 |   8128 |        552 |      0 |        0 | (0,2)  |           3 |       2306
+  3 |      4 |            |        |          |        |             |
+  4 |   8048 | 2018400591 |      0 |        0 | (0,4)  |       32771 |      10498
+  5 |   7976 | 2018400594 |      0 |        0 | (0,5)  |       32771 |      10498
+(5 rows)
+postgres=# select pg_relation_filepath('pg_shdescription');
+ pg_relation_filepath
+----------------------
+ global/2396
+(1 row)
+```
+
+552是有问题的记录。`vim -b global/2396`打开文件，硬改。将552改成和其他正常记录一样的xmin。
+
+![image-20190118154836538](/image/image-20190118154836538.png)
+
+由于文件有缓存，这里利用重启的方式，重新加载文件。
+
+```sql
+[postgres@ymtest affdata]$ pg_ctl restart -D affdata2
+waiting for server to shut down.... done
+server stopped
+waiting for server to start....,,104960,,,1,,00000,0,,2019-01-18 15:51:00 CST,LOG:  listening on IPv4 address "0.0.0.0", port 8888
+,,104960,,,2,,00000,0,,2019-01-18 15:51:00 CST,LOG:  listening on IPv6 address "::", port 8888
+,,104960,,,3,,00000,0,,2019-01-18 15:51:00 CST,LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.8888"
+,,104960,,,4,,00000,0,,2019-01-18 15:51:00 CST,LOG:  listening on Unix socket "/tmp/.s.PGSQL.8888"
+,,104960,,,5,,00000,0,,2019-01-18 15:51:00 CST,LOG:  redirecting log output to logging collector process
+,,104960,,,6,,00000,0,,2019-01-18 15:51:00 CST,HINT:  Future log output will appear in directory "log".
+ done
+server started
+[postgres@ymtest affdata]$ psql -p 8888 -h /tmp
+psql (10.4)
+Type "help" for help.
+
+postgres=# select lp , lp_off , t_xmin,   t_xmax, t_field3, t_ctid, t_infomask2, t_infomask from heap_page_items(get_raw_page('pg_shdescription',0));
+ lp | lp_off |   t_xmin   | t_xmax | t_field3 | t_ctid | t_infomask2 | t_infomask
+----+--------+------------+--------+----------+--------+-------------+------------
+  1 |      5 |            |        |          |        |             |
+  2 |   8128 | 2018400591 |      0 |        0 | (0,2)  |           3 |       2306
+  3 |      4 |            |        |          |        |             |
+  4 |   8048 | 2018400591 |      0 |        0 | (0,4)  |       32771 |      10498
+  5 |   7976 | 2018400594 |      0 |        0 | (0,5)  |       32771 |      10498
+(5 rows)
+```
+
+我们看到552变成了2018400591；接着进行vacuum freeze，成功。
+
+```sql
+postgres=# vacuum FREEZE VERBOSE pg_shdescription;
+INFO:  vacuuming "pg_catalog.pg_shdescription"
+INFO:  index "pg_shdescription_o_c_index" now contains 3 row versions in 2 pages
+DETAIL:  0 index row versions were removed.
+0 index pages have been deleted, 0 are currently reusable.
+CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s.
+INFO:  "pg_shdescription": found 0 removable, 3 nonremovable row versions in 1 out of 1 pages
+DETAIL:  0 dead row versions cannot be removed yet, oldest xmin: 2579204406
+There were 0 unused item pointers.
+Skipped 0 pages due to buffer pins, 0 frozen pages.
+0 pages are entirely empty.
+CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s.
+INFO:  vacuuming "pg_toast.pg_toast_2396"
+INFO:  index "pg_toast_2396_index" now contains 0 row versions in 1 pages
+DETAIL:  0 index row versions were removed.
+0 index pages have been deleted, 0 are currently reusable.
+CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s.
+INFO:  "pg_toast_2396": found 0 removable, 0 nonremovable row versions in 0 out of 0 pages
+DETAIL:  0 dead row versions cannot be removed yet, oldest xmin: 2579204406
+There were 0 unused item pointers.
+Skipped 0 pages due to buffer pins, 0 frozen pages.
+0 pages are entirely empty.
+CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s.
+VACUUM
+```
+
+### 一个小问题
+
+这里采用重启的方式，重新加载表文件；能否不重启呢？PG执行了checkpoint；以及OS执行了`sync; echo 3 > /proc/sys/vm/drop_caches`都不行。怀疑是PostgreSQL将系统表的信息单独放在自己的sharedbuffer中，由于PostgreSQL并不觉得这个表的数据页脏了，所以checkpoint的时候也不会更新，并且checkpoint的更新也只是更新磁盘文件，只能覆盖我们的修改而不是读取；
+
+另外，综合整个PostgreSQL的生命周期，只有两种情况会读取磁盘文件。
+
+启动后，当我们读取系统表的时候才会去shardbuffer中读取（没有命中，会从磁盘加载）。
+
+已经读取的页，由于换出策略换出了，重新加载，而这种情况，我们只能改好磁盘文件，干等这个发生了。
+
+```c
+/*
+ * get_raw_page
+ *
+ * Returns a copy of a page from shared buffers as a bytea
+ */
+PG_FUNCTION_INFO_V1(get_raw_page);
+```
