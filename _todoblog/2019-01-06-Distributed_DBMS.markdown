@@ -2,7 +2,7 @@
 
 layout: post
 title: 分布式杂谈
-date: 2019-01-06 11:25
+date: 2018-11-06 11:25
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
