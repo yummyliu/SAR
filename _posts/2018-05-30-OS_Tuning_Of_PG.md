@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 在Linux系统中，PostgreSQL调优详解
+title: 在Linux系统中，PostgreSQL的IO调优详解
 date: 2018-12-24 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -12,17 +12,11 @@ tags:
 > * TOC
 > {:toc}
 
-#  在Linux系统中，PostgreSQL调优详解
-
-> 基于PostgreSQL10
-
 ## 存储
 
-从存储开始说
 
 ### 内存申请
 
-先申请
 
 #### NUMA
 
@@ -225,21 +219,6 @@ Filename                                Type            Size    Used    Priority
 
 > max_files_per_process
 
-## 计算
-
-### 查询解析
-
-### 并行查询
-
-shared-memory-error
-http://postgresql.freeideas.cz/shared-memory-error/
-
-
-
-overcommit_memory
-
-http://engineering.pivotal.io/post/virtual_memory_settings_in_linux_-_the_problem_with_overcommit/
-
 ## PostgreSQL中与系统相关的参数
 
 shared_buffers
@@ -271,14 +250,3 @@ max_files_per_process
 
 // TODO
 
-
-
-http://linuxperf.com/?p=102
-
-https://rjuju.github.io/postgresql/2018/07/03/diagnostic-of-unexpected-slowdown.html
-
-https://www.geeksforgeeks.org/whats-difference-between-cpu-cache-and-tlb/
-
-http://linuxperf.com
-
-http://www.cnblogs.com/wjoyxt/p/4804081.html

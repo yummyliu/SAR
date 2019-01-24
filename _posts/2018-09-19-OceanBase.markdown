@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 了解一下国产DB——OceanBase
+title: OceanBase简介
 date: 2018-09-19 17:13
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -8,8 +8,11 @@ tags:
   - OceanBase
 typora-root-url: ../../yummyliu.github.io
 ---
-> * TOC
+
+* TOC
 {:toc}
+
+# 设计目标
 
 > 作为一个RDBMS主要有以下几个功能：
 >
@@ -21,8 +24,6 @@ typora-root-url: ../../yummyliu.github.io
 >   - Lock Manager
 >   - Log Manager
 > - 准入控制和复制高可用等重要管理维护的功能，
-
-# 设计目标
 
 通用的互联网应用（假设读多写少）的数据库，具备伸缩性、高性能、高可用和低成本的要求。
 

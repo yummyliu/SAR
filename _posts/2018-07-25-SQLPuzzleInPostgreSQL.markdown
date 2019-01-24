@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 
+title: SQL Puzzle in PostgreSQL
 date: 2018-07-25 13:23
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -9,7 +9,8 @@ tags:
 typora-root-url: ../../yummyliu.github.io
 ---
 
-> [这有](https://www.dbrnd.com/sql-interview-the-ultimate-sql-puzzles-and-sql-server-advance-sql-queries/#)一些SQL server中的SQL Puzzle写法，同样的问题，在PostgreSQL中如何解决？
+> [这有](https://www.dbrnd.com/sql-interview-the-ultimate-sql-puzzles-and-sql-server-advance-sql-queries/#)一些SQL server中的一些SQL问题，
+> 同样的问题，在PostgreSQL中如何解决？
 
 # Get the last three Records of a table
 

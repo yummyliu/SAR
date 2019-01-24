@@ -1,7 +1,7 @@
 ---
 layout: post
-title: 难得有DB优先兼容PostgreSQL协议——CockroachDB(简译)
-subtitle: 全球分布式数据库CockroachDB简介
+title: CockroachDB简介(文档简译)
+subtitle: 难得有DB优先兼容PostgreSQL协议, 全球分布式数据库CockroachDB简介
 date: 2018-10-04 09:44
 categories: jekyll update
 tags:
@@ -9,9 +9,9 @@ tags:
     - CockroachDB
 ---
 
+* TOC
+{:toc}
 
-
-[TOC]
 
 CockroachDB是一个开源全球分布式的，可扩展且一致性的数据库。目前兼容PostgreSQL协议；[官方介绍](https://www.cockroachlabs.com/docs/stable/architecture/overview.html#glossary)
 

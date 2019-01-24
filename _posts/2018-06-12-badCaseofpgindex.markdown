@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 添加索引并非100%好事？
+title: PostgreSQL添加索引并非100%好事？(译)
 subtitle: 大部分的人不知道SELECT的性能也会被一个新的索引影响，大部分人只是认为新索引没有用到是个浪费；这里展示一个添加索引会让性能变坏的case
 date: 2018-06-12 10:30
 header-img: "img/head.jpg"
@@ -8,6 +8,10 @@ categories: jekyll update
 tags:
   - PostgreSQL
 ---
+
+* TOC
+{:toc}
+
 
 我们都知道添加索引是有性能损失的——数据更新会变慢，index会占用额外的空间；我们时常会由此删掉一些不用的索引；
 

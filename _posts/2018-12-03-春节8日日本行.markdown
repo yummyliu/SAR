@@ -10,8 +10,6 @@ typora-root-url: ../../yummyliu.github.io
 ---
 {:toc}
 
-
-
 # 行程计划
 
 | 日期      | 留宿地            | 交通                  | 活动                                   |

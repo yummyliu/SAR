@@ -1,6 +1,6 @@
 ---
 layout: post
-title: (实践)Docker环境配置
+title: Docker环境配置实践
 date: 2018-07-04 16:22
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -9,7 +9,8 @@ tags:
 typora-root-url: ../../yummyliu.github.io
 ---
 
-[TOC]
+* TOC
+{:toc}
 
 ## 安装docker
 
