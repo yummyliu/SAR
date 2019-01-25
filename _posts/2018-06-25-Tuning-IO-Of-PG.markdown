@@ -1,6 +1,6 @@
 ---
 layout: post
-title: PostgreSQL的IO调优
+title: PostgreSQL的IO调优(译)
 date: 2018-06-25 20:46
 header-img: "img/head.jpg"
 categories: jekyll update

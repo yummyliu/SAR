@@ -107,19 +107,15 @@ typora-root-url: ../../yummyliu.github.io
 
 ##### 死锁检测
 
-中心点集中检测，如果有一个全局锁服务，可以在该服务中，做死锁检测。
++ 中心点集中检测，如果有一个全局锁服务，可以在该服务中，做死锁检测。
 
-每个节点单独检测，需要同步其他节点的事务依赖序列。
++ 每个节点单独检测，需要同步其他节点的事务依赖序列。
 
 #### 分布式一致性协议
 
-##### Paxos
++ Paxos：p2p的，没有leader；
 
-p2p的，没有leader；
-
-##### Raft
-
-有leader的
++ Raft：有leader的
 
 #### 分布式事务提交策略
 
@@ -140,35 +136,7 @@ p2p的，没有leader；
 
 ![Three-phase commit diagram.png](/image/Three-phase_commit_diagram.png)
 
-##### 无锁的2PL
-
-## 如何做到用户无感知？
-
-+ 位置透明：用户对待远程的分布式数据库，和对待本地数据库相同。
-
-+ 分段透明：用户不知道数据被分割存储。
-
-+ 副本透明：用户不知道数据有多个副本。
-
-## 分布式计算的性能如何优化？
-
-![Distributed Query Processing Architecture](/image/distributed_query_architecture.png)
-
-+ 查询算子： Projection/Selection/Union/Intersection/Minus/Join
-
-单机查询计划，基于统计信息进行启发式搜索。
-
-分布式查询计划
-
-+ 最大化集群资源利用率
-
-![Optimal Utilization Distributed System](/image/optimal_utilization_distributed_system.png)
-
-对于第三种，左侧收到操作符，但是将数据传递给计算性能更好（ie. 多核）的右侧机器
-
-计算，然后返回结果。
-
-+ 减少整个的返回结果集，进而减少网络代价。
+> 无锁的2PL: 另外还有基于一致性协议实现的无锁的2PL
 
 
 

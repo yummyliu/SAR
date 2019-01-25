@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 初识PostgreSQL的High Availability
+title: PostgreSQL的HA初识
 date: 2018-08-13 11:04
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -8,7 +8,8 @@ tags:
   - PostgreSQL
 typora-root-url: ../../yummyliu.github.io
 ---
-> * TOC
+
+* TOC
 {:toc}
 
 # HA简介

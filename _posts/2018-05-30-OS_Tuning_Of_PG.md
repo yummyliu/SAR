@@ -7,9 +7,10 @@ categories: jekyll update
 tags:
     - PostgreSQL
     - Linux
+typora-root-url: ../../yummyliu.github.io
 ---
 
-> * TOC
+* TOC
 {:toc}
 
 # Linux IO概述
@@ -25,7 +26,6 @@ Mem:        387491      75453     312038      15021        367      62036
 -/+ buffers/cache:      13049     374442
 Swap:        65535          0      65535
 ```
-
 buffers：内核中使用的buffer。
 
 cached：pagecache（可能还有少量别用途，比如slab）。
@@ -38,7 +38,7 @@ cached：pagecache（可能还有少量别用途，比如slab）。
 >
 > 在 Linux  2.6.32中，进行了改进，不同的磁盘有不同的刷盘进程。
 >
-> ![image-20190125160344424](/Users/liuyangming/yummyliu.github.io/image/image-20190125160344424.png)
+> ![image-20190125160344424](/image/image-20190125160344424.png)
 
 pagecache就是应用程序的内存之外的部分。如果应用程序需要更多的内存，那么pagecache中没有被使用的部分就会被删除，以供应用程序使用。
 
@@ -243,68 +243,7 @@ Filename                                Type            Size    Used    Priority
 
 ### 外存
 
-#### 临时文件大小
++ 临时文件大小：temp_file_limit
 
-> temp_file_limit
++ 进程最多打开文件数：max_files_per_process
 
-#### 进程最多打开文件数
-
-> max_files_per_process
-
-## 计算
-
-### 查询解析
-
-### 并行查询
-
-shared-memory-error
-http://postgresql.freeideas.cz/shared-memory-error/
-
-
-
-overcommit_memory
-
-http://engineering.pivotal.io/post/virtual_memory_settings_in_linux_-_the_problem_with_overcommit/
-
-## PostgreSQL中与系统相关的参数
-
-shared_buffers
-
-huge_pages
-
-temp_buffers
-
-max_prepared_transactions
-
-work_mem
-
-maintenance_work_mem
-
-replacement_sort_tuples
-
-autovacuum_work_mem
-
-max_stack_depth
-
-dynamic_shared_memory_type
-
-temp_file_limit
-
-max_files_per_process
-
-## Linux的内核关键参数
-
-
-// TODO
-
-
-
-http://linuxperf.com/?p=102
-
-https://rjuju.github.io/postgresql/2018/07/03/diagnostic-of-unexpected-slowdown.html
-
-https://www.geeksforgeeks.org/whats-difference-between-cpu-cache-and-tlb/
-
-http://linuxperf.com
-
-http://www.cnblogs.com/wjoyxt/p/4804081.html

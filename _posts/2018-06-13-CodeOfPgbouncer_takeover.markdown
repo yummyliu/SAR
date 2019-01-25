@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 读源码之Pgboucer Online Reboot实现
+title: Pgbouncer源码之Online Reboot实现
 subtitle: 结合Pgbouncer，深入Linux中进程之间的数据交互
 date: 2018-06-13 08:07
 header-img: "img/head.jpg"

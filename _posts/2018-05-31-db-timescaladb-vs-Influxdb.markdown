@@ -9,8 +9,8 @@ tags:
    - DataBase
 ---
 
-> * TOC
-> {:toc}
+* TOC
+{:toc}
 
 # 时序数据库
 
