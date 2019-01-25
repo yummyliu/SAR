@@ -113,9 +113,9 @@ typora-root-url: ../../yummyliu.github.io
 
 #### 分布式一致性协议
 
-+ Paxos：p2p的，没有leader；
-
-+ Raft：有leader的
++ Paxos：p2p的，没有leader；比如，zoonkeeper
++ Raft：有leader的；比如，etcd
++ Gossip：最终一致性；比如，consul
 
 #### 分布式事务提交策略
 
