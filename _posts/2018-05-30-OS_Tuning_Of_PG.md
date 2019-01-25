@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 在Linux系统中，PostgreSQL调优详解
+title: 在Linux系统中，PostgreSQL的IO调优
 date: 2018-12-24 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -10,19 +10,45 @@ tags:
 ---
 
 > * TOC
-> {:toc}
+{:toc}
 
-#  在Linux系统中，PostgreSQL调优详解
+# Linux IO概述
 
-> 基于PostgreSQL10
+我们都知道，除了上层透明的cpu缓存意外，有两个和IO相关的组件——内存和磁盘。除了选择优质的硬件以外，我们通常的调优都是针对内存和磁盘之间的cache。
+
+在linux 2.2之前，有两种cache——page cache和buffer cache。在linux 2.4之后，两种合并为pagecache。通过`free`命令可以看到内存的使用情况。
+
+```bash
+[liuyangming@ymtest ~]$ free -m
+             total       used       free     shared    buffers     cached
+Mem:        387491      75453     312038      15021        367      62036
+-/+ buffers/cache:      13049     374442
+Swap:        65535          0      65535
+```
+
+buffers：内核中使用的buffer。
+
+cached：pagecache（可能还有少量别用途，比如slab）。
+
+## pagecache
+
+当我们向文件进行写入时，先写到pagecache中，然后通过主动sync或者间歇性的Linux调度flush，将脏页写盘。
+
+> 在 <= Linux  2.6.31时，系统通过pdflush，进行间歇性的刷盘；
+>
+> 在 Linux  2.6.32中，进行了改进，不同的磁盘有不同的刷盘进程。
+>
+> ![image-20190125160344424](/Users/liuyangming/yummyliu.github.io/image/image-20190125160344424.png)
+
+pagecache就是应用程序的内存之外的部分。如果应用程序需要更多的内存，那么pagecache中没有被使用的部分就会被删除，以供应用程序使用。
+
+但是，我们要知道pagecahe并不是在所有场景中都是有用的。比如数据库的redo日志，并不需要在pagecache中缓存，应该能够直接落盘。
+
+# PostgreSQL的相关调整
 
 ## 存储
 
-从存储开始说
-
 ### 内存申请
-
-先申请
 
 #### NUMA
 
