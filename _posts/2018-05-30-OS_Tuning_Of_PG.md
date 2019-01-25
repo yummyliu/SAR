@@ -15,7 +15,7 @@ typora-root-url: ../../yummyliu.github.io
 
 # Linux IO概述
 
-我们都知道，除了上层透明的cpu缓存意外，有两个和IO相关的组件——内存和磁盘。除了选择优质的硬件以外，我们通常的调优都是针对内存和磁盘之间的cache。
+我们都知道，除了上层透明的cpu缓存以外，有两个和IO相关的组件——内存和磁盘。除了选择优质的硬件以外，我们通常的调优都是针对内存和磁盘之间的cache。
 
 在linux 2.2之前，有两种cache——page cache和buffer cache。在linux 2.4之后，两种合并为pagecache。通过`free`命令可以看到内存的使用情况。
 
@@ -52,16 +52,16 @@ pagecache就是应用程序的内存之外的部分。如果应用程序需要�
 
 #### NUMA
 
-NUMA是一种CPU的硬件架构，和NUMA相对的有SMP，SMP中所有CPU争用一个总线来访问内存；而NUMA称作**非对称性内存访问**；每个CPU有自己的Memory Zone，访问自己的很快，访问别人的慢。
+NUMA是一种CPU的硬件架构。NUMA相对的是SMP，SMP中所有CPU争用一个总线来访问内存；而NUMA称作**非对称性内存访问**：简单来说是，每个CPU有自己的Memory Zone，访问自己的很快，访问别人的慢。
 
-那么每个CPU使用访问那个Memory Zone很明显会影响到性能；事实上NUMA的内存分配策略默认是localalloc（还有preferred、membind、interleave），即从本地node分配，如果本地node分配不了，根据系统参数：**vm.zone_reclaim_mode**，决定是否从其他node分配内存：
+NUMA的内存分配策略默认是localalloc（还有preferred、membind、interleave），即从本地node分配，如果本地node分配不了，根据系统参数：**vm.zone_reclaim_mode**，决定是否从其他node分配内存：
 
 + 取0，系统倾向于从其他node分配内存
 + 取1，系统倾向于从本地节点回收Cache
 
 当系统中有多个Node，且zone_reclaim_mode=1时；可能内存不能完全利用起来，如果你对内存的使用，更偏向于cache的应用而不是数据局部性的应用，那么建议取0；
 
-在PostgreSQL中，我们通常取0，并且会在bios中间numa关闭：
+在PostgreSQL中，我们通常取0，并且会在bios中将numa关闭：
 
 ```shell
 grubby --update-kernel=/boot/vmlinuz-$(uname -r) --args="numa=off"
@@ -69,8 +69,10 @@ grubby --update-kernel=/boot/vmlinuz-$(uname -r) --args="numa=off"
 
 #### Shared Memory
 
-PostgreSQL有自己的`shared_buffer`，在<=9.2时，PostgreSQL基于的是SYSTEM V的api，SYSTEM V的接口要求设置SHMMAX大小。而>=9.3之后，PostgreSQL基于POSIX的api实现。
+PostgreSQL有自己的`shared_buffer`，在<=9.2时，PostgreSQL是基于SYSTEM V的API，SYSTEM V的接口要求设置SHMMAX大小。而>=9.3之后，PostgreSQL基于POSIX的API实现。
 
+> **Shared Memory 接口比较**
+>
 > SHMMAX：单个进程可以分配的最大共享内存段的大小；
 >
 > SHMALL：系统范围的总共享内存大小。
@@ -79,15 +81,13 @@ PostgreSQL有自己的`shared_buffer`，在<=9.2时，PostgreSQL基于的是SYST
 > | ------------------------------------------------------------ | ------------------------------------------------------- |
 > | Shared Memory 接口调用：shmget(), shmat(), shmdt(), shmctl() | Shared Memory接口调用：shm_open(), mmap(), shm_unlink() |
 
-PostgreSQL的shared_buffer推荐配置是内存的1/4大小，有个别情况配置为大于3/4；但是不要配置为1/4~3/4之间的值。
-
-> why?
+PostgreSQL的shared_buffer推荐配置是内存的1/4大小，有个别情况可以配置为大于3/4；但是不要配置为1/4~3/4之间的值。
 
 #### Over Commit
 
-Linux 是允许memory overcommit；因为Linux的内存申请和分配是两码事，内存分配发生在内存使用的瞬间。因为应用往往会申请比需要的多；
+因为Linux的内存申请和分配是两码事，内存分配发生在内存使用的瞬间，并且应用往往会申请比需要的多；所以，Linux是允许memory overcommit。
 
-所以在不允许overcommit的情况下，如果申请了2MB内存，但是实际使用了1MB，那么存在内存浪费。而当允许overcommit时，如果没有swap，可能会存在OOM；这是系统的OOM Killer会选择若干个进程杀掉来释放内存（或者配置vm.panic_on_oom，使系统重启）。
+在不允许overcommit的情况下，如果申请了2MB内存，但是实际使用了1MB，那么存在内存浪费。而当允许overcommit时，如果没有swap，可能会存在OOM——这时系统的OOM Killer会选择杀掉若干个进程，来释放内存（或者配置vm.panic_on_oom，使系统重启）。
 
 Linux的overcommit根据vm.overcommit_memory的取值不同，有三种策略：
 
@@ -104,19 +104,29 @@ CommitLimit:    396446012 kB
 Committed_AS:   83477808 kB
 ```
 
-Committed_AS是已经申请（不是分配）的内存的大小，通过`sar -r`可以查看内存的使用情况：
+Committed_AS是已经申请（不是分配）的内存的大小，通过`sar -r`可以查看内存的申请和分配的情况：
 
 ```bash
-$ sar -r
-Linux 2.6.32-696.el6.x86_64 (ymtest)    12/24/2018      _x86_64_        (56 CPU)
+[liuyangming@ymtest ~]$ sar -r
+Linux 2.6.32-696.el6.x86_64 (ymtest)    01/25/2019      _x86_64_        (56 CPU)
 
 12:00:01 AM kbmemfree kbmemused  %memused kbbuffers  kbcached  kbcommit   %commit
-12:10:01 AM   7650220 389141532     98.07    335416 373474200  83456440     17.99
+12:10:01 AM 319555932  77235820     19.47    371744  63505568 161269628     34.76
+12:20:01 AM 319554560  77237192     19.47    371804  63505796 161274804     34.76
+12:30:01 AM 319552532  77239220     19.47    371884  63506028 161274096     34.76
+12:40:02 AM 319553188  77238564     19.47    371900  63506252 161273828     34.76
+12:50:01 AM 319553436  77238316     19.47    371948  63506468 161273712     34.76
+01:00:01 AM 319550008  77241744     19.47    372024  63506704 161279040     34.77
+01:10:01 AM 319551520  77240232     19.47    372080  63506928 161271600     34.76
+01:20:01 AM 319551072  77240680     19.47    372108  63507164 161273632     34.76
+01:30:01 AM 319550884  77240868     19.47    372124  63507388 161273876     34.76
+01:40:01 AM 319551924  77239828     19.47    372140  63507612 161273568     34.76
+01:50:01 AM 319551520  77240232     19.47    372204  63507844 161273584     34.76
 ```
 
 其中，*kbcommit*对应的就是Committed_AS，而`%commit`为`Committed_AS/(MemTotal+SwapTotal`。
 
-> CommitLimit计算
+> **CommitLimit计算**
 >
 > `CommitLimit = (total RAM * vm.overcommit_ratio / 100) + Swap`
 >
@@ -128,7 +138,7 @@ Linux 2.6.32-696.el6.x86_64 (ymtest)    12/24/2018      _x86_64_        (56 CPU)
 
 #### HugePages
 
-在Linux中，内存页默认是4k。当内存很大时，如果页很小，整体性能就会变差。PostgreSQL中只支持Linux中的HugePage（在BSD中有Super Page，在Window中有Large Page），启用了`huge_pages`后，相应的内存页表就会变小，进而会提高内存管理的性能。
+在Linux中，内存页默认是4k。当内存很大时，如果页很小，整体性能就会变差。PostgreSQL中只支持Linux的HugePage（在BSD中有Super Page，在Window中有Large Page）。启用了`huge_pages`后，相应的内存页表就会变小，进而会提高内存管理的性能。
 
 Linux的HugePage大小从2MB到1Gb不等；默认是2MB，大小在系统启动的时候设置。
 
@@ -163,29 +173,29 @@ echo Set Huge Pages:     $hp
 sysctl -w vm.nr_hugepages= 88
 ```
 
-[这里](https://www.percona.com/blog/2018/12/20/benchmark-postgresql-with-linux-hugepages/)有关于HugePage配置的BenchMark，但是具体情况具体分析，在我们的线上并没有开启；
+[这里](https://www.percona.com/blog/2018/12/20/benchmark-postgresql-with-linux-hugepages/)有关于HugePage配置的BenchMark，但是具体情况具体分析。
 
-> Transparent Huge Pages (THP)
+> **Transparent Huge Pages (THP)**
 >
-> 该选项一般也是强制关闭的，因为这个选项系统会在你不执行的情况下，将4kb的page换成大页；可能会导致数据库崩溃等不可控的错误，在bios中关闭；
+> 该选项一般也是强制关闭的，因为这个选项系统会在你不执行的情况下，将4kb的page换成大页；可能会导致数据库崩溃等不可控的错误。
+>
+> 在bios中关闭：
 >
 > grubby --update-kernel=/boot/vmlinuz-$(uname -r) --args="transparent_hugepage=never"
 
 #### TLB
 
-> TLB，Translation Lookaside Buffer
->
-> CPU用来管理虚拟存储和物理存储的控制线路叫**MMU（内存管理单元**）。(一般是在bootloader中的eboot阶段的进入main()函数的时候启用MMU模块，如果没有启动MMU模块，CPU内核发出的地址将直接送到内存芯片上；有了MMU模块，会截获CPU内核发出的（虚拟）地址，让将虚拟地址转换成物理地址发送到CPU芯片上。
->
-> 但是引入MMU后，读取指令和数据的时候，都需要读取两次内存（1. 查询页表得到物理地址；2. 然后访问具体物理地址）。TLB就是页表的Cache，每行保存由单个PTE（Page Table Entry）组成的块，提高虚拟地址到物理地址的转换速度，通常称为快表。
->
-> TLB和CPU Cache都是微处理器的硬件结构。CPU cache是基于cpu和memory之前的缓存器，而TLB只是当CPU使用虚拟地址的时候用来加速转换速度的。
+CPU用来管理虚拟存储和物理存储的控制线路叫**MMU（内存管理单元**）。(一般是在bootloader中的eboot阶段的进入main()函数的时候启用MMU模块，如果没有启动MMU模块，CPU内核发出的地址将直接送到内存芯片上；有了MMU模块，MMU会截获CPU内核发出的（虚拟）地址，让将虚拟地址转换成物理地址发送到CPU芯片上。
+
+但是引入MMU后，读取指令和数据的时候，都需要读取两次内存（1. 查询页表得到物理地址；2. 然后访问具体物理地址）。TLB（Translation Lookaside Buffer）就是页表的Cache，每行保存由单个PTE（Page Table Entry）组成的块，提高虚拟地址到物理地址的转换速度，通常称为**快表**。
+
+TLB和CPU Cache都是微处理器的硬件结构。CPU cache是基于cpu和memory之前的缓存器，而TLB只是当CPU使用虚拟地址的时候用来加速转换速度的。
 
 **TLB exhaustion**
 
->  "hidden" memory usage
+>  隐藏的内存占用问题
 
-每个进程都需要小部分内存缓存其使用所有的PTE，可以查询`/proc/$PID/status`中的VmPTE，得知PTE的大小。PTE的大小取决于进程访问的数据范围，如果PostgreSQL的进程访问了shared_buffer的所有页，那么VmPTE比较高。这时，如果链接数很多，那么可能会占用很多内存；
+每个进程都需要小部分内存缓存其使用的所有PTE，可以查询`/proc/$PID/status`中的VmPTE，得知PTE的大小。PTE的大小取决于进程访问的数据范围，如果PostgreSQL的进程访问了shared_buffer的所有页，那么VmPTE比较高。这时，如果链接数很多，那么可能会占用很多内存；
 
 ```shell
 for p in $(pgrep postgres); 
@@ -196,16 +206,15 @@ done | awk '{pte += $2} END {print pte / 1024 / 1024}'
 
 当PTE的size比较大的时候，显然TLB的空间会不足，那么就会TLB miss，进而影响性能。
 
-所以，PostgreSQL尽量和pooler配合使用，减少链接数；或者考虑使用hugepage，减少pte数量；或者减少PostgreSQL的shared_buffer大小，减少每个进程的pte数据量；
+所以，有三种可能的办法：
+
+1. PostgreSQL尽量和pooler配合使用，减少链接数；
+2. 考虑使用hugepage，减少pte数量；
+3. 减少PostgreSQL的shared_buffer大小，减少每个进程的pte数据量；
 
 #### SwapSpace
 
 ```bash
->> free
-             total       used       free     shared    buffers     cached
-Mem:     396791752  389366352    7425400   20016756     330424  373701172
--/+ buffers/cache:   15334756  381456996
-Swap:     67108860          0   67108860
 >> swapon -s
 Filename                                Type            Size    Used    Priority
 /dev/sda2                               partition       67108860        0       -1
@@ -213,21 +222,21 @@ Filename                                Type            Size    Used    Priority
 
 ​	交换空间是安装系统的时候配置的一个磁盘分区或者一个文件，用于提高系统的虚拟内存大小，并且如果系统内存不够可以暂时使用交换空间，避免OOM。
 
-​	但是在PostgreSQL系统中，希望能有较高的响应速度，希望能尽量使用内存，而不是换出去，因此会将系统参数`vm.swappiness`设为较小的值。
-
 ​	`vm.swappiness`代表系统对交换空间的喜欢程度，越高越喜欢交换出去。如果设置成0，系统的OOM killer可能会杀死自己的进程，比较安全的是设置为1（默认是60）；
+
+​	在PostgreSQL系统中，希望能有较高的响应速度，希望能尽量使用内存，而不是换出去，因此会将系统参数`vm.swappiness`设为较小的值。
 
 ### 内存回写
 
 #### DirtyPage Flush
 
-当内存变脏了，需要将其刷出内存：
+当pagecache变脏了，需要将脏页刷出内存。linux中通过一些参数来控制何时进行内存回写。
 
-+ vm.dirty_background_ratio/vm.dirty_background_bytes
++ **vm.dirty_background_ratio/vm.dirty_background_bytes**
 
-  内存中允许存在的脏页比率或者具体值，达到改值，后台刷盘。取决于外存读写速度的不同，通常将vm.dirty_background_ratio设置为5，而vm.dirty_background_bytes设置为读写速度的25%。
+  内存中允许存在的脏页比率或者具体值。达到该值，后台刷盘。取决于外存读写速度的不同，通常将vm.dirty_background_ratio设置为5，而vm.dirty_background_bytes设置为读写速度的25%。
 
-+ vm.dirty_ratio/vm.dirty_bytes
++ **vm.dirty_ratio/vm.dirty_bytes**
 
   前台刷盘会阻塞读写，一般vm.dirty_ratio设置的比vm.dirty_background_ratio大，设置该值确保系统不会再内存中保留过多数据，避免丢失。
 
@@ -239,7 +248,7 @@ Filename                                Type            Size    Used    Priority
 
   刷盘进程（pdflush/flush/kdmflush）周期性启动的时间
 
-在PostgreSQL中，自己管理自己的shared Momery。但是并不是所有的读写都是走shared memory；类似地，也有自己的checkpointer和bgwriter进程，负责刷写shared memory。
+在PostgreSQL中，有自己管理的shared_buffer，但是并不是所有的读写都是走shared_buffer；类似地，PostgresQL也有自己的checkpointer和bgwriter进程，也是通过不同的阈值控制shared_buffer的刷写。
 
 ### 外存
 
@@ -247,3 +256,4 @@ Filename                                Type            Size    Used    Priority
 
 + 进程最多打开文件数：max_files_per_process
 
+这两个主要就是一个上限的限制，max_files_per_process通常默认值1000就够用了。temp_file_limit是在work_mem不够的情况下，使用磁盘的临时文件。如果建索引或者一些大查询时，可以把temp_file_limit设置大一点，避免查询中断。
