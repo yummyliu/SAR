@@ -1,6 +1,6 @@
 ---
 layout: post
-title: pg_catalog中的共享表执行VACUUM异常处理案例
+title: PostgreSQL系统共享表执行VACUUM异常
 date: 2018-10-11 11:35
 header-img: "img/head.jpg"
 categories: jekyll update

@@ -1,6 +1,6 @@
 ---
 layout: post
-title: patrol插件实现记录
+title: patrol extension 日志
 date: 2018-08-07 14:09
 categories: jekyll update
 tags:
@@ -9,11 +9,11 @@ tags:
 ---
 
 > * TOC
-> {:toc}
+{:toc}
+
+> 都知道PostgreSQL是一个扩展性很强的DB，可以自己基于提供的接口，完成一些extension；该extension作为一个管理插件，没有它工作也能完成，但是搞着玩玩，过程记录在这，未完待续...
 
 ## 前言
-
-最近想折腾一下PostgreSQL Extension，毕竟PostgreSQL正是由于其强大的可扩展性，变得越来越牛逼；
 
 从做一个巡检的插件（[patrol](https://github.com/yummyliu/patrol)）开始；需要使用C++的json以及网络库，所以采用C/C++混编的方式实现，该插件分为两部分：
 

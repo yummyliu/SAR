@@ -1,12 +1,67 @@
 ---
 layout: post
-title: 了解Linux文件系统
+title: /proc/pid里的东西
 date: 2018-05-30 11:31
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
    - Linux
 ---
+
+* TOC
+{:toc}
+在Linux
+
+```bash
+[postgres@ymtest 94103]$ ps aux  |grep 94103 | grep -v grep
+postgres  94103  0.0  0.0 38795672 2500 ?       Ss   Jan18   0:22 postgres: autovacuum launcher process
+[postgres@ymtest 94103]$ ll
+total 0
+dr-xr-xr-x 2 postgres postgres 0 Jan 29 10:59 attr
+-rw-r--r-- 1 postgres postgres 0 Jan 29 10:59 autogroup
+-r-------- 1 postgres postgres 0 Jan 29 10:59 auxv
+-r--r--r-- 1 postgres postgres 0 Jan 29 10:59 cgroup
+--w------- 1 postgres postgres 0 Jan 29 10:59 clear_refs
+-r--r--r-- 1 postgres postgres 0 Jan 18 16:25 cmdline
+-rw-r--r-- 1 postgres postgres 0 Jan 29 10:59 comm
+-rw-r--r-- 1 postgres postgres 0 Jan 29 10:59 coredump_filter
+-r--r--r-- 1 postgres postgres 0 Jan 29 10:59 cpuset
+lrwxrwxrwx 1 postgres postgres 0 Jan 29 10:59 cwd -> /export/postgresql/affdata/affdata
+-r-------- 1 postgres postgres 0 Jan 29 10:59 environ
+lrwxrwxrwx 1 postgres postgres 0 Jan 29 10:59 exe -> /usr/local/pgsql/bin/postgres
+dr-x------ 2 postgres postgres 0 Jan 29 10:59 fd
+dr-x------ 2 postgres postgres 0 Jan 29 10:59 fdinfo
+-r-------- 1 postgres postgres 0 Jan 29 10:59 io
+-rw------- 1 postgres postgres 0 Jan 29 10:59 limits
+-rw-r--r-- 1 postgres postgres 0 Jan 29 10:59 loginuid
+-r--r--r-- 1 postgres postgres 0 Jan 29 10:59 maps
+-rw------- 1 postgres postgres 0 Jan 29 10:59 mem
+-r--r--r-- 1 postgres postgres 0 Jan 29 10:59 mountinfo
+-r--r--r-- 1 postgres postgres 0 Jan 29 10:59 mounts
+-r-------- 1 postgres postgres 0 Jan 29 10:59 mountstats
+dr-xr-xr-x 5 postgres postgres 0 Jan 29 10:59 net
+dr-x--x--x 2 postgres postgres 0 Jan 29 10:59 ns
+-r--r--r-- 1 postgres postgres 0 Jan 29 10:59 numa_maps
+-rw-r--r-- 1 postgres postgres 0 Jan 29 10:59 oom_adj
+-r--r--r-- 1 postgres postgres 0 Jan 29 10:59 oom_score
+-rw-r--r-- 1 postgres postgres 0 Jan 29 10:59 oom_score_adj
+-r--r--r-- 1 postgres postgres 0 Jan 29 10:59 pagemap
+-r--r--r-- 1 postgres postgres 0 Jan 29 10:59 personality
+lrwxrwxrwx 1 postgres postgres 0 Jan 29 10:59 root -> /
+-rw-r--r-- 1 postgres postgres 0 Jan 29 10:59 sched
+-r--r--r-- 1 postgres postgres 0 Jan 29 10:59 schedstat
+-r--r--r-- 1 postgres postgres 0 Jan 29 10:59 sessionid
+-r--r--r-- 1 postgres postgres 0 Jan 29 10:59 smaps
+-r--r--r-- 1 postgres postgres 0 Jan 29 10:59 stack
+-r--r--r-- 1 postgres postgres 0 Jan 18 16:25 stat
+-r--r--r-- 1 postgres postgres 0 Jan 18 16:25 statm
+-r--r--r-- 1 postgres postgres 0 Jan 21 14:11 status
+-r--r--r-- 1 postgres postgres 0 Jan 29 10:59 syscall
+dr-xr-xr-x 3 postgres postgres 0 Jan 29 10:59 task
+-r--r--r-- 1 postgres postgres 0 Jan 29 10:59 wchan
+```
+
+
 
 特点：
 

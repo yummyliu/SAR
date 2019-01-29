@@ -1,6 +1,6 @@
 ---
 layout: post
-title: PostgreSQL浅见
+title: PostgreSQL DBA 入门教程
 subtitle: 结合PostgreSQL，梳理一下数据库实现中的概念
 date: 2018-07-14 13:46
 header-img: "img/head.jpg"
@@ -11,7 +11,7 @@ tags:
 typora-root-url: ../../yummyliu.github.io
 ---
 > * TOC
-> {:toc}
+{:toc}
 > 大部分的应用，说到底都是要处理数据的；而处理数据的需求，大概率会由数据库承担；
 >
 > 作为一个数据库，有两个使命：可靠的存储和高效的计算，这两个任务是不是做好了，完备的监控也是必不可少，否则你对自己的数据岂能放心？因此，本文从三个角度，简述下PostgreSQL是如何完成它的使命的：

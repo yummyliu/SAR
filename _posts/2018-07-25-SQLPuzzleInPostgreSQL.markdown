@@ -1,6 +1,6 @@
 ---
 layout: post
-title: SQL Puzzle in PostgreSQL
+title: SQL Puzzle
 date: 2018-07-25 13:23
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -9,10 +9,9 @@ tags:
 typora-root-url: ../../yummyliu.github.io
 ---
 
-> [这有](https://www.dbrnd.com/sql-interview-the-ultimate-sql-puzzles-and-sql-server-advance-sql-queries/#)一些SQL server中的一些SQL问题，
-> 同样的问题，在PostgreSQL中如何解决？
+> In PostgreSQL
 
-# Get the last three Records of a table
+# 表的最近三条记录
 
 ```sql
 SELECT *
@@ -22,7 +21,7 @@ OFFSET
    FROM tbl_testtable) LIMIT 3;
 ```
 
-# Find Correlation Coefficients for the Run of Cricket Players
+# 板球运动员的相关系数查询
 
 ```sql
 select
@@ -45,7 +44,7 @@ from
 group by Player1, Player2;
 ```
 
-# Delete Duplicate Data without Primary key
+# 没有主键的表，删除重复记录
 
 ```sql
 WITH cte AS
@@ -62,14 +61,14 @@ WHERE NOT EXISTS
   AND t.id =3;
 ```
 
-# Generate Calendar Data for 19th Century
+# 生成19世纪的日历
 
 ```sql
 SELECT split_part(generate_series::text,' ',1)
 FROM generate_series('1990-01-01'::TIMESTAMP, '2000-01-01', '1 days');
 ```
 
-# Use Recursive CTE, and list out the Years from Dates
+# 使用递归SQL，生产某时间后的年份
 
 ```sql
  WITH RECURSIVE cte AS
@@ -81,7 +80,7 @@ SELECT date_part('year',dt)
 FROM cte;
 ```
 
-# Calculate the Power of Three
+# 计算三的幂
 
 ```sql
 WITH RECURSIVE cte AS
@@ -93,7 +92,7 @@ SELECT *
 FROM cte;
 ```
 
-# Find the Median Value from the Given Number
+# 计算中位数
 
 ```sql
   CREATE OR REPLACE FUNCTION _final_median(NUMERIC[])
@@ -118,7 +117,7 @@ CREATE AGGREGATE median(NUMERIC) (
 );
 ```
 
-# Use Group By, Find MIN MAX unit sold of a Month
+# 计算每个月的最大最小销售记录
 
 ```sql
 select 
@@ -129,7 +128,7 @@ from tbl_Products
 group by Month_No
 ```
 
-# Get the list of Monday of a Month
+# 找到每个月的星期一的日期
 
 ```sql
 SELECT *

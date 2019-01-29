@@ -9,7 +9,7 @@ tags:
 typora-root-url: ../../yummyliu.github.io
 ---
 > * TOC
-> {:toc}
+{:toc}
 
 # 一点废话
 
