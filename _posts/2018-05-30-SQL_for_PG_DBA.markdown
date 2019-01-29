@@ -220,15 +220,42 @@ tags:
   MHOST=$(grep primary_conninfo recovery.conf | awk -F 'host=' '{print $2}' | awk '{print $1}')
   ```
 
++ 复制延迟
+
+  ```sql
+  SELECT client_addr,
+         pg_wal_lsn_diff(
+             pg_current_wal_lsn(),
+             sent_lsn
+         ) AS sent_lag,
+         pg_wal_lsn_diff(
+             pg_current_wal_lsn(),
+             write_lsn
+         ) AS write_lag,
+         pg_wal_lsn_diff(
+             pg_current_wal_lsn(),
+             flush_lsn
+         ) AS flush_lag,
+         pg_wal_lsn_diff(
+             pg_current_wal_lsn(),
+             replay_lsn
+         ) AS replay_lag
+    FROM pg_stat_replication;
+  ```
+
+  ```sql
+  SELECT slot_name,
+         pg_wal_lsn_diff(
+           pg_current_wal_lsn(),
+           restart_lsn
+         ) as restart_lag,
+         pg_wal_lsn_diff(
+           pg_current_wal_lsn(),
+           confirmed_flush_lsn
+         ) as flush_lag
+    FROM pg_replication_slots;
+  ```
+
+  
+
 + 
-
-+ 视图展开
-
-+ 常量计算
-
-+ 逻辑断言重写
-
-+ 语义优化，根据一些约束条件，修改语义
-
-+ 子查询展开
-  QueryTree描述了每个节点该做什么，PlanTree描述了每个节点具体的算法，比如使用IndexScan还是SeqScan）
