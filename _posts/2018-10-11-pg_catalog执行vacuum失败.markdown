@@ -67,7 +67,7 @@ postgres=# select relname,relfrozenxid from pg_class where relname ~ 'pg_statist
 (2 rows)
 ```
 
-## 另外一个问题
+## 为什么有不可移除的行版本
 
 datfrozenxid/relfrozenxid是每个表中最老的没有frozen的行版本。pg_database中的datfrozenxid是pg_class中所有relfrozenxid中最老的，
 
@@ -167,7 +167,7 @@ Value returned is $16 = 0 '\000'
 
 
 
-### 问题
+### vacuum_defer_cleanup_age
 
 描述了这么多，问题是2473685768是从哪来的？
 
@@ -198,8 +198,6 @@ postgres=# select txid_current();
    2473735778
 (1 row)
 ```
-
-
 
 # 解决方案
 
@@ -296,7 +294,7 @@ CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s.
 VACUUM
 ```
 
-### 一个小问题
+### 关于重新加载文件
 
 这里采用重启的方式，重新加载表文件；能否不重启呢？PG执行了checkpoint；以及OS执行了`sync; echo 3 > /proc/sys/vm/drop_caches`都不行。怀疑是PostgreSQL将系统表的信息单独放在自己的sharedbuffer中，由于PostgreSQL并不觉得这个表的数据页脏了，所以checkpoint的时候也不会更新，并且checkpoint的更新也只是更新磁盘文件，只能覆盖我们的修改而不是读取；
 
@@ -314,4 +312,38 @@ VACUUM
  */
 PG_FUNCTION_INFO_V1(get_raw_page);
 ```
+
+# 进一步思考
+
+我们都知道PostgreSQL的txid是uint32的整型标识，最大值就大约为20亿；如果到达最大值会怎么样？
+
+到达最大值MVCC的版本就会乱套了，为了避免这个事情发生，当txid与最大值只相差不到100万的时候，PostgreSQL就会拒绝服务。这时候作为DBA改怎么办？
+
+1. 停止DB
+2. 单用户模式重启
+3. 执行vacuum
+
+上述是极端情况，在PostgreSQL中本身有个autovacuum进程来进行MVCC的版本维护操作，其有两种模式：lazy和eager，通过如下的查询我们可以监控系统版本资源的水位：
+
+```sql
+WITH max_age AS ( 
+    SELECT 2000000000 as max_old_xid
+        , setting AS autovacuum_freeze_max_age 
+        FROM pg_catalog.pg_settings 
+        WHERE name = 'autovacuum_freeze_max_age' )
+, per_database_stats AS ( 
+    SELECT datname
+        , m.max_old_xid::int
+        , m.autovacuum_freeze_max_age::int
+        , age(d.datfrozenxid) AS oldest_current_xid 
+    FROM pg_catalog.pg_database d 
+    JOIN max_age m ON (true) 
+    WHERE d.datallowconn ) 
+SELECT max(oldest_current_xid) AS oldest_current_xid
+    , max(ROUND(100*(oldest_current_xid/max_old_xid::float))) AS percent_towards_wraparound
+    , max(ROUND(100*(oldest_current_xid/autovacuum_freeze_max_age::float))) AS percent_towards_emergency_autovac 
+FROM per_database_stats
+```
+
+
 
