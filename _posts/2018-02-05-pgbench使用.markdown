@@ -8,9 +8,9 @@ tags:
     - PostgreSQL
 ---
 
-# pgbench
-
-## 简介
+* TOC
+{: toc}
+# 简介
 
 - 动作：在pg上，不断运行相同的sql（可以并行执行，sql也可以自己定义），最终计算出tps（transaction per second）。
 
@@ -30,7 +30,7 @@ tags:
   tps = 85.296346 (excluding connections establishing)
   ```
 
-## 测试
+# 测试
 
 - 初始化数据集：
 
@@ -71,7 +71,7 @@ tags:
   | —progress-timestamp  | 使用时间戳而不是秒数                                         |
   | —sampling-rate       | 输出log的时候，采用采样的方式输出                            |
 
-- *例1*
+  ## 例1
 
   -L 5min
 
@@ -84,6 +84,7 @@ tags:
   0 84 4142 0 1412881037 918023 2333
   0 85 2465 0 1412881037 919759 740
   ```
+
 
 ### scaler factor公式
 
