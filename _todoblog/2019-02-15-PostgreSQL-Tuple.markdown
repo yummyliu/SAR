@@ -169,7 +169,23 @@ postgres=# select lp, t_data from heap_page_items(get_raw_page('t5', 0));
 (3 rows)
 ```
 
-> 那么，何时压缩数据？何时变toasted呢？
+那么，何时压缩数据？何时变toasted呢？
+
+### Tuple压缩
+
+当Tuple大小超过2000byte时，PostgreSQL会将Tuple中的变长数据，基于LZ压缩算法，进行压缩，如下。
+
+```sql
+postgres=# create table t6 (a varchar);
+CREATE TABLE
+postgres=# insert into t6 values (repeat('a',2004)),(repeat('a',2005));
+INSERT 0 2
+postgres=# select lp, t_data from heap_page_items(get_raw_page('t6', 0));
+  1 | \x601f0000616161616161616161616161616161616161616161616161616...(省略号)
+  2 | \x8e000000d5070000fe610f01ff0f01ff0f01ff0f01ff0f01ff0f01ff0f01ff010f014b
+```
+
+### TOAST属性
 
 # 特殊空间
 
