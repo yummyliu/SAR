@@ -211,8 +211,9 @@ tags:
   psql -f updateoffset.sql -v offset=$((i*500));
   Sleep 60;
   done
-  
   ```
+
+  
 
 + slave获得masterhost
 
@@ -254,6 +255,35 @@ tags:
            confirmed_flush_lsn
          ) as flush_lag
     FROM pg_replication_slots;
+  ```
+
++ 统计语句的平均执行时间
+
+  ```sql
+  CREATE OR REPLACE FUNCTION timeit(insql text)
+  RETURNS interval
+  AS $$
+  DECLARE
+      tgtpid bigint;
+      startts timestamp;
+      sumint interval = '0 seconds';
+      rec record;
+      i int; numiters int := 1000;
+  BEGIN
+      FOR i IN 1..numiters LOOP
+          tgtpid := round(100000 * random());
+          startts := clock_timestamp();
+          EXECUTE insql INTO rec using tgtpid;
+          sumint := sumint + (clock_timestamp() - startts)::interval;
+      END LOOP;
+      RETURN (sumint / numiters);
+  END;
+  $$ LANGUAGE plpgsql;
+  
+  SELECT timeit(
+  $$
+      SELECT count(1) FROM parent p JOIN detail d ON d.pid = p.id WHERE p.id = $1
+  $$);
   ```
 
   
