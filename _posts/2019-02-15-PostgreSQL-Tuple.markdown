@@ -5,6 +5,7 @@ date: 2019-02-15 12:54
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
+  - PostgreSQL
 typora-root-url: ../../yummyliu.github.io
 ---
 * TOC

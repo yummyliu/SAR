@@ -1,17 +1,106 @@
 ---
 layout: post
-title: SQL Puzzle
+title: SQL语言入门后的进一步了解
 date: 2018-07-25 13:23
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-  - PostgreSQL
+  - SQL
 typora-root-url: ../../yummyliu.github.io
 ---
 
+SQL意思是Structured Query Language，是和数据库交互的基本语言。和常规的编程语言不通，SQL是告诉计算机你需要什么数据，而不是告诉计算机如何产生数据。每个SQL都是一个命令，命令后面带上要操作的对象以及相关描述。本文整理了笔者写SQL遇到的一些问题，希望能对看到这篇文章的人有帮助。
+
+# GroupBy困扰
+
+比如下面的例子，你能了解为什么这些语句有问题么？
+
+```sql
+-- Wrong
+SELECT first_name, count(*)
+FROM customer
+WHERE count(*) > 1
+GROUP BY first_name
+ 
+-- Correct
+SELECT first_name, count(*)
+FROM customer
+GROUP BY first_name
+HAVING count(*) > 1
+ 
+-- Correct
+SELECT first_name, count(*)
+FROM customer
+GROUP BY first_name
+ORDER BY count(*) DESC
+ 
+-- Wrong
+SELECT first_name, last_name, count(*)
+FROM customer
+GROUP BY first_name
+ 
+-- Correct
+SELECT first_name, MAX(last_name), count(*)
+FROM customer
+GROUP BY first_name
+ 
+-- Wrong
+SELECT first_name || ' ' || last_name, count(*)
+FROM customer
+GROUP BY first_name
+ 
+-- Correct
+SELECT first_name || ' ' || MAX(last_name), count(*)
+FROM customer
+GROUP BY first_name
+ 
+-- Correct
+SELECT MAX(first_name || ' ' || last_name), count(*)
+FROM customer
+GROUP BY first_name
+```
+
+具体的语法可以从[SQL文档](https://stackoverflow.com/questions/6000847/authoritative-sql-standard-documentation)中查看，有这么个常见的原则：如果有`GROUP BY`语句，那么`HAVING`、`ORDER BY`、`SELECT`中只能出现两种对象，一是 `GROUP BY`后表达式，二是聚集函数。
+
+# SQL执行的顺序
+
+在SQL中，每个关键字可能都对应数据库中的一个执行单元，执行单元之间的逻辑顺序和SQL语句中的语句顺序可能大不相同；而由于查询优化器的作用，逻辑顺序又和实际执行顺序不同。那么，每个关键字的逻辑顺序是什么样呢？SQL操作其实就是一些关系代数操作符算子进行的计算，顺序大概如下：
+
+1. FROM
+2. WHERE
+3. GROUP BY
+4. Aggregations Function
+5. HAVING
+6. WINDOW FUNCTION
+7. SELECT
+8. DISTINCT
+9. UNION/INTERSET/EXCEPT
+10. ORDER BY
+11. OFFSET
+12. LIMIT
+
+ 因此，当写SQL时，了解了这些逻辑顺序，就能理解有些语法为什么不对，如下例。
+
+```sql
+-- Doesn't work, cannot put window functions in GROUP BY
+SELECT ntile(4) ORDER BY (age) AS bucket, MIN(age), MAX(age)
+FROM customer
+GROUP BY ntile(4) ORDER BY (age)
+ 
+-- Works:
+SELECT bucket, MIN(age), MAX(age)
+FROM (
+  SELECT age, ntile(4) ORDER BY (age) AS bucket
+  FROM customer
+) c
+GROUP BY bucket
+```
+
+# 例题
+
 > In PostgreSQL
 
-# 表的最近三条记录
+## 表的最近三条记录
 
 ```sql
 SELECT *
@@ -21,7 +110,7 @@ OFFSET
    FROM tbl_testtable) LIMIT 3;
 ```
 
-# 板球运动员的相关系数查询
+## 板球运动员的相关系数查询
 
 ```sql
 select
@@ -44,7 +133,7 @@ from
 group by Player1, Player2;
 ```
 
-# 没有主键的表，删除重复记录
+## 没有主键的表，删除重复记录
 
 ```sql
 WITH cte AS
@@ -61,14 +150,14 @@ WHERE NOT EXISTS
   AND t.id =3;
 ```
 
-# 生成19世纪的日历
+## 生成19世纪的日历
 
 ```sql
 SELECT split_part(generate_series::text,' ',1)
 FROM generate_series('1990-01-01'::TIMESTAMP, '2000-01-01', '1 days');
 ```
 
-# 使用递归SQL，生产某时间后的年份
+## 使用递归SQL，生产某时间后的年份
 
 ```sql
  WITH RECURSIVE cte AS
@@ -80,7 +169,7 @@ SELECT date_part('year',dt)
 FROM cte;
 ```
 
-# 计算三的幂
+## 计算三的幂
 
 ```sql
 WITH RECURSIVE cte AS
@@ -92,7 +181,7 @@ SELECT *
 FROM cte;
 ```
 
-# 计算中位数
+## 计算中位数
 
 ```sql
   CREATE OR REPLACE FUNCTION _final_median(NUMERIC[])
@@ -117,7 +206,7 @@ CREATE AGGREGATE median(NUMERIC) (
 );
 ```
 
-# 计算每个月的最大最小销售记录
+## 计算每个月的最大最小销售记录
 
 ```sql
 select 
@@ -128,7 +217,7 @@ from tbl_Products
 group by Month_No
 ```
 
-# 找到每个月的星期一的日期
+## 找到每个月的星期一的日期
 
 ```sql
 SELECT *
