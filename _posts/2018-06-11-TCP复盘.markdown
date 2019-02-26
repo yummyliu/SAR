@@ -151,6 +151,12 @@ listen(fd, backlog);
 
 三次握手的第二步之后，server需要等待一个ack，才能建立连接；而之后才会有实际数据；这在建立tcp连接的时候，比较耗时；打开了TCP_DEFER_ACCEPT之后，server在接收到SYN+ACK包之后，不会等待ack，直接等待实际数据包；这能减少连接建立时的延迟。
 
+#### AF_INET vs AF_UNIX
+
+分别代表使用的事Unix Socket还是IP Socket。UnixSocket是一种本机内的IPC方式，实际上是一个特殊的文件，拥有inode以及权限等信息，但是是通过recv和send来读写。当bind到UnixSocket上时，我们需要使用文件路径的方式来连接而不是ip:port对。
+
+对于UnixSocket，其数据包免去包头部分的信息，进而减少了网络栈中的数据封装与剥离的过程；另外，也少了路由的代价，从而比起127.0.0.1的性能更加优秀。
+
 ## 四次挥手👋
 
 ### 流程
