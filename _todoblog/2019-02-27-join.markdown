@@ -22,9 +22,12 @@ for a in A:
 
 # Hash Join
 
-在HashJoin中，主要有两步：
-+ hash: 先将两个表按照Hash值，分成若干桶。
-+ probe
+在HashJoin中，主要有三步：
++ Partition：基于JoinKey的Hash函数,将A/B分成若干桶。
++ Build：基于JoinKey，建立A的HashTable。
++ Probe：遍历B中的每个元组，基于A的HashTable进行Match。
 
 # Sort Merge Join
+
+
 
