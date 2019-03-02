@@ -18,7 +18,7 @@ typora-root-url: ../../yummyliu.github.io
 
 # 硬件环境
 
-## 并行计算（parallelism）
+## 并行层次
 
 指令并行（super scalar execution）：超流水线；CPU指令可能有若干个阶段，比如：获取指令，解码指令，执行，内存访问，寄存器回写等等；每个阶段操作的对象不同，在一个CPU的时钟周期中，就可以对不同指令的不同执行阶段进行同时执行。这就是指令级别的并行。
 数据并行（SIMD）： 单指令多数据；一个指令同时处理多个数据。
@@ -32,9 +32,42 @@ typora-root-url: ../../yummyliu.github.io
 
 # Hash Join
 
-通常来说，R与S两张表进行HashJoin分为两步：
+## 硬件无关的Join
+
+通常来说，R与S两张表进行**HashJoin**分为两步：
 
 1. Build：对于R，建立一个HashTable
 2. Probe：遍历S，计算Tuple的Hash值，然后从R的HashTable进行匹配。
 
-通常来
+这就是**传统HashJoin**，这和底层硬件没有任何适配。HashTable 查找复杂度是O(1)，每个关系表扫描一次，那么整个算法的复制度为O(|R|+|S|)。
+
+在传统HashJoin上，我们可以在Build阶段和Probe加上并行；
+
+1. Build：将R分成等长的若干块，然后将这些数据库交给N个线程分别计算Hash，然后写入到线程共享的HashTable中。
+2. 等待所有线程结束后（thread barrier），然后N个线程同时对S进行Hash计算，然后再共享的HashTable中找匹配。
+
+在这个并行算法中，每个HashTable都是共享么，那么线程之间就需要同步。每个线程想要修改HashTuple，需要获取该Tuple上的Latch。但是由于**HashTable可能比较大**，并且在Probe阶段都是**只读**的，其实锁竞争代价还是比较小的。那么对于一个有N核的系统来说，算法复杂度就是O((|R|+|S|)/N)，这个算法叫**NoPartitioning Join**。
+
+## 硬件相关的Join
+
+上述算法的基本点就是先生成一个较大的HashTable，那么在内存中对HashTable的随机访问就可能造成较多的CacheMiss。因此，为减少CacheMiss，提出了将HashTable切分为若干个CacheSize大小的块，至此原HashJoin就加了一部Partition步骤，这样整个算法就分为三步。
+
+1. Partition：将R和S分别划分为若干个ri和si。
+2. Build：
+
+另外，研究学者进一步考虑了Partition阶段的TLB的影响，最终提出了RadixJoin算法。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
