@@ -41,7 +41,7 @@ typora-root-url: ../../yummyliu.github.io
 1. Build：对于R，建立一个HashTable
 2. Probe：遍历S，计算Tuple的Hash值，然后从R的HashTable进行匹配。
 
-这就是**传统HashJoin**，这和底层硬件没有任何适配。HashTable 查找复杂度是O(1)，每个关系表扫描一次，那么整个算法的复制度为O(|R|+|S|)。
+这就是**传统HashJoin**，这和底层硬件没有任何适配。HashTable 查找复杂度是O(1)，每个关系表扫描一次，那么整个算法的复制度为`O(|R|+|S|)`。
 
 ### Parallel No-Partition Hash Join
 
@@ -50,7 +50,7 @@ typora-root-url: ../../yummyliu.github.io
 1. Build：将R分成等长的若干块，然后将这些数据库交给N个线程分别计算Hash，然后写入到线程共享的HashTable中。
 2. 等待所有线程结束后（thread barrier），然后N个线程同时对S进行Hash计算，然后再共享的HashTable中找匹配。
 
-在这个并行算法中，每个HashTable都是共享么，那么线程之间就需要同步。每个线程想要修改HashTuple，需要获取该Tuple上的Latch。但是由于**HashTable可能比较大**，并且在Probe阶段都是**只读**的，其实锁竞争代价还是比较小的。那么对于一个有N核的系统来说，算法复杂度就是O((|R|+|S|)/N)，这个算法叫**NoPartitioning Join**。
+在这个并行算法中，每个HashTable都是共享么，那么线程之间就需要同步。每个线程想要修改HashTuple，需要获取该Tuple上的Latch。但是由于**HashTable可能比较大**，并且在Probe阶段都是**只读**的，其实锁竞争代价还是比较小的。那么对于一个有N核的系统来说，算法复杂度就是`O((|R|+|S|)/N)`，这个算法叫**NoPartitioning Join**。
 
 ## 硬件相关的Join
 
