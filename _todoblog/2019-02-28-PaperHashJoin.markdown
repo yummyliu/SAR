@@ -34,12 +34,16 @@ typora-root-url: ../../yummyliu.github.io
 
 ## 硬件无关的Join
 
+### Canonical Hash Join
+
 通常来说，R与S两张表进行**HashJoin**分为两步：
 
 1. Build：对于R，建立一个HashTable
 2. Probe：遍历S，计算Tuple的Hash值，然后从R的HashTable进行匹配。
 
 这就是**传统HashJoin**，这和底层硬件没有任何适配。HashTable 查找复杂度是O(1)，每个关系表扫描一次，那么整个算法的复制度为O(|R|+|S|)。
+
+### Parallel No-Partition Hash Join
 
 在传统HashJoin上，我们可以在Build阶段和Probe加上并行；
 
@@ -50,14 +54,35 @@ typora-root-url: ../../yummyliu.github.io
 
 ## 硬件相关的Join
 
-上述算法的基本点就是先生成一个较大的HashTable，那么在内存中对HashTable的随机访问就可能造成较多的CacheMiss。因此，为减少CacheMiss，提出了将HashTable切分为若干个CacheSize大小的块，至此原HashJoin就加了一部Partition步骤，这样整个算法就分为三步。
+### Partition HashJoin
 
-1. Partition：将R和S分别划分为若干个ri和si。
-2. Build：
+上述算法的基本点就是先生成一个较大的HashTable，那么在内存中对HashTable的随机访问就可能造成较多的CacheMiss。因此，为减少CacheMiss，提出了将HashTable切分为若干个CacheSize大小的块，至此原HashJoin就加了一部Partition步骤，这个算法可称为**Partition HashJoin**，分为三步。
 
-另外，研究学者进一步考虑了Partition阶段的TLB的影响，最终提出了RadixJoin算法。
+1. Partition：按照HashFunc1，将R和S分别划分为若干个ri和si（由于基于HashFunc1进行分区，这样ri和sj之间不会有交集）。
+2. Build：对于每个ri，按照HashFunc2，建立ri的的哈希表hi（这里是使用第二个Hash函数，创建Hash表）。
+3. Probe：对于每个si，按照HashFunc2，在响应的hi中找匹配。
 
+这个算法在Build和Probe阶段使用了和Cache大小相同的HashTable，那么可以减少CacheMiss。但是引入的Partition阶段，会将各个Partition放在不同的内存页上；在虚拟内存映射表中对于每一页都需要一个条目；虚拟内存映射表的缓存叫TLB；因此，如果创建了很多Partition的话，TLB就会溢出，导致最终的TLB MISS；
 
+因此，可用的TLB条目大小决定了**可以高效使用的分区数**的上限，研究学者进一步考虑了Partition阶段的TLB的影响，最终提出了RadixJoin算法。
+
+### Radix Join
+
+#### Radix Partition
+
+Radix这里可以理解为JoinKey的若干个bit位。在Partition阶段，将分多步基于Radix将R和S进行分块，就能得到CacheSize大小且不会导致TLBMiss的hashTable，其中关键的是：什么是Radix Partition？其可并行执行，有三步：
+
+1. 统计直方图：每个Radix取值下的元组数。
+2. 计算每个Radix的Prefix Sum。
+3. 基于PrefixSum，对原tuple的位置重新调整。进而就将表进行的分区。
+
+基于Radix进行分区后，整个Partition还是在一整块内存区域，避免了零散的内存Page导致的TLB过大。
+
+最后，整个算法还是分为三步：
+
+1. 对R和S进行两三次的Radix Partition；
+2. Build：对于每个ri，按照HashFunc2，建立ri的的哈希表hi（这里是使用第二个Hash函数，创建Hash表）。
+3. Probe：对于每个si，按照HashFunc2，在响应的hi中找匹配。
 
 
 
