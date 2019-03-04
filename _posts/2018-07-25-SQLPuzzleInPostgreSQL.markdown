@@ -9,7 +9,32 @@ tags:
 typora-root-url: ../../yummyliu.github.io
 ---
 
-SQL意思是Structured Query Language，是和数据库交互的基本语言。和常规的编程语言不通，SQL是告诉计算机你需要什么数据，而不是告诉计算机如何产生数据。每个SQL都是一个命令，命令后面带上要操作的对象以及相关描述。本文整理了笔者写SQL遇到的一些问题，希望能对看到这篇文章的人有帮助。
+SQL意思是Structured Query Language，是和数据库交互的基本语言。和常规的编程语言不通，SQL是告诉计算机你需要什么数据，而不是告诉计算机如何产生数据，如下。
+
+```python
+for line in file:
+	record = parse(line)
+	if "Ice Cube" == record[0]:
+		print int(record[1])
+
+vs 
+
+SELECT year FROM artists
+WHERE name = "Ice Cube";
+```
+
+SQL就是基于**关系代数操作符**操作**关系型数据**，来获取关系型数据库中的数据。
+
+> 区别于关系型数据，还有多种数据模式：
+>
+> + No-SQL
+>   + key/value
+>   + Graph
+>   + Document
+>   + Column-family : 数据表的列是不固定的，比如Cassandra，不同行的数据可能有不同的列。
+> + Array / Matrix：科学计算，机器学习要处理的数据模式
+
+本文整理了笔者写SQL以及平时看到的一些问题，希望能对看到这篇文章的人有帮助。
 
 # GroupBy困扰
 
