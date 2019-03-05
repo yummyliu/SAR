@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 读源码之Pgbouncer高速IO缓存--Sbuf
+title: Pgbouncer源码——Sbuf
 subtitle: Pgbouncer的信息传输通道，与异步IO
 date: 2018-06-10 18:06
 header-img: "img/head.jpg"

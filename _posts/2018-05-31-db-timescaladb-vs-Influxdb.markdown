@@ -1,6 +1,6 @@
 ---
 layout: post
-title: TimescalaDB vs InfluxDB
+title: TimescalaDB Or InfluxDB
 subtitle: pgwatch3中加一个timescaladb的数据源的工作
 date: 2018-05-31 15:43
 header-img: "img/head.jpg"

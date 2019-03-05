@@ -1,6 +1,6 @@
 ---
 layout: post
-title: PostgreSQL+Pgbouncer架构下的查询超时设置
+title: PostgreSQL+Pgbouncer架构下的查询超时
 subtitle: 超时是架构设计中必须要考虑的问题，当使用多个系统时，可能要考虑不同的超时设置
 date: 2018-05-30 11:43
 header-img: "img/head.jpg"
@@ -9,12 +9,14 @@ tags:
  - Pgbouncer
 ---
 
-pgbouncer设置了query_timeout=60，超时了日志报错（Pooler Error: query_timeout）之后
-关闭了和pgserver的连接，然而此时pg并没有立马结束相应的activity（这就是为什么上午发现的pgb的show server和 psql的pg_stat_activity信息不一致的问题）；
+# 问题描述
 
-由于pgserver并没有cancel相应连接上的任务，任务在pgserver这占用一个connection；但是此时pgbouncer由于已经关闭了pgserver的连接，而pg执行完改任务返回结果给pgb时，报错（"could not send data to client: Broken pipe）；
+pgbouncer设置了`query_timeout=60`；超时了日志报错**（Pooler Error: query_timeout）**之后，
+Pgbouncer关闭了和pgserver的连接，然而此时pg并没有立马结束相应的*active query*。这时发现Pgbouncer的`show server`和 psql的pg_stat_activity信息不一致；
 
-pgb认为自己关闭了连接，所以可以继续给client分配server的connection；于是pgb又向pgserver发起连接，而此时pgserver上一个连接还没有执行完，所以此时pgb没有对pgserver的连接数起到保护作用；pgserver的connection一直上涨，直到pgb的日志中报错：
+由于pgserver并没有cancel相应连接上的任务，任务在pgserver这占用一个connection；但是此时pgbouncer由于已经关闭了pgserver的连接，而pg执行完改任务返回结果给pgb时，报错**（"could not send data to client: Broken pipe）**。
+
+Pgbouncer认为自己关闭了连接，所以可以继续给client分配server的connection；于是pgb又向pgserver发起连接，而此时pgserver上一个连接还没有执行完，所以此时pgb没有对pgserver的连接数起到保护作用；pgserver的connection一直上涨，直到pgb的日志中报错：
 Pooler Error: pgbouncer cannot connect to server
 直到；pgb报错 login failed: FATAL: remaining connection slots are reserved for non-replication superuser connections
 

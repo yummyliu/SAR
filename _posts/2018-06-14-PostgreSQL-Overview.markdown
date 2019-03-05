@@ -1,12 +1,11 @@
 ---
 layout: post
-title: PostgreSQL DBA 入门教程
+title: PostgreSQL DBA 入门指引
 subtitle: 结合PostgreSQL，梳理一下数据库实现中的概念
 date: 2018-07-14 13:46
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-    - DataBase
     - PostgreSQL
 typora-root-url: ../../yummyliu.github.io
 ---

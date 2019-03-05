@@ -1,6 +1,6 @@
 ---
 layout: post
-title: PostgreSQL DBA管理SQL持续总结
+title: SQL For PostgreSQL DBA(RQ)
 subtitlle: 频繁重用的代码片段整理，有需要可以看看
 date: 2018-05-30 11:45
 header-img: "img/head.jpg"

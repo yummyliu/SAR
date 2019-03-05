@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 基于硬件进行优化的多核HashJoin算法
+title: 论文拓展——基于硬件进行优化的多核HashJoin算法
 date: 2017-02-28 10:23
 header-img: "img/head.jpg"
 categories: jekyll update

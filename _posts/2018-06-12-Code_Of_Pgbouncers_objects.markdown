@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Pgbouncer源码之内部对象管理
+title: Pgbouncer源码——ObjectManager
 subtitle: Pgbouncer内部对象的状态转换与管理
 date: 2018-06-12 13:35
 header-img: "img/head.jpg"

@@ -1,6 +1,6 @@
 ---
 layout: post
-title: SQL语言入门后的进一步了解
+title: 走近SQL
 date: 2018-07-25 13:23
 header-img: "img/head.jpg"
 categories: jekyll update
