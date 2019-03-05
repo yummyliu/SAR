@@ -5,6 +5,7 @@ date: 2017-08-08 16:22
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
+	- C++
 typora-root-url: ../../yummyliu.github.io
 ---
 
