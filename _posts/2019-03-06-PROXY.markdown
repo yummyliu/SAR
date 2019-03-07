@@ -11,9 +11,9 @@ tags:
 {:toc}
 # Proxy Protocol
 
-在系统架构中，我们常会用到的一个组件就是`haproxy`。但是使用这个组件之后，我们希望对于上下游的组件来说这个ha是透明的，即，**后端能够得知前端的信息**，前端也能得知到后端的信息。
+在系统架构中，我们常会用到的一个组件就是`haproxy`。但是使用这个组件之后，我们希望对于上下游的组件来说这个ha是透明的，即，**后端能够得知前端的信息**，前端也能得知到后端的信息。这需要后端和前端组件支持了[Proxy Protocol协议](https://www.haproxy.org/download/1.8/doc/proxy-protocol.txt)；比如Nginx中就支持Proxy Protocol协议。
 
-该协议分为有两个版本，这里使用的测试的是第二版。测试后端实现haproxy后来解析前端的IP信息。其实在[这里](https://www.haproxy.org/download/1.8/doc/proxy-protocol.txt)已经提供了一个解析函数样例`read_evt`，本文就是完整的实验了一下，以供同样需求的人参考。
+如果我们自己写的后端需要了解前端的信息，那么同样需要支持该协议。该协议分为有两个版本，这里使用的测试的是第二版。测试后端实现haproxy后来解析前端的IP信息。其实在[这里](https://www.haproxy.org/download/1.8/doc/proxy-protocol.txt)已经提供了一个解析函数样例`read_evt`，本文就是完整的实验了一下，以供同样需求的人参考。
 
 # 配置
 
