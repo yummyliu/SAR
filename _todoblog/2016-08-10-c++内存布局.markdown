@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 了解C++内存管理
+title: C++内存布局
 date: 2016-08-10 15:58
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -8,9 +8,79 @@ tags:
     - C++
 ---
 
-### 内存问题
+# C++内存布局
 
-##### 内存泄露：memory leak
+```c
+#include <stdio.h> 
+int main(void) 
+{ 
+	return 0; 
+}
+```
+
+如上的简单代码，通过`size`命令，我们知道其中的布局如下所示：
+
+```bash
+» size a.out
+   text    data     bss     dec     hex filename
+   1127     540       4    1671     687 a.out
+```
+
+当其加载到内存中时就有了三个全局的部分。
+
+## text
+
+代码区域
+
+### 静态连接库代码
+
+### 动态连接库代码
+
+## data
+
+**已经初始化**的全局变量和静态变量
+
+### 动态链接库的全局变量
+
+## bss
+
+> block started by symbol
+
+**没有初始化**的全局变量和静态变量，一般操作系统对其进行置零初始化。
+
+### 类的成员函数初始化
+
+## stack
+
+### 变量作用域
+
+## heap
+
+> Free store
+
+### 变量生存时间
+
+# C++内存操作
+
+## 内存申请
+
+### new vs malloc
+
+| NEW                              | MALLOC                      |
+| -------------------------------- | --------------------------- |
+| calls constructor                | doesnot calls constructors  |
+| It is an operator                | It is a function            |
+| Returns exact data type          | Returns void *              |
+| on failure, Throws               | On failure, returns NULL    |
+| Memory allocated from free store | Memory allocated from heap  |
+| can be overridden                | cannot be overridden        |
+| size is calculated by compiler   | size is calculated manually |
+
+## 内存释放
+
+delete和 free()一定要和new/malloc()对应使用。
+
+## 内存泄露
 
 ``` c
 typedef char CStr[100];
@@ -27,13 +97,9 @@ void foo()
 
 如上,`delete a_string`的时候,就会发生内存泄露
 
-##### 野指针，悬垂指针：Wild pointer/Dangling pointer
++ 野指针，悬垂指针：Wild pointer/Dangling pointer；指针没有初始化，或者指针free后，没有置NULL
 
-指针没有初始化，或者指针free后，没有置NULL
-
-##### 内存耗尽：memory exhausted
-
-分配内存后要判断，内存是否分配成功，失败就结束该程序
++ 内存耗尽：memory exhausted；分配内存后要判断，内存是否分配成功，失败就结束该程序
 
 ### RAII
 
