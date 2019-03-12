@@ -38,8 +38,11 @@ frontend tcp-client
 
 backend echo
     balance leastconn
-    server localhost-tcpserver-1 127.0.0.1:8081 maxconn 12000 maxqueue 3000 check send-proxy-v2 check-send-proxy
+    #server localhost-tcpserver-1 127.0.0.1:8081 maxconn 12000 maxqueue 3000 check send-proxy-v2 check-send-proxy
+    server localhost-tcpserver-1 127.0.0.1:8081 maxconn 12000 maxqueue 3000 send-proxy-v2
 ```
+
+注意这里将haproxy的check关闭了，否则需要区分haproxy的地址。
 
 ## tcptest.c
 
@@ -221,6 +224,23 @@ int main (int argc, char *argv[]) {
 
 主要就是在accpet的时候，已经有个haproxy的ip信息；在accept之后，再次调用`read_evt`将解析中的前端信息覆盖到我们原来的`from`结构。
 
-## 测试通过
+## 测试
 
-![image-20190307123542812](../image/image-20190307123542812.png)
+```python
+import socket
+# create an ipv4 (AF_INET) socket object using the tcp protocol (SOCK_STREAM)
+client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+# connect the client
+client.connect(('10.189.3.53', 8080))
+
+# send some data (in this case a HTTP GET request)
+while True:
+    msg = raw_input("next msg: ")
+    client.send(msg)
+    # receive the response data (4096 is recommended buffer size)
+    response = client.recv(4096)
+    print response
+```
+
+![image-20190312171300960](../image/image-20190312171300960.png)
