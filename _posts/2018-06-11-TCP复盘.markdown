@@ -186,6 +186,15 @@ listen(fd, backlog);
 
 2. B收到FIN信号，进入CLOSE_WAIT状态，并回复ACK；TCP是可靠的，此时B会保证在B关闭之前将Buffer中的数据发送出去。*这里要确保自己会及时关闭（60s之内）这些CLOSE_WAIT状态的socket，否则会socket泄露*；
 
+   > 如下的CLOSE_WAIT就表示echo 进程没有主动关闭连接
+   >
+   > [liuyangming@ymtest ~]$ netstat -nalp | grep tcp | grep 8081
+   > (Not all processes could be identified, non-owned process info
+   >  will not be shown, you would have to be root to see it all.)
+   > tcp        0      0 0.0.0.0:8081                0.0.0.0:*                   LISTEN      50092/./echo
+   > tcp        0      0 127.0.0.1:59274             127.0.0.1:8081              FIN_WAIT2   -
+   > tcp        1      0 127.0.0.1:8081              127.0.0.1:59274             CLOSE_WAIT  50092/./echo
+
 3. A收到了B的主动关闭的一个FIN信号，也会回复一个ACK；
 
 4. 当两端都收到对方的ACK或者超时确认对方肯定收到了ACK后，两端关闭连接。
