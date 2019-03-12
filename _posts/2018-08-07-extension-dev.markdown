@@ -8,7 +8,7 @@ tags:
   - C++
 ---
 
-> * TOC
+* TOC
 {:toc}
 
 > 都知道PostgreSQL是一个扩展性很强的DB，可以自己基于提供的接口，完成一些extension；该extension作为一个管理插件，没有它工作也能完成，但是搞着玩玩，过程记录在这，未完待续...
