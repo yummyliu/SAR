@@ -15,9 +15,7 @@ tags:
 
 如果我们自己写的后端需要了解前端的信息，那么同样需要支持该协议。该协议分为有两个版本，这里使用的测试的是第二版。测试后端实现haproxy后来解析前端的IP信息。其实在[这里](https://www.haproxy.org/download/1.8/doc/proxy-protocol.txt)已经提供了一个解析函数样例`read_evt`，本文就是基于该函数，对accept函数进行了一次简单封装。完整的实验了一下Proxy 协议，以供同样需求的人参考。
 
-# 配置
-
-## haproxy
+# haproxy配置
 
 ```bash
 global
@@ -44,7 +42,11 @@ backend echo
 
 注意这里将haproxy的check关闭了，否则需要区分haproxy的地址。
 
-## tcptest.c
+# 测试
+
+## my_accept
+
+在系统函数上加了点封装，主要就是在accpet的时候，已经有个haproxy的ip信息；在accept之后，再次调用`recv`将解析中的前端信息覆盖到我们原来的`from`结构。
 
 ```c
 #include <stdio.h>
@@ -222,9 +224,7 @@ int main (int argc, char *argv[]) {
 }
 ```
 
-主要就是在accpet的时候，已经有个haproxy的ip信息；在accept之后，再次调用`read_evt`将解析中的前端信息覆盖到我们原来的`from`结构。
-
-## 测试
+## 结果
 
 ```python
 import socket
