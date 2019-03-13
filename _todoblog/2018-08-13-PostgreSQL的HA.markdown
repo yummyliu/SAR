@@ -18,8 +18,6 @@ typora-root-url: ../../yummyliu.github.io
 >
 > ​					——Murphy's law
 
-常说的几个9的可用性，就是（uptime/(uptime+downtime)）；
-
 ## 故障检测
 
 关于故障检测我们需要考虑若干问题：
@@ -44,83 +42,413 @@ typora-root-url: ../../yummyliu.github.io
 
 仲裁只是failover的第一步，决定了哪个组是最终的master后，对于另一组，需要确保将其与现有环境隔离，或者说保证另一组彻底down掉；通常我们对这个过程称作：STONITH （shoot the other node in the head ）。有很多fencing机制，最有效的就是直接控制目标机器将其关闭。
 
-## Linux HA技术栈
-
-+ 消息传输：Corosync，通过 corosync-keygen 生成的一个共享key进行交流；
-+ 机器管理：Pacemaker，基于Corosync进行仲裁，最终对集群进行failover操作。我们并不是告诉Pacemaker怎么做，而是告诉Pacemaker这个集群应该是什么样子？比如，应该启动哪些服务，这些服务在哪以及以什么顺序启动当出现故障时，Pacemaker重新制定计划其进行操作。
-+ 应用适配器脚本：resource agents ，基于Open Cluster Framework (OCF) 编写的agent（通常就是shell脚本），对需要HA的资源的配置以及查询相关信息，官方站点有PostgreSQL的resource agents（PG RA）。
-+ fencing适配器：fence agents ，对底层fencing命令的包装，比如，网络远程停止机器或通过hypervisor 重置VM等。
-+ 配置以上模块用到的客户端：pcs，底层的配置都是在XML中写好的，直接改配置即可，但是这样不够友好。
-
-
-
 # HA方案
 
 ## 方案0. Keep a DBA on duty
 
 DBA 24*7 守在DB身旁，以备不测。。。；
 
-## 方案1. keepalived-repmger
+## 方案1. PAF
 
-图1 keepalived-repmger中的故障切换逻辑
+### PAF优点
 
-![image-20180813111059882](/../Desktop/repmger.png)
+- PAF中，PostgreSQL的配置没有和PAF相关的限制。
+- PAF可以处理节点失效，并在Master宕机的情况下，触发选举。
+- 仲裁策略可以通过PAF来加强。
+- 支持的HA解决方案比较全面，包括start, stop, and monitor以及网络隔离。
+- 这是一个分布式的方案，可以从集群的任何一点进行管理操作。
 
-当master故障时，keepalived将vip切换到一个hot standby上。并且该hot standby的VRRP协议中的角色切换为master，并自动启动notify_master脚本，将这个hot standby提升为master。
+### PAF缺点
 
-为了防止脑裂，集群中必须有一个 **shared witness server** 。其做出决定并将故障转移到较高优先级的从上。**witness server**确保某一网段有较高优先级，这样其他server不会自己promote。
+- PAF不会去检查standby的recovery配置，如果standby并没有连接上Primary或者任意cascade节点，同样会在集群中作为一个slave节点。
+- 需要为Pacemaker和Corosync组件，打开额外的端口（default：5405）进行UDP通信。
+- 不支持基于NAT的配置
+- 不支持pg_rewind。
 
-## 方案2. HAproxy-Pgbouncer
+## 方案2. repmgr
 
-图2 Haproxy-Pgbouncer的故障切换逻辑
+### repmgr优点
 
-![image-20180813112113584](/../Desktop/haproxy.png)
+- Repmgr提供了部署主从节点，以及配置复制的工具。
+- 不需要开放额外的端口；如果需要switchover，则需要额外配置ssh免密。
+- 提供了基于注册事件的触发用户自定义脚本的机制。
+- 提供了主节点自动failover的机制。
 
-通过这个架构，可以做负载均衡，提高整体带宽，资源利用率和响应时间，避免单一节点过载。通过冗余提高可用性和可靠性。
+### repmgr缺点
 
-这个方案中，当前端haproxy1挂掉后，Keepalived将vip迁移到haproxy2上。而当后端master挂掉后，repmgrd(replicaltion manager watch-dog)将hot standby提升为主。这一方案中同样加上shared witness server同样有意义。
+- Repmgr需要在PostgreSQL中安装插件
+- repmgr不会去检查standby的recovery配置，如果standby并没有连接上Primary或者任意cascade节点，同样会在集群中作为一个slave节点。
+- 这不是一个分布式集群管理方案，不能从一个PostgreSQL服务挂掉的机器查询集群信息。
+- 不能处理单节点的recovery。
 
-## 方案3. Pacemaker
-
-### 简介
-
-![image-20180829103926035](/../Desktop/pacemaker.png)
-
-PaceMaker分为几部分：
-
-###### 消息层：Heartbeat/Corosync
-
-+ 节点的关系，以及节点的添加删除的周知；
-+ 节点间消息传递
-+ 仲裁系统
-
-###### 集群资源管理器：PaceMaker
-
-+ 存储集群的配置
-+ 基于消息层，实现最大资源利用率
-+ 扩展性：按照指定接口编写好相应的脚本，就能被PaceMaker管理。
-
-###### 集群胶水工具
-
-+ 除了传输消息（Corosync）和CRM（PaceMaker）之外的工具
-+ 节点本地的与packmaker的资源代理器交互的资源管理器
-+ 提供fencing功能的STONITH守护进程
-
-###### 资源代理器
-
-+ 管理集群资源的代理器
-+ 提供一些管理操作：start/stop/monitor/promote/demote等
-+ 有一些现成的代理器，如：Apache，PostgreSQL，drbd等
-
-Pacemaker使用hostname辨别各个系统，可以使用DNS或者直接在/etc/hosts下配置（最好配置的短小精悍，比如：pros-db12）；不要在hostname中，使用primary/slave，这在failover后混淆。
-
-## 方案4：Patroni
+## 方案3：Patroni
 
 看了很多一些HA方案后，个人对这个更感兴趣。
 
+## 部署Patroni
 
+### 机器与角色
 
+| IP          | role    |
+| ----------- | ------- |
+| 10.189.6.28 | pgsql   |
+| 10.189.3.46 | pgsql   |
+| 10.189.1.45 | pgsql   |
+| 10.189.0.40 | haproxy |
+| 10.189.0.40 | etcd    |
 
+### etcd
+
+> 10.189.0.40
+
+#### etcd安装
+
+```bash
+$ etcd --version
+etcd Version: 3.3.0+git
+Git SHA: 17de9bd
+Go Version: go1.11.4
+Go OS/Arch: linux/amd64
+```
+
+#### etcd配置
+
+```yaml
+# This is the configuration file for the etcd server.
+# Human-readable name for this member.
+name: 'patroni'
+data-dir: /var/lib/etcd/data
+wal-dir: /var/lib/etcd/wal
+
+# Number of committed transactions to trigger a snapshot to disk.
+snapshot-count: 10000
+# Time (in milliseconds) of a heartbeat interval.
+heartbeat-interval: 100
+# Time (in milliseconds) for an election to timeout.
+election-timeout: 1000
+# Raise alarms when backend size exceeds the given quota. 0 means use the
+# default quota.
+quota-backend-bytes: 0
+# Maximum number of snapshot files to retain (0 is unlimited).
+max-snapshots: 5
+# Maximum number of wal files to retain (0 is unlimited).
+max-wals: 5
+
+# List of comma separated URLs to listen on for peer traffic.
+listen-peer-urls: http://10.189.0.40:7001
+# List of comma separated URLs to listen on for client traffic.
+listen-client-urls: http://localhost:4001,http://10.189.0.40:4001
+# List of this member's peer URLs to advertise to the rest of the cluster.
+# The URLs needed to be a comma-separated list.
+initial-advertise-peer-urls: http://localhost:2380
+# List of this member's client URLs to advertise to the public.
+# The URLs needed to be a comma-separated list.
+advertise-client-urls: http://10.189.0.40:4001
+
+# Discovery URL used to bootstrap the cluster.
+discovery:
+# Valid values include 'exit', 'proxy'
+discovery-fallback: 'proxy'
+# Initial cluster token for the etcd cluster during bootstrap.
+initial-cluster-token: 'etcd-cluster'
+# Initial cluster state ('new' or 'existing').
+initial-cluster-state: 'new'
+```
+
+#### 启动etcd
+
+`etcd --config-file /etc/etcd/etcd.conf`
+
+### haproxy
+
+> 10.189.0.40
+
+#### haproxy安装
+
+haproxy主要是在master发生failover后，用来调整新的指向。
+
+考虑到如果我们能够通过内部API来调整master.db.tt的指向，那么可能haproxy并不需要；这样在整个架构中也少了一个单独的ha节点。
+
+```
+yum install haproxy -y
+```
+
+#### haproxy配置
+
+> /etc/haproxy/haproxy.cfg
+
+```cfg
+global
+    maxconn 100
+
+defaults
+    log global
+    mode tcp
+    retries 2
+    timeout client 30m
+    timeout connect 4s
+    timeout server 30m
+    timeout check 5s
+
+listen stats
+    mode http
+    bind *:7000
+    stats enable
+    stats uri /
+
+listen postgres
+    bind *:5000
+    option httpchk
+    http-check expect status 200
+    default-server inter 3s fall 3 rise 2 on-marked-down shutdown-sessions
+    server postgresql_10.189.6.28_5432 10.189.6.28:5432 maxconn 100 check port 8008
+    server postgresql_10.189.3.46_5432 10.189.3.46:5432 maxconn 100 check port 8008
+    server postgresql_10.189.1.45_5432 10.189.1.45:5432 maxconn 100 check port 8008
+```
+
+#### 启动haproxy
+
+```
+systemctl restart haproxy
+```
+
+### DB机器
+
+#### 安装patroni
+
+```bash
+pip install patroni[etcd]
+```
+
+#### 配置patroni
+
+> /etc/patroni.yml
+
+##### 节点1
+
+```yaml
+scope: postgres-ha
+namespace: /db/
+name: hatestdb-pg10-node1
+
+restapi:
+    listen: 0.0.0.0:8008
+    connect_address: 10.189.6.28:8008
+
+etcd:
+    host: 10.189.0.40:4001
+
+bootstrap:
+    dcs:
+        ttl: 30
+        loop_wait: 10
+        retry_timeout: 10
+        maximum_lag_on_failover: 1048576
+        postgresql:
+            use_pg_rewind: true
+            use_slots: true
+            parameters:
+                wal_level: logical
+                hot_standby: "on"
+                wal_keep_segments: 8
+                max_wal_senders: 5
+                max_replication_slots: 5
+                checkpoint_timeout: 30
+
+    initdb:
+    - encoding: UTF8
+    - data-checksums
+
+    pg_hba:
+    - host all dba all md5
+    - host replication replication all md5
+
+    users:
+        dba:
+            password: dba
+            options:
+                - createrole
+                - createdb
+        replication:
+            password: replication
+            options:
+                - replication
+
+postgresql:
+    listen: 0.0.0.0:5432
+    connect_address: 10.189.6.28:5432
+    data_dir: /export/postgresql/hatest_10/data
+    authentication:
+        replication:
+            username: replication
+            password: replication
+        superuser:
+            username: dba
+            password: dba
+    parameters:
+        unix_socket_directories: '/var/run/postgresql, /tmp'
+```
+
+##### 节点2
+
+```yaml
+scope: postgres-ha
+namespace: /db/
+name: hatestdb-pg10-node2
+
+restapi:
+    listen: 0.0.0.0:8008
+    connect_address: 10.189.3.46:8008
+
+etcd:
+    host: 10.189.0.40:4001
+
+bootstrap:
+    dcs:
+        ttl: 30
+        loop_wait: 10
+        retry_timeout: 10
+        maximum_lag_on_failover: 1048576
+        postgresql:
+            use_pg_rewind: true
+            use_slots: true
+            parameters:
+                wal_level: logical
+                hot_standby: "on"
+                wal_keep_segments: 8
+                max_wal_senders: 5
+                max_replication_slots: 5
+                checkpoint_timeout: 30
+
+    initdb:
+    - encoding: UTF8
+    - data-checksums
+
+    pg_hba:
+    - host all dba all md5
+    - host replication replication all md5
+
+    users:
+        dba:
+            password: dba
+            options:
+                - createrole
+                - createdb
+        replication:
+            password: replication
+            options:
+                - replication
+
+postgresql:
+    listen: 0.0.0.0:5432
+    connect_address: 10.189.3.46:5432
+    data_dir: /export/postgresql/hatest_10/data
+    authentication:
+        replication:
+            username: replication
+            password: replication
+        superuser:
+            username: dba
+            password: dba
+    parameters:
+        unix_socket_directories: '/var/run/postgresql, /tmp'
+```
+
+##### 节点3
+
+```yaml
+scope: postgres-ha
+namespace: /db/
+name: hatestdb-pg10-node3
+
+restapi:
+    listen: 0.0.0.0:8008
+    connect_address: 10.189.1.45:8008
+
+etcd:
+    host: 10.189.0.40:4001
+
+bootstrap:
+    dcs:
+        ttl: 30
+        loop_wait: 10
+        retry_timeout: 10
+        maximum_lag_on_failover: 1048576
+        postgresql:
+            use_pg_rewind: true
+            use_slots: true
+            parameters:
+                wal_level: logical
+                hot_standby: "on"
+                wal_keep_segments: 8
+                max_wal_senders: 5
+                max_replication_slots: 5
+                checkpoint_timeout: 30
+
+    initdb:
+    - encoding: UTF8
+    - data-checksums
+
+    pg_hba:
+    - host all dba all md5
+    - host replication replication all md5
+
+    users:
+        dba:
+            password: dba
+            options:
+                - createrole
+                - createdb
+        replication:
+            password: replication
+            options:
+                - replication
+
+postgresql:
+    listen: 0.0.0.0:5432
+    connect_address: 10.189.1.45:5432
+    data_dir: /export/postgresql/hatest_10/data
+    authentication:
+        replication:
+            username: replication
+            password: replication
+        superuser:
+            username: dba
+            password: dba
+    parameters:
+        unix_socket_directories: '/var/run/postgresql, /tmp'
+```
+
+### 启动PostgreSQL-HA 集群
+
+在三个几点上启动patroni
+
+```
+/usr/local/bin/patroni /etc/patroni.yml
+```
+
+#### etcd member
+
+```bash
+]$ etcdctl --endpoints=10.189.0.40:4001 member list
+8e9e05c52164694d, started, patroni, http://localhost:2380, http://10.189.0.40:4001
+```
+
+#### PostgreSQL master HA
+
+![image-20190304130010393](/../dba/team/yangming/image/image-20190304130010393.png)
+
+## 部署问题
+
+- etcd版本；yum默认是2.0；这里是编译安装的最新的3；由于测试ha，这里etcd是单节点。
+
+- patroni重启整个集群，注意在etcd中删除相关的资源；
+
+  ```bash
+  patronictl remove postgres-ha
+  ```
+
+- `Error: 'Can not find suitable configuration of distributed configuration store`
 
 
 
