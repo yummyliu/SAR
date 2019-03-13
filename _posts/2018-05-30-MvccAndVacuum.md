@@ -10,7 +10,7 @@ tags:
 typora-root-url: ../../yummyliu.github.io
 ---
 
-> * TOC
+* TOC
 {:toc}
 
 当数据库中并发的执行多个任务时，并发控制是维护事务的一致性和隔离性的机制。
@@ -26,7 +26,7 @@ PostgreSQL是基于MVCC实现的事务隔离称之为**快照隔离SI**（Snapsh
 通常MVCC的是实现方式，大概有两种，关键就在于将旧数据放在什么地方；
 
    	1. 将多版本的记录都存储在数据库中，垃圾收集器清理不需要的记录。比如：PostgreSQL/Firebird/Interbase ，而SQL Server将其存储在tempdb中。
-      	2. 将最新的记录放在数据库中，通过恢复undo日志，来重建旧版本的数据。比如Oracle、MySQL(innodb)。
+            	2. 将最新的记录放在数据库中，通过恢复undo日志，来重建旧版本的数据。比如Oracle、MySQL(innodb)。
 
 SI不允许出现在ANSI SQL-92标准中定义的三种异常，即*脏读，不可重复读和幻读*。但是，SI不能实现真正的**可串行化**，因为它允许**序列化异常**，比如 *Write Skew* 和 *Read-only Transaction Skew*。
 
