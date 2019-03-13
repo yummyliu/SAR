@@ -25,6 +25,23 @@ SELECT
    ORDER BY pg_total_relation_size(relid) DESC;
 ```
 
+## 年龄最大的表
+
+```sql
+SELECT b.nspname,
+       a.relname ,
+       age(a.relfrozenxid) AS maxtableage,
+		pg_size_pretty(pg_total_relation_size(a.oid)) as tablesize,
+  (SELECT age(pg_database.datfrozenxid)
+   FROM pg_database
+   WHERE datname !~ 'postgres|temp') AS age
+FROM pg_class a
+JOIN pg_namespace b ON b.oid = a.relnamespace
+WHERE a.relfrozenxid != 0
+and pg_total_relation_size(a.oid) > 53687091200
+ORDER BY maxtableage DESC ;
+```
+
 ## 统计表具体count值
 
 ```sql
@@ -180,6 +197,15 @@ where lower(b.relname) = 'core_devices';
 ```
 
 # 查询
+
+## 慢查询
+
+```sql
+SELECT state, backend_xmin,xact_start,left(query,100)
+FROM pg_stat_activity
+WHERE backend_xmin IS NOT NULL
+ORDER BY age(backend_xmin) DESC;
+```
 
 ## 检查线上查询
 
