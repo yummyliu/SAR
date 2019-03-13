@@ -9,283 +9,289 @@ tags:
     - PostgreSQL
 ---
 
-+  查看表的大小
+* TOC
+{:toc}
+# 表的情况
 
-   ```sql
-   SELECT
-      relname,
-      pg_size_pretty(pg_total_relation_size(relid)) as total,
-      pg_size_pretty(pg_total_relation_size(relid) - pg_relation_size(relid)) as table
-      FROM pg_catalog.pg_statio_user_tables
-      where relname='relanmedddd' and schemaname='snameddd'
-      ORDER BY pg_total_relation_size(relid) DESC;
-   ```
+## 查看表的大小
 
-+ 统计表具体count值
+```sql
+SELECT
+   relname,
+   pg_size_pretty(pg_total_relation_size(relid)) as total,
+   pg_size_pretty(pg_total_relation_size(relid) - pg_relation_size(relid)) as table
+   FROM pg_catalog.pg_statio_user_tables
+   where relname='relanmedddd' and schemaname='snameddd'
+   ORDER BY pg_total_relation_size(relid) DESC;
+```
 
-   ```sql
-   SELECT
-      relname AS objectname,
-      relkind AS objecttype,
-      reltuples AS "#entries", pg_size_pretty(relpages::bigint*8*1024) AS size
-      FROM pg_class
-      WHERE relpages >= 8 and relname~'relnameddd'
-      ORDER BY relpages DESC;
-   ```
+## 统计表具体count值
 
+```sql
+SELECT
+   relname AS objectname,
+   relkind AS objecttype,
+   reltuples AS "#entries", pg_size_pretty(relpages::bigint*8*1024) AS size
+   FROM pg_class
+   WHERE relpages >= 8 and relname~'relnameddd'
+   ORDER BY relpages DESC;
+```
 
-+ find unused index
+# 索引情况
 
-   ```sql
-   -- Completely unused indexes:
-   SELECT relid::regclass as table, indexrelid::regclass as index
-        , pg_size_pretty(pg_relation_size(indexrelid))
-     FROM pg_stat_user_indexes
-     JOIN pg_index
-    USING (indexrelid)
-    WHERE idx_scan = 0
-      AND indisunique IS FALSE order by pg_relation_size(indexrelid);
-      
-    SELECT s.schemaname,
-          s.relname AS tablename,
-          s.indexrelname AS indexname,
-          pg_size_pretty(pg_relation_size(s.indexrelid)) AS index_size
-   FROM pg_catalog.pg_stat_user_indexes s
-      JOIN pg_catalog.pg_index i ON s.indexrelid = i.indexrelid
-   WHERE s.idx_scan = 0      -- has never been scanned
-     AND 0 <>ALL (i.indkey)  -- no index column is an expression
-     AND NOT EXISTS          -- does not enforce a constraint
-            (SELECT 1 FROM pg_catalog.pg_constraint c
-             WHERE c.conindid = s.indexrelid)
-   ORDER BY pg_relation_size(s.indexrelid) DESC;
-   ```
+## 无用索引
 
-+ find multiple index
+```sql
+-- Completely unused indexes:
+SELECT relid::regclass as table, indexrelid::regclass as index
+     , pg_size_pretty(pg_relation_size(indexrelid))
+  FROM pg_stat_user_indexes
+  JOIN pg_index
+ USING (indexrelid)
+ WHERE idx_scan = 0
+   AND indisunique IS FALSE order by pg_relation_size(indexrelid);
+   
+ SELECT s.schemaname,
+       s.relname AS tablename,
+       s.indexrelname AS indexname,
+       pg_size_pretty(pg_relation_size(s.indexrelid)) AS index_size
+FROM pg_catalog.pg_stat_user_indexes s
+   JOIN pg_catalog.pg_index i ON s.indexrelid = i.indexrelid
+WHERE s.idx_scan = 0      -- has never been scanned
+  AND 0 <>ALL (i.indkey)  -- no index column is an expression
+  AND NOT EXISTS          -- does not enforce a constraint
+         (SELECT 1 FROM pg_catalog.pg_constraint c
+          WHERE c.conindid = s.indexrelid)
+ORDER BY pg_relation_size(s.indexrelid) DESC;
+```
 
-   ```sql
-   --- Finds multiple indexes that have the same set of columns, same opclass, expression and predicate -- which make them equivalent. Usually it's safe to drop one of them, but I give no guarantees. :)
+## 重复索引
 
-   SELECT pg_size_pretty(SUM(pg_relation_size(idx))::BIGINT) AS SIZE,
-          (array_agg(idx))[1] AS idx1, (array_agg(idx))[2] AS idx2,
-          (array_agg(idx))[3] AS idx3, (array_agg(idx))[4] AS idx4
-   FROM (
-       SELECT indexrelid::regclass AS idx, (indrelid::text ||E'\n'|| indclass::text ||E'\n'|| indkey::text ||E'\n'||
-                                            COALESCE(indexprs::text,'')||E'\n' || COALESCE(indpred::text,'')) AS KEY
-       FROM pg_index) sub
-   GROUP BY KEY HAVING COUNT(*)>1
-   ORDER BY SUM(pg_relation_size(idx)) DESC;
-   ```
+```sql
+--- Finds multiple indexes that have the same set of columns, same opclass, expression and predicate -- which make them equivalent. Usually it's safe to drop one of them, but I give no guarantees. :)
 
-+ useless index
+SELECT pg_size_pretty(SUM(pg_relation_size(idx))::BIGINT) AS SIZE,
+       (array_agg(idx))[1] AS idx1, (array_agg(idx))[2] AS idx2,
+       (array_agg(idx))[3] AS idx3, (array_agg(idx))[4] AS idx4
+FROM (
+    SELECT indexrelid::regclass AS idx, (indrelid::text ||E'\n'|| indclass::text ||E'\n'|| indkey::text ||E'\n'||
+                                         COALESCE(indexprs::text,'')||E'\n' || COALESCE(indpred::text,'')) AS KEY
+    FROM pg_index) sub
+GROUP BY KEY HAVING COUNT(*)>1
+ORDER BY SUM(pg_relation_size(idx)) DESC;
+```
 
-   ```sql
-   CREATE AGGREGATE array_accum (anyelement)
-   (
-       sfunc = array_append,
-       stype = anyarray,
-       initcond = '{}'
-   );
+## 用处不大的索引
 
-   select
-       starelid::regclass, indexrelid::regclass, array_accum(staattnum), relpages, reltuples, array_accum(stadistinct)
-   from
-       pg_index
-       join  on (starelid=indrelid and staattnum = ANY(indkey))
-       join pg_class on (indexrelid=oid)
-   where
-       case when stadistinct < 0 then stadistinct > -.8 else reltuples/stadistinct > .2 end
-       and
-       not (indisunique or indisprimary)
-       and
-       (relpages > 100 or reltuples > 1000)
-   group by
-       starelid, indexrelid, relpages, reltuples
-   order by
-       starelid ;
-   ```
+```sql
+CREATE AGGREGATE array_accum (anyelement)
+(
+    sfunc = array_append,
+    stype = anyarray,
+    initcond = '{}'
+);
 
-+ 杀查询
+select
+    starelid::regclass, indexrelid::regclass, array_accum(staattnum), relpages, reltuples, array_accum(stadistinct)
+from
+    pg_index
+    join  on (starelid=indrelid and staattnum = ANY(indkey))
+    join pg_class on (indexrelid=oid)
+where
+    case when stadistinct < 0 then stadistinct > -.8 else reltuples/stadistinct > .2 end
+    and
+    not (indisunique or indisprimary)
+    and
+    (relpages > 100 or reltuples > 1000)
+group by
+    starelid, indexrelid, relpages, reltuples
+order by
+    starelid ;
+```
 
-   ```sql
-   select pg_cancel_backend(pid) from pg_stat_activity where pid <> pg_backend_pid() and application_name !~ 'psql'; \watch 0.5
-   ```
+## 重建索引
 
+```sql
+CREATE UNIQUE INDEX CONCURRENTLY user_pictures_new_pkey_new ON yay.user_pictures USING btree (id)
 
-+ rebuild index
+BEGIN;
+DROP INDEX CONCURRENTLY user_pictures_new_pkey;
+ALTER INDEX user_pictures_new_pkey_new RENAME TO user_pictures_new_pkey;
+COMMIT;
+```
 
-   ```sql
-   CREATE UNIQUE INDEX CONCURRENTLY user_pictures_new_pkey_new ON yay.user_pictures USING btree (id)
+## 重建主键
 
-   BEGIN;
-   DROP INDEX CONCURRENTLY user_pictures_new_pkey;
-   ALTER INDEX user_pictures_new_pkey_new RENAME TO user_pictures_new_pkey;
-   COMMIT;
-   ```
+```sql
+CREATE UNIQUE INDEX CONCURRENTLY user_pictures_new_pkey_new ON yay.user_pictures USING btree (id)
 
+--- make index disvalid
+update pg_index set indisvalid = false where indexrelid = 'user_pictures_new_pkey'::regclass;
 
-+ Rebuild pk
+BEGIN;
+SET lock_timeout TO '2s'
+alter table user_pictures drop CONSTRAINT user_pictures_new_pkey ;
 
-   ```sql
-   CREATE UNIQUE INDEX CONCURRENTLY user_pictures_new_pkey_new ON yay.user_pictures USING btree (id)
+alter table user_pictures add CONSTRAINT user_pictures_pkey PRIMARY KEY USING INDEX user_pictures_pkey_new
+COMMIT;
+```
 
-   --- make index disvalid
-   update pg_index set indisvalid = false where indexrelid = 'user_pictures_new_pkey'::regclass;
+# 锁情况
 
-   BEGIN;
-   SET lock_timeout TO '2s'
-   alter table user_pictures drop CONSTRAINT user_pictures_new_pkey ;
+## 锁依赖
 
-   alter table user_pictures add CONSTRAINT user_pictures_pkey PRIMARY KEY USING INDEX user_pictures_pkey_new
-   COMMIT;
-   ```
+```sql
+SET application_name='%your_logical_name%';
+SELECT blocked_locks.pid     AS blocked_pid,
+         blocked_activity.usename  AS blocked_user,
+         blocking_locks.pid     AS blocking_pid,
+         blocking_activity.usename AS blocking_user,
+         blocked_activity.query    AS blocked_statement,
+         blocking_activity.query   AS current_statement_in_blocking_process,
+         blocked_activity.application_name AS blocked_application,
+         blocking_activity.application_name AS blocking_application
+   FROM  pg_catalog.pg_locks         blocked_locks
+    JOIN pg_catalog.pg_stat_activity blocked_activity  ON blocked_activity.pid = blocked_locks.pid
+    JOIN pg_catalog.pg_locks         blocking_locks
+        ON blocking_locks.locktype = blocked_locks.locktype
+        AND blocking_locks.DATABASE IS NOT DISTINCT FROM blocked_locks.DATABASE
+        AND blocking_locks.relation IS NOT DISTINCT FROM blocked_locks.relation
+        AND blocking_locks.page IS NOT DISTINCT FROM blocked_locks.page
+        AND blocking_locks.tuple IS NOT DISTINCT FROM blocked_locks.tuple
+        AND blocking_locks.virtualxid IS NOT DISTINCT FROM blocked_locks.virtualxid
+        AND blocking_locks.transactionid IS NOT DISTINCT FROM blocked_locks.transactionid
+        AND blocking_locks.classid IS NOT DISTINCT FROM blocked_locks.classid
+        AND blocking_locks.objid IS NOT DISTINCT FROM blocked_locks.objid
+        AND blocking_locks.objsubid IS NOT DISTINCT FROM blocked_locks.objsubid
+        AND blocking_locks.pid != blocked_locks.pid
 
+    JOIN pg_catalog.pg_stat_activity blocking_activity ON blocking_activity.pid = blocking_locks.pid
+   WHERE NOT blocked_locks.GRANTED;
+```
 
-+ Lock check
+## 某个表上的锁情况
 
-   ```sql
-   SET application_name='%your_logical_name%';
-   SELECT blocked_locks.pid     AS blocked_pid,
-            blocked_activity.usename  AS blocked_user,
-            blocking_locks.pid     AS blocking_pid,
-            blocking_activity.usename AS blocking_user,
-            blocked_activity.query    AS blocked_statement,
-            blocking_activity.query   AS current_statement_in_blocking_process,
-            blocked_activity.application_name AS blocked_application,
-            blocking_activity.application_name AS blocking_application
-      FROM  pg_catalog.pg_locks         blocked_locks
-       JOIN pg_catalog.pg_stat_activity blocked_activity  ON blocked_activity.pid = blocked_locks.pid
-       JOIN pg_catalog.pg_locks         blocking_locks
-           ON blocking_locks.locktype = blocked_locks.locktype
-           AND blocking_locks.DATABASE IS NOT DISTINCT FROM blocked_locks.DATABASE
-           AND blocking_locks.relation IS NOT DISTINCT FROM blocked_locks.relation
-           AND blocking_locks.page IS NOT DISTINCT FROM blocked_locks.page
-           AND blocking_locks.tuple IS NOT DISTINCT FROM blocked_locks.tuple
-           AND blocking_locks.virtualxid IS NOT DISTINCT FROM blocked_locks.virtualxid
-           AND blocking_locks.transactionid IS NOT DISTINCT FROM blocked_locks.transactionid
-           AND blocking_locks.classid IS NOT DISTINCT FROM blocked_locks.classid
-           AND blocking_locks.objid IS NOT DISTINCT FROM blocked_locks.objid
-           AND blocking_locks.objsubid IS NOT DISTINCT FROM blocked_locks.objsubid
-           AND blocking_locks.pid != blocked_locks.pid
+```sql
+select a.locktype,a.database,a.pid,a.mode,a.granted,a.relation,b.relname,left(c.query, 100)
+from pg_locks a
+join pg_class b on a.relation = b.oid
+join pg_stat_activity c on a.pid = c.pid
+where lower(b.relname) = 'core_devices';
+```
 
-       JOIN pg_catalog.pg_stat_activity blocking_activity ON blocking_activity.pid = blocking_locks.pid
-      WHERE NOT blocked_locks.GRANTED;
-   ```
+# 查询
 
-   ```sql
-   SELECT relation::regclass, * FROM pg_locks WHERE NOT GRANTED;
+## 检查线上查询
 
-   ```
+```sql
+select split_part(split_part(application_name,':',1),'-',2) as appname ,left(split_part(query,'FROM',2),100) from pg_stat_activity where usename !='dba' and client_addr = '127.0.0.1' and application_name !='';
+```
 
-+ 检查线上查询
+## 语句平均执行时间
 
-    ```sql
-    select split_part(split_part(application_name,':',1),'-',2) as appname ,left(split_part(query,'FROM',2),100) from pg_stat_activity where usename !='dba' and client_addr = '127.0.0.1' and application_name !='';
-    ```
+```sql
+CREATE OR REPLACE FUNCTION timeit(insql text)
+RETURNS interval
+AS $$
+DECLARE
+    tgtpid bigint;
+    startts timestamp;
+    sumint interval = '0 seconds';
+    rec record;
+    i int; numiters int := 1000;
+BEGIN
+    FOR i IN 1..numiters LOOP
+        tgtpid := round(100000 * random());
+        startts := clock_timestamp();
+        EXECUTE insql INTO rec using tgtpid;
+        sumint := sumint + (clock_timestamp() - startts)::interval;
+    END LOOP;
+    RETURN (sumint / numiters);
+END;
+$$ LANGUAGE plpgsql;
 
-+ 删除某几列上重复的记录，只保留ctid或者id或者updatetime等最大的
+SELECT timeit(
+$$
+    SELECT count(1) FROM parent p JOIN detail d ON d.pid = p.id WHERE p.id = $1
+$$);
+```
 
-    ```sql
-    with keys as ( select last_value(id) over (partition by user_id, moment_id, moment_user_id order by updated_time), count(*) over (partition by user_id, moment_id, moment_user_id) as c
-    from tablename)
-    select * from keys where c > 1;
+# 更新数据
 
-    delete from tablename where id in (select id from keys where c > 1);
-    ```
+## 删除某几列上重复的记录
 
+只保留ctid或者id或者updatetime等最大的
 
-+ 批量间隔更新
+```sql
+with keys as ( select last_value(id) over (partition by user_id, moment_id, moment_user_id order by updated_time), count(*) over (partition by user_id, moment_id, moment_user_id) as c
+from tablename)
+select * from keys where c > 1;
 
-  ```sql
-  $ cat updateoffset.sql
-  
-  WITH updateid AS
-    (SELECT *
-     FROM table_bk
-     OFFSET :offset LIMIT 500)
-  UPDATE table
-  SET created_time = u.created_time
-  FROM updateid u
-  WHERE table.id = u.id;
-  
-  for (( i = 0; i < 54; i++ )); do
-  psql -f updateoffset.sql -v offset=$((i*500));
-  Sleep 60;
-  done
-  ```
+delete from tablename where id in (select id from keys where c > 1);
+```
 
-  
+## 批量间隔更新
 
-+ slave获得masterhost
+```sql
+$ cat updateoffset.sql
 
-  ```bash
-  MHOST=$(grep primary_conninfo recovery.conf | awk -F 'host=' '{print $2}' | awk '{print $1}')
-  ```
+WITH updateid AS
+  (SELECT *
+   FROM table_bk
+   OFFSET :offset LIMIT 500)
+UPDATE table
+SET created_time = u.created_time
+FROM updateid u
+WHERE table.id = u.id;
 
-+ 复制延迟
+for (( i = 0; i < 54; i++ )); do
+psql -f updateoffset.sql -v offset=$((i*500));
+Sleep 60;
+done
+```
 
-  ```sql
-  SELECT client_addr,
-         pg_wal_lsn_diff(
-             pg_current_wal_lsn(),
-             sent_lsn
-         ) AS sent_lag,
-         pg_wal_lsn_diff(
-             pg_current_wal_lsn(),
-             write_lsn
-         ) AS write_lag,
-         pg_wal_lsn_diff(
-             pg_current_wal_lsn(),
-             flush_lsn
-         ) AS flush_lag,
-         pg_wal_lsn_diff(
-             pg_current_wal_lsn(),
-             replay_lsn
-         ) AS replay_lag
-    FROM pg_stat_replication;
-  ```
+# SHELL
 
-  ```sql
-  SELECT slot_name,
-         pg_wal_lsn_diff(
+## slave获得masterhost
+
+```bash
+MHOST=$(grep primary_conninfo recovery.conf | awk -F 'host=' '{print $2}' | awk '{print $1}')
+```
+
+# 复制延迟
+
+```sql
+SELECT client_addr,
+       pg_wal_lsn_diff(
            pg_current_wal_lsn(),
-           restart_lsn
-         ) as restart_lag,
-         pg_wal_lsn_diff(
+           sent_lsn
+       ) AS sent_lag,
+       pg_wal_lsn_diff(
            pg_current_wal_lsn(),
-           confirmed_flush_lsn
-         ) as flush_lag
-    FROM pg_replication_slots;
-  ```
+           write_lsn
+       ) AS write_lag,
+       pg_wal_lsn_diff(
+           pg_current_wal_lsn(),
+           flush_lsn
+       ) AS flush_lag,
+       pg_wal_lsn_diff(
+           pg_current_wal_lsn(),
+           replay_lsn
+       ) AS replay_lag
+  FROM pg_stat_replication;
+```
 
-+ 统计语句的平均执行时间
+```sql
+SELECT slot_name,
+       pg_wal_lsn_diff(
+         pg_current_wal_lsn(),
+         restart_lsn
+       ) as restart_lag,
+       pg_wal_lsn_diff(
+         pg_current_wal_lsn(),
+         confirmed_flush_lsn
+       ) as flush_lag
+  FROM pg_replication_slots;
+```
 
-  ```sql
-  CREATE OR REPLACE FUNCTION timeit(insql text)
-  RETURNS interval
-  AS $$
-  DECLARE
-      tgtpid bigint;
-      startts timestamp;
-      sumint interval = '0 seconds';
-      rec record;
-      i int; numiters int := 1000;
-  BEGIN
-      FOR i IN 1..numiters LOOP
-          tgtpid := round(100000 * random());
-          startts := clock_timestamp();
-          EXECUTE insql INTO rec using tgtpid;
-          sumint := sumint + (clock_timestamp() - startts)::interval;
-      END LOOP;
-      RETURN (sumint / numiters);
-  END;
-  $$ LANGUAGE plpgsql;
-  
-  SELECT timeit(
-  $$
-      SELECT count(1) FROM parent p JOIN detail d ON d.pid = p.id WHERE p.id = $1
-  $$);
-  ```
 
-  
-
-+ 
