@@ -30,11 +30,28 @@ typora-root-url: ../../yummyliu.github.io
 
 这样我们再计算的时候，计算数据单元的大小应该和这些存储层次适配，才能发挥最佳性能。因此，在本文中就是讲述了Cache-resident的HashJoin。
 
+# Join ALGO
+
+假设我们有两张表R，S；分别有M，N个块；以及m，n个元组。常规的Join算法有三种：NestLoop，SortMerge，Hash。基本从名字上我们就能够了解到算法的机制。当进行选择的时候还会根据是否有索引，或者是否已经有序来选择合适的算法。数据库主要的性能瓶颈是IO，这里简单介绍一下各种算法的**IO代价**：
+
++ Simple NestLoop：按个从R中取**元组**和整个S进行match；这样整体的IO代价为`O(M+m*N)`。当表比较小时我们可以采取这种算法。
++ Blocked NestLoop ：从外存中取**块**和整个S进行Match；这样整体的IO代价为`O(M+M*N)`。
++ Indexed NestLoop ：当某个表上存在索引时，我们可以通过索引来进定位元组；假设查索引的代价为C，这样整体的IO代价为`O(M+m*C)`。
++ SortMerge：如果两个表都排好序了，那么排序的代价为0；假设两个表都没有拍好序，这里整体的代价就是`O(M+N+sortCost)`。
++ HashJoin：取决于HashTable能否在内存中放下（是否对HashTable进行分块），以及我们是否提前得知了HashTable的大小(采用静态Hash还是动态Hash)。具体的IO代价是不同的，下节会详细介绍。
+
+## Join Value
+
+简单介绍了算法，每个Join算法都是基于某些列进行匹配，然后定位到Match的Value，关于JoinValue的存储，一般就两种方案。
+
+- Full Tuple ： 避免match之后，再次取数据；一个块中存储的元组数比较少，并且不容易压缩。
+- Tuple Identifier：对于列存的DBMS，不需要取出查询无关的列；并且当Join选择率低的时候，更加有效。易于压缩。
+
 # Hash Join
 
 ## 硬件无关的Join
 
-### Canonical Hash Join
+### Simple Hash Join
 
 通常来说，R与S两张表进行**HashJoin**分为两步：
 
@@ -42,6 +59,8 @@ typora-root-url: ../../yummyliu.github.io
 2. Probe：遍历S，计算Tuple的Hash值，然后从R的HashTable进行匹配。
 
 这就是**传统HashJoin**，这和底层硬件没有任何适配。HashTable 查找复杂度是O(1)，每个关系表扫描一次，那么整个算法的复制度为`O(|R|+|S|)`。
+
+#### 如何处理内存不足的情况？
 
 ### Parallel No-Partition Hash Join
 
