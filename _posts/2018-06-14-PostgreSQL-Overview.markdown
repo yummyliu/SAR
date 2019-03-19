@@ -1,6 +1,6 @@
 ---
 layout: post
-title: PostgreSQL DBA 入门指引
+title: PostgreSQL 原理浅浅析
 subtitle: 结合PostgreSQL，梳理一下数据库实现中的概念
 date: 2018-07-14 13:46
 header-img: "img/head.jpg"
@@ -9,7 +9,7 @@ tags:
     - PostgreSQL
 typora-root-url: ../../yummyliu.github.io
 ---
-> * TOC
+* TOC
 {:toc}
 > 大部分的应用，说到底都是要处理数据的；而处理数据的需求，大概率会由数据库承担；
 >

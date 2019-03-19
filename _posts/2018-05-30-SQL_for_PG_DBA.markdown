@@ -193,7 +193,7 @@ select a.locktype,a.database,a.pid,a.mode,a.granted,a.relation,b.relname,left(c.
 from pg_locks a
 join pg_class b on a.relation = b.oid
 join pg_stat_activity c on a.pid = c.pid
-where lower(b.relname) = 'core_devices';
+where lower(b.relname) = 'users';
 ```
 
 # 查询

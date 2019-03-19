@@ -1,6 +1,6 @@
 ---
 layout: post
-title: ProxyProtocol测试样例
+title: ProxyProtocol 样例
 date: 2019-03-06 16:28
 header-img: "img/head.jpg"
 categories: jekyll update
