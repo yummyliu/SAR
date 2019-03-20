@@ -54,6 +54,21 @@ SELECT
    ORDER BY relpages DESC;
 ```
 
+# 函数情况
+
+## 找到函数返回值为某个表的函数
+
+```sql
+SELECT *
+FROM pg_proc
+WHERE prorettype IN
+    (SELECT oid
+     FROM pg_type
+     WHERE typname = 'table_name');
+```
+
+
+
 # 索引情况
 
 ## 无用索引

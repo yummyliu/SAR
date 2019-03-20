@@ -62,6 +62,12 @@ typora-root-url: ../../yummyliu.github.io
 
 #### 如何处理内存不足的情况？
 
+当内存放不下HashTable时，我们首先先将HashTable进行分块；R和S读取到内存中，按照哈希函数h1将元组放到对应块中，然后写回磁盘；这里会对表进行读和写，所以整体的IO代价为`2*O(M+N)`。
+
+最后，按个读取HashTable的每个块，然后进行Match；因此整体的HashJoin的代价就是`3O(M+N)`。
+
+另外，这里如果某个HashTable的块，在内存中放不下的话，再次按照另一个哈希函数h2进行再次分块（**RECURSIVE PARTITIONING**）。
+
 ### Parallel No-Partition Hash Join
 
 在传统HashJoin上，我们可以在Build阶段和Probe加上并行；

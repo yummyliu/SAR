@@ -121,6 +121,10 @@ FROM (
 GROUP BY bucket
 ```
 
+## Filter放在Join ON中还是Where中
+
+一般情况下，由于选择下推这都是一样的。但是对于OuterJoin需要区分两者的不同。
+
 # 例题
 
 > In PostgreSQL
