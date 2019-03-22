@@ -24,6 +24,24 @@ typora-root-url: ../../yummyliu.github.io
 + **数据并行**（SIMD）： 单指令多数据；一个指令同时处理多个数据。
 + **线程并行**：线程并行有两种，主要区别就是在一个指令周期里CPU上执行的指令是来自一个线程还是多个线程；来自一个线程叫Temporal multithreading；在超流水线中执行的多个指令可能来自多个线程叫Simultaneous multithreading。
 
+### Process Model
+
+#### CPU并行
+
+##### 并行实体
+
+###### 进程(池)
+
+###### 线程(池)
+
+##### 并行对象
+
+###### Inter-query
+
+###### Intra-query
+
+#### IO并行
+
 ## 存储层次
 
 按照距离CPU的远近，有cache size、TLB size、page size和table size。另外page在内存中的结构，以及table在磁盘中的组织形式也是会对整体性能有所影响。
