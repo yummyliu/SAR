@@ -113,17 +113,17 @@ typora-root-url: ../../yummyliu.github.io
 
 #### Radix Partition
 
-Radix这里可以理解为JoinKey的若干个bit位。在Partition阶段，将分多步基于Radix将R和S进行分块，就能得到CacheSize大小且不会导致TLBMiss的hashTable，其中关键的是：什么是Radix Partition？其可并行执行，有三步：
+Radix这里可以理解为JoinKey的若干个bit位。在Partition阶段，将分多步基于Radix将R和S进行分块，就能得到CacheSize大小且不会导致TLBMiss的hashTable（其实就是通过提前统计各个partition的大小，将其连续摆放，这样避免了分散的Partition Page导致的TLBMiss），其中关键的是：什么是Radix Partition？其可并行执行，有三步：
 
 1. 统计直方图：每个Radix取值下的元组数。
-2. 计算每个Radix的Prefix Sum。
-3. 基于PrefixSum，对原tuple的位置重新调整。进而就将表进行的分区。
+2. 计算整个Radix序列：`r0,r1,r2,…,rn`的前缀和序列：`S0,S1,S2,...,Sn`。
+3. 基于前缀和序列，我们可知取值为ri的元组在内存连续的Partition块中的位置，对原tuple的位置重新调整。进而就将表进行的分区。
 
 基于Radix进行分区后，整个Partition还是在一整块内存区域，避免了零散的内存Page导致的TLB过大。
 
 最后，整个算法还是分为三步：
 
-1. 对R和S进行两三次的Radix Partition；
+1. 对R和S进行Radix Partition；
 2. Build：对于每个ri，按照HashFunc2，建立ri的的哈希表hi（这里是使用第二个Hash函数，创建Hash表）。
 3. Probe：对于每个si，按照HashFunc2，在响应的hi中找匹配。
 
