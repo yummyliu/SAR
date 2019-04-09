@@ -1,21 +1,22 @@
 ---
 layout: post
-title: ProxyProtocol 样例
+title: Pgbouncer添加HAProxyProtocol特性
 date: 2019-03-06 16:28
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
   - NetWork
+  - Pgbouncer
 ---
 * TOC
 {:toc}
-# Proxy Protocol
+# HAProxy Protocol
 
 在系统架构中，我们常会用到的一个组件就是`haproxy`。但是使用这个组件之后，我们希望对于上下游的组件来说这个ha是透明的，即，**后端能够得知前端的信息**，前端也能得知到后端的信息。这需要后端和前端组件支持了[Proxy Protocol协议](https://www.haproxy.org/download/1.8/doc/proxy-protocol.txt)；比如Nginx中就支持Proxy Protocol协议。
 
 如果我们自己写的后端需要了解前端的信息，那么同样需要支持该协议。该协议分为有两个版本，这里使用的测试的是第二版。测试后端实现haproxy后来解析前端的IP信息。其实在[这里](https://www.haproxy.org/download/1.8/doc/proxy-protocol.txt)已经提供了一个解析函数样例`read_evt`，本文就是基于该函数，对accept函数进行了一次简单封装。完整的实验了一下Proxy 协议，以供同样需求的人参考。
 
-# haproxy配置
+## haproxy配置
 
 ```bash
 global
@@ -42,9 +43,9 @@ backend echo
 
 注意这里将haproxy的check关闭了，否则需要区分haproxy的地址。
 
-# 测试
+## 测试
 
-## my_accept
+### my_accept
 
 在系统函数上加了点封装，主要就是在accpet的时候，已经有个haproxy的ip信息；在accept之后，再次调用`recv`将解析中的前端信息覆盖到我们原来的`from`结构。
 
@@ -224,7 +225,7 @@ int main (int argc, char *argv[]) {
 }
 ```
 
-## 结果
+### 结果
 
 ```python
 import socket
@@ -238,3 +239,30 @@ while True:
 ```
 
 ![image-20190312171300960](../image/image-20190312171300960.png)
+
+# Pgbouncers
+
+原来建立这个项目的原因是，在高负载的应用中，单进程的Pgbouncer的CPU会成为系统瓶颈。后期打算将Pgbouncer改成多进程的。现在先在Pgbouncer中加了HAproxyProtocol支持，透传clientIP。
+
+项目地址：<https://github.com/yummyliu/pgbouncers>
+
+主要就是添加了一个参数`cf_ha_proxy`以及一个函数`safe_accept_proxy`:
+
+```c
+loop:
+	if (cf_ha_proxy) {
+		fd = safe_accept_proxy(sock, &raddr.sa, &len);
+	} else {
+		fd = safe_accept(sock, &raddr.sa, &len);
+	}
+```
+
+`safe_accept_proxy`这个函数中在accept之后接收数据，有时候会一开始就*Resource temporarily unavailable*。这里暂时添加了一个循环，等待数据全部接收并解析后，才进行下一步。
+
+```c
+getproxyinfo:
+    ret = safe_recv(client_fd, &hdr, sizeof(hdr), MSG_PEEK);
+    if (ret < 0 && errno == EAGAIN)
+		goto getproxyinfo;
+```
+
