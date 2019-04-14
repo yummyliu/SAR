@@ -38,8 +38,13 @@ SELECT b.nspname,
 FROM pg_class a
 JOIN pg_namespace b ON b.oid = a.relnamespace
 WHERE a.relfrozenxid != 0
-and pg_total_relation_size(a.oid) > 53687091200
 ORDER BY maxtableage DESC ;
+
+SELECT 'vacuum freeze verbose ' || b.nspname||'.'||a.relname||';' 
+FROM pg_class a
+JOIN pg_namespace b ON b.oid = a.relnamespace
+WHERE a.relfrozenxid != 0
+ORDER BY age(a.relfrozenxid) DESC ;
 ```
 
 ## 统计表具体count值
