@@ -334,5 +334,3 @@ SELECT slot_name,
        ) as flush_lag
   FROM pg_replication_slots;
 ```
-
-

@@ -11,10 +11,10 @@ tags:
 
 # Replication Slot
 
-replication slot是支持逻辑复制的一个重要特性，在介绍逻辑复制之前，简单介绍一下replication slot。
+Replication Slot是支持逻辑复制的一个重要特性。在介绍逻辑复制之前，我们需要了解一下ReplicationSLot的机制。
 
-> PG9.4中，加入的新功能。维护着当前的复制状态（比如，复制完成的位置），即使slave下线或者断连了，还是保持着，以备其再次使用；其通过如下的patch引入到系统中。
->
+它是PG9.4中，加入的新功能。维护着当前的复制状态（比如，复制完成的位置），即使slave下线或者断连了，还是保持着，以备其再次使用；其通过如下的patch引入到系统中。
+
 > ```text
 > author    Robert Haas <rhaas@postgresql.org>  
 > Sat, 1 Feb 2014 03:45:17 +0000 (22:45 -0500)
