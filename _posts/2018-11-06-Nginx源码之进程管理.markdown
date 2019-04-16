@@ -114,7 +114,7 @@ ngx_spawn_process执行每个worker初识化并启动的操作：
 
 # Master与Worker之间的通信
 
-# Master Loop
+## Master Loop
 
 >  ngx_master_process_cycle
 
@@ -134,7 +134,7 @@ sig_atomic_t  ngx_reopen;
 
 在MasterLoop中，不断检查这些标志位，然后进行相应的操作，不同的操作会通过`ngx_signal_worker_processes`给worker发送不同的指令（`ngx_write_channel(ngx_processes[n].channel[0],`前文知道，启动新worker的时候，相应的ngx_process有自己的channel，并且是通过socketpair创建的一个连接对，写是通过`channelp[0]`）。
 
-# Worker Loop
+## Worker Loop
 
 假设：不同的worker上有自己的**长连接**，各自处理各自的请求；master不存在分发请求的需求，就像一开始
 
