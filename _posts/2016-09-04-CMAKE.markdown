@@ -1,35 +1,37 @@
 ---
 layout: post
-title: 了解CMAKE
+title: CMAKE问题整理
 date: 2016-09-04 22:59
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
     - C++
+    - Cmake
 ---
 
-# NOTE
-不论环境变量$PATH怎么设置，cmake在生成Makefile时，如果不指定编译器，生成的Makefile都会调用/usr/bin下的g++/gcc。
+* TOC
+{:toc}
 
-# 制定版本号
-```
+
+> **NOTE:**
+>
+> 不论环境变量$PATH怎么设置，cmake在生成Makefile时，如果不指定编译器，生成的Makefile都会调用/usr/bin下的g++/gcc。
+
+# 指定版本号和policy
+```cmake
 cmake_minimum_required(VERSION 2.8)
-```
-#### policy
-```
 cmake_policy(SET CMP0015 OLD) // 该设置决定，编译后的执行文件，使用动态链接库的位置是使用相对位置还是绝对位置
 ```
-
 # 工程名
 
-```
+```cmake
 project (dbpool)
 ```
 
 # flags
 
 **使用的是list+APPEND, 否则的话会被覆盖**
-```
+```cmake
 set(CMAKE_CXX_COMPILER  "g++")
 list(APPEND CMAKE_CXX_FLAGS "-std=c++11 -g -Wall") 
 
@@ -46,7 +48,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -O3 ")
 如函数名gethostbyname变成gethostbyname\_r。
 2. stdio.h中原来以宏的形式实现的一些函数将变成可安全重入函数。
 3. 在error.h中定义的变量error现在将成为一个函数调用，它能够以一种安全的多线程方式来获取真正的errno的值。
-```
+```cmake
 ADD_DEFINITIONS(
     #-D_FILE_OFFSET_BITS=64
     #-DAC_HAS_INFO
@@ -68,26 +70,26 @@ ADD_DEFINITIONS(
 ```
 
 # 第三方库的路径
-```
+```cmake
 set (MYSQL_INCLUDE_DIR /usr/include/mysql)
 set (MYSQL_LIB /usr/lib64/mysql)
 ```
 
 # 所有的 lib & include
-```
+```cmake
 LINK_DIRECTORIES(./ ${MYSQL_LIB})
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_LIST_DIR} ${MYSQL_INCLUDE_DIR})
 ```
 
 # 源文件
-```
+```cmake
 set (dbpool_SRC
     dbpool.cpp
 )
 ```
 
 # 输出目录
-```
+```cmake
 set (LIBRARY_OUTPUT_PATH ./build)
 SET(EXECUTABLE_OUTPUT_PATH  ./)
 ```
@@ -95,12 +97,12 @@ SET(EXECUTABLE_OUTPUT_PATH  ./)
 # 编译类型
 
 ## 库 (STATIC, SHARED, or MODULE)
-```
+```cmake
 add_library (dbpool SHARED ${dbpool_SRC})
 ```
 
 ## 可执行文件
-```
+```cmake
 #ADD_XXXX必须在TARGET_LINK_LIBRARIES前面，否则会报错                       
 #ADD_LIBRARY(${PROJECTNAME} SHARED/STATIC ${SRC_LIST})                     
 ADD_EXECUTABLE(sunlands_msg_server ${SRC_LIST})                            

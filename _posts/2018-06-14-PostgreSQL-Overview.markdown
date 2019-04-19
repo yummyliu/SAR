@@ -476,6 +476,12 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
 
 [结合pgwatch的一些常规监控指标整理](http://yummyliu.github.io/jekyll/update/2018/06/01/pgwatch2%E8%A7%A3%E6%9E%90/)
 
+### 附
+
+草草画的一个PostgreSQL启动流程
+
+![pgstartup](/image/postgres启动.jpg)
+
 ## 参考文献
 
 [PostgreSQL监控指标整理](http://yummyliu.github.io/jekyll/update/2018/06/01/pgwatch2%E8%A7%A3%E6%9E%90/)

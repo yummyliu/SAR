@@ -1,10 +1,11 @@
 ---
 layout: post
-title: 
-date: 2019-03-04 07:55
+title: KMP回顾
+date: 2019-02-04 07:55
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
+  - 温故而知新
 typora-root-url: ../../yummyliu.github.io
 ---
 * TOC
@@ -15,14 +16,13 @@ typora-root-url: ../../yummyliu.github.io
 
 ```python
 for i in range(len(S)):
-	j=0
-    ii = i
-	while j<len(P) and ii < len(S) ans S[ii] == P[j]:
-		j+=1
-        ii+=1
-	if j==N:
-		return i-len(P)
-	
+  j=0
+  ii = i
+  while j<len(P) and ii < len(S) ans S[ii] == P[j]:
+    j+=1
+    ii+=1
+  if j==N:
+    return i-len(P)
 return -1 # 没找到	
 ```
 
@@ -105,8 +105,6 @@ def kmpSearch(S, P):
 
 print(kmpSearch("ABABDABACDABABCABAB", "ABABCABAB"))
 ```
-
-# 例子
 
 
 
