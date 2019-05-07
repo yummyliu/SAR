@@ -92,11 +92,17 @@ typora-root-url: ../../yummyliu.github.io
 
 ### 3PC
 
-2PL第一步等待回复时会阻塞操作，在3PL中，可以设置一个timeout进行处理，见如下从wikipedia盗的图。
+2PC第一步等待回复时会阻塞操作，在3PC中，基于以下基本前提，可以解决2PC的阻塞问题。见如下从wikipedia盗的图。
+
+> + 没有网络分区
+> + 至少一个节点可用
+> + 最多有K个节点同时挂机是可以接受的
 
 ![Three-phase commit diagram.png](/image/Three-phase_commit_diagram.png))
 
-### TCC-柔性事务
+> 另外还有一种分布式事务的实现方式：TCC-柔性事务
+>
+> 篇幅有限，另开一文。
 
 不管基于什么协议实现的单个分布式事务，其保证了ACD特性，而作为一个真正的事务还需要满足并发环境的I（隔离性）。这就需要提到并发控制。
 
