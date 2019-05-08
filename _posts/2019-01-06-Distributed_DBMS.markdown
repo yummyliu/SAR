@@ -98,7 +98,7 @@ typora-root-url: ../../yummyliu.github.io
 > + 至少一个节点可用
 > + 最多有K个节点同时挂机是可以接受的
 
-![Three-phase commit diagram.png](/image/Three-phase_commit_diagram.png))
+![Three-phase commit diagram.png](/image/Three-phase_commit_diagram.png)
 
 > 另外还有一种分布式事务的实现方式：TCC-柔性事务
 >
