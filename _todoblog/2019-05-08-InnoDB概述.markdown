@@ -1,0 +1,196 @@
+---
+layout: post
+title: InnoDB概述
+date: 2019-05-08 17:06
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+  - InnoDB
+typora-root-url: ../../yummyliu.github.io
+---
+
+* TOC
+{:toc}
+# InnoDB与MySQL
+
+![image-20190508171230128](/image/image-20190508171230128.png)
+
+# InnoDB架构
+
+## Thread
+
++ User threads (MySQL server threads)
++ Master thread
++ IO threads
+  + read io
+  + write io
+  + ibuf io
+  + log io
++ Purge threads
++ Page cleaner (flush) thread
++ Deadlock detection thread
++ FTS, Statistics, Monitor, Drop table, Dump
+  buffer pool, and more
+
+# 日志
+
+> **ARIES**
+>
+> - Write ahead logging
+> - Rpeating history during Redo
+> - Logging change during Undo
+
+日志一般分为三种：
+
+- 纯物理日志：记录数据页的物理字节位置和内容。
+- 纯逻辑日志：记录更改的语句。
+- 物理的逻辑日志（Physiological Log）：记录物理页中更改的逻辑，这里的逻辑不是SQL逻辑，而是物理页中的变更操作。
+
+现代DBMS中，一般采用的是Physiological方式。其日志体积更小，恢复更快，并且解决了逻辑日志的非幂等性。
+
+> 比如，逻辑日志中有一个insert a in A，其需要更新数据和索引页。但是crash的时候，可能只更新了data，没有更新index。
+
+![image-20190508182906806](/image/redo-undo-innodb.png)
+
+![image-20190508181219196](/image/image-20190508181219196.png)
+
+## Redo LOG
+
+在InnoDB中，其redo日志就是一种Physiological的日志。其中记录了数据页上的所有变更操作。每个记录的形式如下：
+
+```bash
+SpaceID PageNo Offset OperationType Changes_on_that_page
+```
+
+例如：
+
+```
+Insert after record at offset 5444
+Reorganize page 1234
+```
+
+## Undo LOG
+
+在InnoDB中，Undo日志记录了行的旧值，如下：
+
+```bash
+Primary_Key_Value Old_trx_id Old_values_on_that_row
+```
+
+- Primary_Key_Value：包括页号和物理位置。
+- Old_trx_id：更新该行的事务号
+- Old_values_on_that_row：更新前的数据值。
+
+## CrashRecovery
+
+一般恢复分为三步，首先扫描数据；然后基于Redo进行重做；最后基于Undo进行回滚。
+
+在InnoDB中，分为4步：
+
+1. 首先恢复 doublewriteBuffer中的数据
+2. Scan：从磁盘中读取redo日志记录，将其插入按照LSN排序的红黑树中。
+3. Redo：将脏页插入到flush_list中。
+4. Undo：将未完成的事务，进行回滚。
+
+## 事务处理
+
+![image-20190508183137825](/image/trx_handle.png)
+
+# 缓冲区管理
+
+## 缓冲区对象
+
++ Buffer Pool
+
++ Log Buffer
+
++ Additional memory pool
+
++ Multiple buffer pool instances
+
+## LRU vs MRU
+
+## CHECKPOINT
+
+checkpoint在DBMS都是同一个概念，其为redo日志中的一条记录，在该记录之前的数据页的更改已经写入磁盘了。
+
+CHECKPOINT主要是将内存buffer中的数据和日志进行落盘（FLUSH），在MySQL的中的FLUSH有两种：
+
++ LRU flush：基于LRU_list。
++ Adaptive flush：基于flush_list，其中按照修改的先后顺序排列。
+
+### Flush过程
+
+1. 扫描相应list的，找到需要刷出的页。
+2. 将相应页的邻居也选中。
+3. 将脏页拷贝到**doublewrite buffer**中。
+4. **write** doublewrite buffer
+5. **sync** doublewrite buffer
+6. **write** to data file
+7. **sync** all data file
+
+## Purge
+
+周期性执行的垃圾回收。
+
++ 清理index中的废弃值
++ 清理表中被标记为`deleted`的记录。
++ 清理undo日志中的历史记录（rollback segment）。
+
+# 锁
+
+## Next key locking
+
+
+
+![image-20190508182211194](/image/image-20190508182211194.png)
+
+# InnoDB特性
+
+## Adaptive Hash Indexes
+
+## Change Buffering
+
+当二级索引的块不在缓存中时，允许将相应更改缓存起来。包括三类更改：
+
++ insert
++ delete
++ purge
+
+### Merge
+
+1. 随机选择changebBffer中一个随机页
+2. 随机打开该页中的一个cursor
+3. 按照该cursor，读取之后的至多8个页。
+4. 异步发起IO请求；当读取完成后，调用回调函数，执行相应的change。
+
+## Doublewrite Buffer
+
+# InnoDB 结构
+
+## 从上到下
+
+![image-20190508171411650](/image/image-20190508171411650.png)
+
+## InnoDB Page
+
+![image-20190508171533052](/image/InnoDB-page.png)
+
+### InnoDB Compressed Page
+
+![image-20190508172024560](/image/image-20190508172024560.png)
+
+InnoDB底层是索引组织表，其存在结构维护的代价。InnoDB的page中维护了一个modification log，记录了page中的行的变动。当Log的空间耗尽时，InnoDB会解压该page，然后应用log中的变更，最后重新压缩相应的page。
+
+## InnoDB Row
+
+![image-20190508175331946](/image/InnoDB-row.png)
+
+### Redundant
+
+### Compact
+
+### Dynamic
+
+### Compress
+
