@@ -1,0 +1,249 @@
+---
+layout: post
+title: InnoDB初见——Buffer与Log
+date: 2019-05-08 17:06
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+  - InnoDB
+typora-root-url: ../../yummyliu.github.io
+---
+
+* TOC
+{:toc}
+# InnoDB与MySQL
+
+MySQL下面可以支持多种存储引擎，InnoDB是默认的那个。类似PgSQL的多进程结构，MySQL是多线程结构，其中有如下的线程角色
+
+- UserThread：每个链接一个线程
+- Master thread：整体活动的调度，比如flush，purge，CHECKPOINT，insert buffer merge等。
+- IO threads
+  - read threads：多线程的预读
+  - write threads：多线程的后台写
+  - Insert Buffer thread：Insert Buffer合并
+  - log thread：刷新log
+- Purge threads：周期性执行的垃圾回收
+  - 清理index中的废弃值
+  - 清理表中被标记为`deleted`的记录。
+  - 清理undo日志中的历史记录（rollback segment）。
+- 死锁检测/Page cleaner (flush)/FTS, Statistics, Monitor, Drop table, Dump
+  buffer pool等任务线程
+
+InnoDB承担了MySQL作为一个RDBMS的存储部分的工作，比如Lock管理，访问方法，日志管理以及缓冲区管理。由于缓冲区和日志一般都是联动了，这里先从这两个部分开始了解。
+
+# InnoDB缓冲区管理
+
+在InnoDB中，有如下一些缓冲区；大类上和PgSQL相似都有一个放数据页的BufferPool，和一个放日志记录的LogBuffer。在CHECKPOINT的调度下，进行BufferPool刷盘；每次事务commit进行Log记录刷盘(这里可能不太准确，存在group commit)。除了这两个之外，在MySQL中，为了解决特定的问题，还有一些其他的Buffer；比如，Change Buffer和DoubleWrite Buffer。
+
+> 另外，还有存储元数据目录的`innodb_additional_mem_pool_size`；默认8MB，如果不够就会动态申请，然后再日志中写warning。
+
+
+## Change Buffer
+
+当二级索引的块不在缓存中时，允许将相应更改缓存起来。包括三类更改：insert/delete/purge。
+
+当changeBuffer满了，会读取相应的页，按照changeBuffer进行merge。
+
+1. 随机选择changeBuffer中一个随机页。
+2. 随机打开该页中的一个cursor。
+3. 按照该cursor，读取之后的至多8个页。
+4. 异步发起IO请求；当读取完成后，调用回调函数，执行相应的change。
+
+## Buffer Pool
+
+存放表和索引的数据，由`innodb_buffer_pool_size`设置，默认是128MB；推荐配置为系统物理内存的80%。
+
+### CHECKPOINT
+
+CHECKPOINT在DBMS都是同一个概念，其为redo日志中的一条记录，其表示在该记录之前的数据页的更改已经从缓冲区写入磁盘了。
+
+> 有两种类型的CHECKPOINT：
+>
+> **sharp checkpoint**:
+>
+> 只将commited的事务修改的页进行刷盘，并且记下最新Commited的事务的LSN。这样恢复的时候，redo日志从CHECKPOINT发生的LSN开始恢复即可。由于所有刷盘的数据都是在同一个点(CHECKPOINT LSN)之后，所以称之为sharp。
+>
+> **fuzzy checkpoint:**
+>
+> 如果脏页滞留到一定时间，就可能会刷盘。这种方式在日志中写下两个LSN：CHECKPOINT start和CHECKPOINT end。当恢复的时候，还是从CHECKPOINT start开始恢复。
+>
+> ——[Gray and Reuter’s classic text on transaction processing](https://www.amazon.com/gp/product/1558601902/?tag=xaprb-20)
+
+在InnoDB中，除了shutdown的时候，正常时候都是fuzzy CHECKPOINT。刷盘前，能够多次修改，这样省去了很多IO。
+
+池中的页由三个list维护，分别是：
+
++ free_list：可用的页
++ LRU_list：最近使用的页
++ flush_list：按照LSN的顺序组织的脏页（即，最近修改的页）。
+
+由于buffer池是有限的，不能只是等满了才进行页换出（LRU_list）；所以，InnoDB会持续地进行CHECKPOINT，这里主要和flush_list相关。基于flush_list的换出就是选择最早更改的脏页(LSN)进行换出。因此，InnoDB中的换出有两种情况。
+
+- BufferPool满了之后，基于LRU_list，进行页面置换。
+- 主动进行刷盘，基于flush_list，其中按照修改的先后顺序排列。
+
+> 为了避免将热数据换出，所以选择了最早更改的脏页。另外，由于事务日志（即，redo/wal日志）是固定大小的，因此，redo日志是循环使用的。当最早的日志记录相应的页一直没有刷盘，如果此时发生了日志重用，那么更改就没有持久化(违反D)；因此，当这种情况发生时，InnoDB需要夯住，进行刷盘（同样这也是为什么选择最早更改的脏页的一个原因）。
+>
+
+综上，当InnoDB执行fuzzy CHECKPOINT的时候，其会找到flush_list中的最早更改的脏页的LSN，将其作为CHECKPOINT的start，写入事务日志头中(参见源码：`log_checkpoint_margin`和`log_checkpoint`)。
+
+而当InnoDB停机时，做法就是sharp checkpoint。首先，停止数据更新；然后，将脏页刷盘；最后，将当前的LSN写入事务日志头中。
+
+> 另外，在Percona版本的XtraDB中，提供了一种基于代价的 adaptive CHECKPOINT；以及InnoDB后来也有了[adaptive flushing]([http://dimitrik.free.fr/blog/archives/2010/07/mysql-performance-innodb-io-capacity-flushing.html](http://dimitrik.free.fr/blog/archives/2010/07/mysql-performance-innodb-io-capacity-flushing.html))。
+
+## Log Buffer
+
+InnoDB的表发生变更的时候，首先将变更存储在Log Buffer中，然后写入到Redo日志中。其由`innodb_log_buffer_size`设置，默认16MB；当大事务中的insert/update/delete比较多时，将提高该参数可以减少磁盘IO；通过观察系统参数`innodb_log_waits`，可以得知是否需要调大LogBuffer。
+
+```sql
+SELECT name, subsystem, status FROM INFORMATION_SCHEMA.INNODB_METRICS;
+```
+
+## Doublewrite Buffer(disk)
+
+InnoDB的页大小是16k，但是OS每次是按照4K写入，因此可能存在16K部分写的情况下，系统crash了。为了避免这一问题，设计了doublewrite_buffer。
+
+dwbuffer可以看做是存在于**系统表空间**中的一个短期的日志文件，它包含了100个页。当InnoDB刷页时，会先将页**顺序**写入到dwbuffer中，并将dwbuffer刷盘；然后，将页刷到真正的数据文件中。
+
+当recovery时，InnoDB检查dwbuffer中页和其本来位置的页的内容；如果dwbuffer中的页是不一致的，那么丢弃该页；如果表中的页是不一致的，那么从dwbuffer中恢复。
+
+性能上，尽管每次写页的时候需要写两次；但是由于将dwbuffer的写是顺序的，并且不会每个page调用一次fsync，而是一起fsync；整体性能比原来损失经验值是5%。
+
+> 如果你不在乎数据丢失，或者OS级别保证了不会有部分写，那么可以`innodb_doublewrite=0` 关闭double write。
+
+# InnoDB日志管理
+
+数据库日志是保证事务的ACID的重要机制，按照数据恢复的一般算法**ARIES**如下，数据库的日志一般有两种：REDO和UNDO；另外，在MySQL层，还有一个BinLog，但其不属于InnoDB。
+
+> ARIES
+>
+> - Write ahead logging
+> - Rpeating history during Redo
+> - Logging change during Undo
+
+日志一般分为三种：
+
+- 纯物理日志：记录数据页的物理字节位置和内容。
+- 纯逻辑日志：记录更改的语句。
+- 物理的逻辑日志（Physiological Log）：记录物理页中更改的逻辑，这里的逻辑不是SQL逻辑，而是物理页中的变更操作。
+
+现代DBMS中，一般采用的是Physiological方式。其日志体积更小，恢复更快，并且解决了逻辑日志的非幂等性。
+
+> **逻辑日志的非幂等性**
+>
+> 比如，逻辑日志中有一个insert a in A，其需要更新数据和索引页。但是crash的时候，可能只更新了data，没有更新index。
+
+## Redo LOG
+
+在InnoDB中，其redo日志就是一种Physiological的日志。其中记录了数据页上的所有变更操作。每个记录的形式如下：
+
+```bash
+SpaceID PageNo Offset OperationType Changes_on_that_page
+```
+
+redo日志的每个日志记录是按照磁盘扇区大小的512byte存储，而不是page大小（在percona的xtradb中，可以更改事务记录大小，从而更好的利用SSD等新存储介质）。
+
+因为，我们recovery的时候需要重做这些记录，但是我们并不知道crash的时候相应记录的修改有没有落盘，因此可能会多次执行，所以其中记录保证幂等性([idempotent](http://books.google.com/books?id=S_yHERPRZScC&lpg=PA543&ots=JJtxVQOEAi&dq=idempotent gray&pg=PA543#v=onepage&q=idempotent gray&f=false))。其实当recovery的时候，我们会将page上的lsn与日志的lsn进行比较，当page的lsn大于日志的lsn时，我们知道该page已经刷盘，不需要操作；反之，进行重放。
+
+> 默认将`innodb_flush_log_at_trx_commit`设置为1，保证日志Write Ahead；除非系统层面保证了数据不会丢失，如**battery backed raid card**。
+>
+> 另外还有上层MySQL的`sync_binlog`；也需要设置为1，保证binlog落盘。
+
+InnoDB的redo日志有上限限制（`innodb_log_file_size * innodb_log_files_in_group < 512GB`），默认是每个redo文件的大小是48MB；因此，业务**update的吞吐量**和**CHECKPOINT回收redo文件**都和这个相关。
+
+为了提高整体的吞吐量，InnoDB采用组提交的方式，从而减少刷盘的次数（LogBuffer）。
+
+> 这里理解就是服务的吞吐量而不是响应时间，因为如果组没有满，就不刷盘的话，是不是就影响了前面事务的响应时间
+
+## Undo LOG
+
+相对于PostgreSQL中，将旧版本的数据放在当前文件中的方式；在InnoDB中，Undo日志记录了行的旧值，当需要找到旧版本的数据时，需要按照undo链进行寻找(如果链长，就会比较耗时)。有数据变更的事务都需要一个undo record，如下是一个**undo record**：
+
+```bash
+Primary_Key_Value Old_trx_id Old_values_on_that_row
+```
+
+- Primary_Key_Value：包括页号和物理位置。
+- Old_trx_id：更新该行的事务号
+- Old_values_on_that_row：更新前的数据值。
+
+**undo log**就是某一个读写事务的**undo record**的集合。**undo log**存放在**undo log segment**中，**undo log segment**存放在**rollback segment**中。一个**undo log segment**可以存放多个**undo log**，但是同一时刻只能分配给一个事务使用。
+
+不同数据库对象的**rollback segment**放在不同的表空间中，临时表的放在**globaltemp-tp**中，这些对象不需要恢复，因此这里的undo log不写redo；其他对象放在**undo-tb**中。
+
+> 由`innodb_rollback_segments`定了了rollback segment的个数([1,128]），默认128个。每个rseg中，有1024个slot(用了存放undo log)；
+>
+> 128个rseg只有后96个是给用户表使用的，并且每个undo log只能同时给一个事务使用，因此整体的事务并发上限为96*1024。
+
+### undo类型
+
+在MySQL中，事务默认是只读事务；如果后期发现有临时表的写入，就分配**临时表的rseg**；若判断为读写事务，则开始分配事务ID和**普通rseg**。
+
+
+```c
+struct trx_undo_ptr_t {
+  trx_rseg_t *rseg;        /*!< rollback segment assigned to the
+                           transaction, or NULL if not assigned
+                           yet */
+  trx_undo_t *insert_undo; /*!< pointer to the insert undo log, or
+                           NULL if no inserts performed yet */
+  trx_undo_t *update_undo; /*!< pointer to the update undo log, or
+                           NULL if no update performed yet */
+};
+```
+
+对于Insert插入的新数据，没有任何老事务可能会读取该新行，所以一般在事务结束后，就将undo log删除，这部分是`insert_undo`。而对于Update和delete的旧数据，需要进行保留，在InnoDB中将其归为一类：`update_undo`。
+
+回滚段是资源是有限的，系统有purge线程定期回收回滚段；每个回滚段上有一个引用计数(`trx_ref_count`)，如果计数为0，表示没有事务在使用，那么purge线程就对其进行回收；回收时，会将该rseg标记为`skip_allocation`，表示该段暂缓分配。
+
+## Crash Recovery
+
+一般恢复分为三步，首先扫描数据；然后基于Redo进行重做；最后基于Undo进行回滚。
+
+在InnoDB中，分为4步：
+
+1. dwbuffer：首先恢复 Doublewrite Buffer中的数据
+2. Scan：从磁盘中读取redo日志记录，将其插入按照LSN排序的红黑树中。
+3. Redo：将脏页插入到flush_list中。
+4. Undo：将未完成的事务，进行回滚。
+
+# MySQL的BinLog
+
+在MySQL中，除了存储引擎InnoDB的日志外，自身还有一个BinLog，其中记录了对数据进行了修改（以及可能对数据有修改）的事件，主要用在主从复制和PITR场景中。
+
+> BinLog除了记录修改数据的操作，还会记录元信息：
+>
+> + 确保操作重放的正确的额外信息
+> + 错误码
+> + binlog自身的维护信息，比如rotate事件。
+>
+> 除了Redo、undo、binlog这些用于恢复的日志，MySQL中还有一些用于记录的日志：Errorlog、General Query Log、Slow Query Log、DDL Log。
+
+每个binlog的大小由`max_binlog_size`决定，当超过该参数大小，会切换到一个新的文件；注意，同一个事务的binlog应该放在一个binlog文件中，当存在一个很大的事务，可能会超过`max_binlog_size`。
+
+在启动的时候，由binlog-format指定三种类型：statement、row、mixed。
+
++ statement：记录主上执行的语句
+
++ row：以主键为标识，记录相应行的变更。
+
++ mixed：默认使用statement，当MySQL认为[某个语句不能完全复制](https://dev.mysql.com/doc/refman/5.7/en/binary-log-mixed.html)，升级为记录row。
+
+  
+
+# **参考文章**
+
+[Undo漫游]([http://mysql.taobao.org/monthly/2015/04/01/](http://mysql.taobao.org/monthly/2015/04/01/))
+
+[binlog文档](https://dev.mysql.com/doc/internals/en/binary-log-overview.html)
+
+
+
+
+
+
+
+
+
+
+
