@@ -261,7 +261,7 @@ InnoDB是MySQL默认支持的事务型存储引擎，当上层同时启用binlog
    3. **fsync**：日志文件刷盘
    4. 释放InnoDB的锁
 4. Commit binlog
-   
+  
    1. 没什么特别需要做的
 
 在多个事务并发的进行2PC提交的时候，redolog的写入顺序和binlog的写入顺序可能不一致；基于`prepare_commit_mutex`，确保三次刷盘操作的顺序，从而保证binlog与InnoDB的redolog的顺序是一致的。
@@ -285,9 +285,11 @@ InnoDB是MySQL默认支持的事务型存储引擎，当上层同时启用binlog
 ```bash
 8.0
 
-cmake . -DCMAKE_INSTALL_PREFIX=/Users/liuyangming/build/mysql -DFORCE_INSOURCE_BUILD=1
+cmake . -DFORCE_INSOURCE_BUILD=1
 
 make
+
+/Users/liuyangming/src/mysql-8.0.16/runtime_output_directory
 ```
 
 
