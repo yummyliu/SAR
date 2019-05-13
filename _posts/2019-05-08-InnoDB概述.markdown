@@ -15,8 +15,8 @@ typora-root-url: ../../yummyliu.github.io
 
 MySQL下面可以支持多种存储引擎，InnoDB是默认的那个。类似PgSQL的多进程结构，MySQL是多线程结构，其中有如下的线程角色
 
-- UserThread：每个链接一个线程
-- Master thread：整体活动的调度，比如flush，purge，CHECKPOINT，insert buffer merge等。
+- User thread：每个链接一个线程；
+- Master thread：整体活动的调度；比如flush，purge，checkpoint，insert buffer merge等。
 - IO threads
   - read threads：多线程的预读
   - write threads：多线程的后台写
@@ -264,9 +264,33 @@ InnoDB是MySQL默认支持的事务型存储引擎，当上层同时启用binlog
    
    1. 没什么特别需要做的
 
-基于`prepare_commit_mutex`，确保三次刷盘操作的顺序，从而保证binlog与InnoDB的redolog的顺序是一致的。
+在多个事务并发的进行2PC提交的时候，redolog的写入顺序和binlog的写入顺序可能不一致；基于`prepare_commit_mutex`，确保三次刷盘操作的顺序，从而保证binlog与InnoDB的redolog的顺序是一致的。
 
-然而，由于存在这样一个互斥同步，导致第2步的binlog**不能进行组提交**；并且理想情况下，一个事务，只有一个fsync操作即可，然而这里进行三次，**性能上也不太乐观**；没有对此进行优化的之前，binlog除了作为存储模块还是事务调度模块，**模块不清晰**，不易于维护。基于此，有很多不同版本的优化方式
+> MySQL的主从复制一般基于binlog实现；
+
+然而，由于存在这样一个互斥同步，导致第2步的binlog**不能进行组提交**；并且理想情况下，一个事务，只有一个fsync操作即可，然而这里进行三次，**性能上也不太乐观**；没有对此进行优化的之前，binlog除了作为存储模块还是事务调度模块，**模块不清晰**，不易于维护。
+
+## binlog的group commit
+
+上述基于`prepare_commit_mutex`的commit机制的临界区过大，使得整个并发度降低，从而整体的吞吐降低。
+
+因此，将binlog的提交划分为三个阶段，每个阶段都有一个执行队列：
+
++ flush：write
++ sync：刷盘
++ commit：成功
+
+进入某阶段的第一个thread作为leader，后续进来的都是follower；leader将该阶段的threads注册到下一阶段中，然后统一负责处理该阶段的任务（如果下一阶段不为空，那么该leader成为下一阶段的follower，因此最慢的sync阶段会累积很多任务），此时follower就是等待处理完成的通知；
+
+```bash
+8.0
+
+cmake . -DCMAKE_INSTALL_PREFIX=/Users/liuyangming/build/mysql -DFORCE_INSOURCE_BUILD=1
+
+make
+```
+
+
 
 # 参考文章
 
@@ -275,6 +299,8 @@ InnoDB是MySQL默认支持的事务型存储引擎，当上层同时启用binlog
 [binlog文档](https://dev.mysql.com/doc/internals/en/binary-log-overview.html)
 
 [worklog-mysql-5223](https://dev.mysql.com/worklog/task/?id=5223)
+
+[binlog-group-commit]([http://mysqlmusings.blogspot.com/2012/06/binary-log-group-commit-in-mysql-56.html](http://mysqlmusings.blogspot.com/2012/06/binary-log-group-commit-in-mysql-56.html))
 
 
 
