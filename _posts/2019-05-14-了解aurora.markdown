@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Aurora
+title: Aurora论文总结
 date: 2019-05-14 10:21
 header-img: "img/head.jpg"
 categories: jekyll update
