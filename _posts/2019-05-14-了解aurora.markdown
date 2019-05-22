@@ -5,6 +5,7 @@ date: 2019-05-14 10:21
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
+  - Paper
 typora-root-url: ../../yummyliu.github.io
 ---
 
