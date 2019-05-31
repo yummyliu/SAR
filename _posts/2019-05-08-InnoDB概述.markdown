@@ -26,7 +26,8 @@ MySQL下面可以支持多种存储引擎，InnoDB是默认的那个。类似PgS
   - 清理index中的废弃值
   - 清理表中被标记为`deleted`的记录。
   - 清理undo日志中的历史记录（rollback segment）。
-- 死锁检测/Page cleaner (flush)/FTS, Statistics, Monitor, Drop table, Dump
+- ### 死锁检测/Page cleaner (flush)/FTS, Statistics, Monitor, Drop table, Dump
+  
   buffer pool等任务线程
 
 InnoDB承担了MySQL作为一个RDBMS的存储部分的工作，比如Lock管理，访问方法，日志管理以及缓冲区管理。由于缓冲区和日志一般都是联动了，这里先从这两个部分开始了解。
@@ -170,12 +171,6 @@ dwbuffer可以看做是存在于**系统表空间**中的一个短期的日志�
 > | Supported Tablespace Types              | system, file-per table, general* | system, file-per-table, general* | file-per-table, general* | file-per-table, general* |
 > | Required File Format                    | Antelope or Barracuda            | Antelope or Barracuda            | Barracuda                | Barracuda                |
 
-### 插入一个元组的逻辑
-
-![image-20190530112101130](/image/InnoDB-insert.png)
-
-
-
 ## Redo LOG
 
 在InnoDB中，其redo日志就是一种Physiological的日志。其中记录了数据页上的所有变更操作。每个记录的形式如下：
@@ -227,15 +222,15 @@ There used to be in the past (maybe there is still, in some incarnation) a non-f
 
 log_t主要负责三项事情：redo日志写入(拷贝)到缓冲区中；redo缓冲区刷盘；执行CHECKPOINT。因此，其中有两类偏移量：给redo可拷贝写入的buffer的位置（buf_free）、redo缓冲区向磁盘刷盘的位置（buf_next_to_write）。
 
-+ `log_flush_order_mutex`：InnoDB中多个bufferPool共享的flush_list上的锁；确保flush_list的顺序访问。
+- `log_flush_order_mutex`：InnoDB中多个bufferPool共享的flush_list上的锁；确保flush_list的顺序访问。
 
-+ `byte* buf_ptr`：未对齐的logbuf地址，大小应该是buf_size的两倍；
+- `byte* buf_ptr`：未对齐的logbuf地址，大小应该是buf_size的两倍；
 
-+ `buf_size`：innodb_log_buffer_size配置的buffer大小，但可能会自动扩展。
+- `buf_size`：innodb_log_buffer_size配置的buffer大小，但可能会自动扩展。
 
-+ `unsigned long buf_free`：buf中空闲的第一个位置
+- `unsigned long buf_free`：buf中空闲的第一个位置
 
-+ `max_buf_free`：推荐的buf_free的最大值；
+- `max_buf_free`：推荐的buf_free的最大值；
 
   ```c
   void log_buffer_extend(len) {
@@ -247,28 +242,28 @@ log_t主要负责三项事情：redo日志写入(拷贝)到缓冲区中；redo�
 
   当buf_free超过该值时，可能触发用户线程去写redo；在事务拷redo 到buffer后，也会判断该值，如果超过buf_free，需要刷logbuffer，设置log_sys->`check_flush_or_checkpoint`为true。
 
-+ `check_flush_or_checkpoint`：该项为True，表示需要刷logbuffer、或者preflush pool page，或者做CHECKPOINT；
+- `check_flush_or_checkpoint`：该项为True，表示需要刷logbuffer、或者preflush pool page，或者做CHECKPOINT；
 
 #### logbuffer进行刷盘
 
-+ `unsigned long buf_next_to_write`：准备flush的redolog的位置，执行完继续推进。
-+ `volatile bool	is_extending;`：为了避免redo日志过大超过buffer，当redo日志超过buf_size/2时，就会扩展；扩展后，就不会缩减。
-+ `write_lsn`/`current_flush_lsn`/`flushed_to_disk_lsn`：buf的刷盘分为两步write和sync，write_lsn是最近write的lsn；current_flush_lsn是正在执行write+flush操作的lsn；flushed_to_disk_lsn是已经flush到磁盘的lsn(注意这里是lsn，上面buf中的偏移是ulint)。
-+ `n_pending_flushes`/`flush_event`：当前等待redo sync的任务，最大值为1；有`mutex`控制对flush_event的互斥访问，从而设置n_pending_flushes。
+- `unsigned long buf_next_to_write`：准备flush的redolog的位置，执行完继续推进。
+- `volatile bool	is_extending;`：为了避免redo日志过大超过buffer，当redo日志超过buf_size/2时，就会扩展；扩展后，就不会缩减。
+- `write_lsn`/`current_flush_lsn`/`flushed_to_disk_lsn`：buf的刷盘分为两步write和sync，write_lsn是最近write的lsn；current_flush_lsn是正在执行write+flush操作的lsn；flushed_to_disk_lsn是已经flush到磁盘的lsn(注意这里是lsn，上面buf中的偏移是ulint)。
+- `n_pending_flushes`/`flush_event`：当前等待redo sync的任务，最大值为1；有`mutex`控制对flush_event的互斥访问，从而设置n_pending_flushes。
 
 #### checkpoint相关
 
-+ `log_group_capacity`：表示当前日志文件的总容量，值为:(Redo log文件总大小 - redo 文件个数 * LOG_FILE_HDR_SIZE) * 0.9，LOG_FILE_HDR_SIZE 为 4*512 字节；超过该容量会重用之前的日志，如果日志对应的page没有刷盘，那么就会丢失数据。
+- `log_group_capacity`：表示当前日志文件的总容量，值为:(Redo log文件总大小 - redo 文件个数 * LOG_FILE_HDR_SIZE) * 0.9，LOG_FILE_HDR_SIZE 为 4*512 字节；超过该容量会重用之前的日志，如果日志对应的page没有刷盘，那么就会丢失数据。
 
-+ `max_modified_age_async/max_modified_age_sync/max_checkpoint_age_async/max_checkpoint_age`：进行preflush和CHECKPOINT的一些阈值点。
+- `max_modified_age_async/max_modified_age_sync/max_checkpoint_age_async/max_checkpoint_age`：进行preflush和CHECKPOINT的一些阈值点。
 
   ![image-20190529170008180](/image/innodb-page-flush.png)
 
-+ `next_checkpoint_no`：每次CHECKPOINT后递增
+- `next_checkpoint_no`：每次CHECKPOINT后递增
 
-+ `last_checkpoint_lsn/next_checkpoint_lsn`：最近的CHECKPOINT点与当前的CHECKPOINT点；完成之后，last<-next；
+- `last_checkpoint_lsn/next_checkpoint_lsn`：最近的CHECKPOINT点与当前的CHECKPOINT点；完成之后，last<-next；
 
-+ `append_on_checkpoint` ：5.7新增，checkpoint时需要额外记录的redo记录，需要在`mutex`下互斥访问。在做DDL时（例如增删列），会先将包含MLOG_FILE_RENAME2日志记录的buf挂到这个变量上。 在DDL完成后，再清理掉。(log_append_on_checkpoint),主要是防止DDL期间crash产生的数据词典不一致。
+- `append_on_checkpoint` ：5.7新增，checkpoint时需要额外记录的redo记录，需要在`mutex`下互斥访问。在做DDL时（例如增删列），会先将包含MLOG_FILE_RENAME2日志记录的buf挂到这个变量上。 在DDL完成后，再清理掉。(log_append_on_checkpoint),主要是防止DDL期间crash产生的数据词典不一致。
 
   ```c
   /** Set extra data to be written to the redo log during checkpoint.
@@ -286,17 +281,35 @@ log_t主要负责三项事情：redo日志写入(拷贝)到缓冲区中；redo�
   }
   ```
 
-+ `n_pending_checkpoint_writes`：大于0时，表示有CHECKPOINT正在进行。如果此时用户发起CHECKPOINT，那么该值+1；结束后该值-1(`log_io_complete`)；
+- `n_pending_checkpoint_writes`：大于0时，表示有CHECKPOINT正在进行。如果此时用户发起CHECKPOINT，那么该值+1；结束后该值-1(`log_io_complete`)；
 
-+ `checkpoint_buf_ptr/checkpoint_buf`：像日志中写入CHECKPOINT信息的缓冲区
+- `checkpoint_buf_ptr/checkpoint_buf`：像日志中写入CHECKPOINT信息的缓冲区
 
-+ `checkpoint_lock`：CHECKPOINT信息的缓冲区写入的互斥lock
+- `checkpoint_lock`：CHECKPOINT信息的缓冲区写入的互斥lock
 
 将log_t上的操作如下图
 
 ![image-20190529175154766](/image/innodb-log-t.png)
 
 用户线程执行的mtr结束后，需要将本地的日志copy到logbuffer中，同时将修改的脏页放到flush_list中。
+
+### 插入一个元组的总体逻辑
+
+![image-20190531182646289](/image/InnoDB-Insert.png)
+
+
+
+### Btree的插入逻辑
+
+![image-20190531182929715](/image/innodb-btree-insert.png)
+
+
+
+### 插入一个元组的数据页redo日志的写逻辑
+
+![image-20190531183018967](/image/page-redo-record.png)
+
+
 
 ## Undo LOG
 
