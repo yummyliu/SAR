@@ -11,9 +11,54 @@ typora-root-url: ../../yummyliu.github.io
 
 * TOC
 {:toc}
+# OSX下的MySQL5.7调试环境
+
+```bash
+mysql57 @5.7.17: error: no type named 'self_ip_exception' in namespace 'boost::geometry::detail::self_get_turn_points'
+```
+
+上述错误是本地的boost库版本不是特定的 1.59；将本地boost库'brew uninstall boost'后，重新cmake成功。
+
+`cmake . -DDOWNLOAD_BOOST=1 -DWITH_BOOST=/usr/local/Cellar`
+
+然后，make、make install；
+
+## 初始化
+
+```bash
+#初始化数据目录
+/usr/local/mysql/bin/mysqld --initialize --user=liuyangming --basedir=/usr/local/mysql --datadir=/Users/liuyangming/dbdata/mysql/data
+
+#启动mysql服务
+/usr/local/mysql/bin/mysqld_safe --skip-grant-tables  --datadir=/Users/liuyangming/dbdata/mysql/data &
+
+#检查
+> bin/mysqladmin version
+bin/mysqladmin  Ver 8.42 Distrib 5.7.26, for osx10.14 on x86_64
+Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Server version          5.7.26-debug
+Protocol version        10
+Connection              Localhost via UNIX socket
+UNIX socket             /tmp/mysql.sock
+Uptime:                 18 sec
+
+Threads: 1  Questions: 4  Slow queries: 0  Opens: 96  Flush tables: 1  Open tables: 91  Queries per second avg: 0.222
+
+
+#停止MySQL服务
+bin/mysqladmin shutdown
+```
+
+
+
+
+
 # Record结构
-
-
 
 # Page结构
 

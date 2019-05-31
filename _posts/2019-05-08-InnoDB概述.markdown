@@ -133,35 +133,176 @@ dwbuffer可以看做是存在于**系统表空间**中的一个短期的日志�
 >
 > 比如，逻辑日志中有一个insert a in A，其需要更新数据和索引页。但是crash的时候，可能只更新了data，没有更新index。
 
+## MTR
+
+以向一级索引中，插入一条元组为例；如果有相同健值的元组，那么存在两种情况：
+
+1. 该元组已经被一个commited的事务标记删除了
+2. 返回主键冲突的异常
+
+对于第一种情况，当前的insert事务需要针对标记删除的元组写一个undolog。
+
+> dict_index_t->n_uniq：在dict_index_t->n_fields中，从前向后，足够用来判断键唯一的列数。
+>
+> InnoDB Instrinsic Tables：InnoDB引擎内部的表，没有undo和redo，用户不可创建，只供引擎内部使用。
+>
+> ![img](/image/INDEX_Page_Overview.png)
+>
+> n_owned：在InnoDB中，表是按照B+Tree的方式存储。每个页中，都有一个PageDirectory(如上)。其中保存了该页内的record的偏移量。由于不是每个record在PageDirectory中都有一个slot（这称为sparse slots），因此每个record中就有了一个n_owned变量，保存了该recored所own的record数。
+>
+> ![image-20190530163445011](/image/innodb-page-directory.png)
+>
+> (Since the Page Directory does not have a slot for every record, binary search can only give a rough position and then `InnoDB` must follow the "next" record pointers. `InnoDB`'s "sparse slots" policy also accounts for the n_owned field in the Extra Bytes part of a record: n_owned indicates how many more records must be gone through because they don't have their own slots.
+
+## Rowformat
+
+- `REDUNDANT`：对于VARBINARY,VARCHAR,BLOB和 TEXT类型等类型，当长度超过767byte时，超过的部分会存储在额外的溢出页中。这是5.0.3之前的Row存储类型。之后的默认存储类型就是COMPACT。
+- `COMPACT`：和REDUNANT类似，试试溢出也的存储更加紧凑，节省20%的空间。
+- `DYNAMIC`：和上两个不同，当列值超过40byte时，那么行中只存储一个指针，指向附加页；然后每个附加页内还有一个指针指向后续数据，指针大小20byte。
+- `COMPRESSED`：存储方式和DYNAMIC相似，只是该方式支持压缩表。
+
+> | Row Format                              | `REDUNDANT`                      | `COMPACT`                        | `DYNAMIC`                | `COMPRESSED`             |
+> | --------------------------------------- | -------------------------------- | -------------------------------- | ------------------------ | ------------------------ |
+> | Compact Storage Characteristics         | No                               | Yes                              | Yes                      | Yes                      |
+> | Enhanced Variable-Length Column Storage | No                               | No                               | Yes                      | Yes                      |
+> | Large Index Key Prefix Support          | No                               | No                               | Yes                      | Yes                      |
+> | Compression Support                     | No                               | No                               | No                       | Yes                      |
+> | Supported Tablespace Types              | system, file-per table, general* | system, file-per-table, general* | file-per-table, general* | file-per-table, general* |
+> | Required File Format                    | Antelope or Barracuda            | Antelope or Barracuda            | Barracuda                | Barracuda                |
+
+### 插入一个元组的逻辑
+
+![image-20190530112101130](/image/InnoDB-insert.png)
+
+
+
 ## Redo LOG
 
 在InnoDB中，其redo日志就是一种Physiological的日志。其中记录了数据页上的所有变更操作。每个记录的形式如下：
 
-```bash
-SpaceID PageNo Offset OperationType Changes_on_that_page
+![image-20190529113341412](/image/innodb-redo-rec.png)
+
+redo日志的每个日志记录是按照磁盘扇区大小的**512byte**存储，而不是page大小（在percona的xtradb中，可以更改事务记录大小，从而更好的利用SSD等新存储介质），位于`$innodb_log_group_home_dir/ib_logfile`中，可能有多个文件。
+
+```sql
+mysql> show global variables like '%innodb_log_file%';
++---------------------------+----------+
+| Variable_name             | Value    |
++---------------------------+----------+
+| innodb_log_file_size      | 50331648 |
+| innodb_log_files_in_group | 2        |
++---------------------------+----------+
+2 rows in set (0.01 sec)
 ```
 
-redo日志的每个日志记录是按照磁盘扇区大小的512byte存储，而不是page大小（在percona的xtradb中，可以更改事务记录大小，从而更好的利用SSD等新存储介质）。
+### 简述
 
-因为，我们recovery的时候需要重做这些记录，但是我们并不知道crash的时候相应记录的修改有没有落盘，因此可能会多次执行，所以其中记录保证幂等性([idempotent](http://books.google.com/books?id=S_yHERPRZScC&lpg=PA543&ots=JJtxVQOEAi&dq=idempotent gray&pg=PA543#v=onepage&q=idempotent gray&f=false))。其实当recovery的时候，我们会将page上的lsn与日志的lsn进行比较，当page的lsn大于日志的lsn时，我们知道该page已经刷盘，不需要操作；反之，进行重放。
+和PostgreSQL的max_wal_size类似，ib_logfile的大小有上限（`innodb_log_file_size * innodb_log_files_in_group < 512GB`），如果设置的过小，为了确保重用redo日志时，被重用的redo日志对应的页已经刷盘；那么可能会频繁的刷脏，这是可以调大redo的整体大小。为了避免checkpoint的刷脏，将pagecleaner和用户线程会按照一些阈值点，进行提前刷脏。因此，业务**update的吞吐量**和**CHECKPOINT回收redo文件**都和这个相关。
 
+因为，我们recovery的时候需要重做这些记录，但是我们并不知道crash的时候相应记录的修改有没有落盘，因此可能会多次执行，所以其中记录保证幂等性([idempotent](http://books.google.com/books?id=S_yHERPRZScC&lpg=PA543&ots=JJtxVQOEAi&dq=idempotent gray&pg=PA543#v=onepage&q=idempotent gray&f=false))。
+
+其实当recovery的时候，和PostgreSQL类似会比较日志的lsn与页面的lsn的大小，只会重做lsn大的日志。
+
+There used to be in the past (maybe there is still, in some incarnation) a non-free tool called Innodb hot backup, ibbackup. It used specially compiled innodb, with this flag on. The flag is not set otherwise
+
+> **双一保证**
+>
 > 默认将`innodb_flush_log_at_trx_commit`设置为1，保证日志Write Ahead；除非系统层面保证了数据不会丢失，如**battery backed raid card**。
 >
 > 另外还有上层MySQL的`sync_binlog`；也需要设置为1，保证binlog落盘。
 
-InnoDB的redo日志有上限限制（`innodb_log_file_size * innodb_log_files_in_group < 512GB`），默认是每个redo文件的大小是48MB；因此，业务**update的吞吐量**和**CHECKPOINT回收redo文件**都和这个相关。
-
 为了提高整体的吞吐量，InnoDB采用组提交的方式，从而减少刷盘的次数（LogBuffer）。
 
-> 这里理解就是服务的吞吐量而不是响应时间，因为如果组没有满，就不刷盘的话，是不是就影响了前面事务的响应时间
+> 这里理解就是服务的吞吐量而不是响应时间，因为如果组没有满，就不刷盘的话，是不是就影响了前面事务的响应时间。在PostgreSQL中通过`commit_siblings`配置一个组提交启用的下限，避免系统负载比较低的时候的刷盘等待。
+
+### log_t
+
+> UNIV_HOTBACKUP
+> 在InnoDB中，常见一个UNIV_HOTBACKUP宏；这是之前有一个收费的热备工具——ibbackup相关的。现在基本不用了。
+> https://stackoverflow.com/questions/28916804/what-does-univ-hotbackup-mean-in-innodb-source
+
+`log_t*	log_sys`是redo日志系统的关键全局变量。这里基于5.7版代码，逐一了解每个成员变量的含义。这里互斥锁的类型都是：ib_mutex_t；实际上是基于Futex机制实现的FutexMutex（Linux Fast userspace mutex）。
+
+#### logbuffer接收redo copy
+
+log_t主要负责三项事情：redo日志写入(拷贝)到缓冲区中；redo缓冲区刷盘；执行CHECKPOINT。因此，其中有两类偏移量：给redo可拷贝写入的buffer的位置（buf_free）、redo缓冲区向磁盘刷盘的位置（buf_next_to_write）。
+
++ `log_flush_order_mutex`：InnoDB中多个bufferPool共享的flush_list上的锁；确保flush_list的顺序访问。
+
++ `byte* buf_ptr`：未对齐的logbuf地址，大小应该是buf_size的两倍；
+
++ `buf_size`：innodb_log_buffer_size配置的buffer大小，但可能会自动扩展。
+
++ `unsigned long buf_free`：buf中空闲的第一个位置
+
++ `max_buf_free`：推荐的buf_free的最大值；
+
+  ```c
+  void log_buffer_extend(len) {
+  ...
+  log_sys->max_buf_free = log_sys->buf_size / LOG_BUF_FLUSH_RATIO - LOG_BUF_FLUSH_MARGIN;
+  ...
+  }
+  ```
+
+  当buf_free超过该值时，可能触发用户线程去写redo；在事务拷redo 到buffer后，也会判断该值，如果超过buf_free，需要刷logbuffer，设置log_sys->`check_flush_or_checkpoint`为true。
+
++ `check_flush_or_checkpoint`：该项为True，表示需要刷logbuffer、或者preflush pool page，或者做CHECKPOINT；
+
+#### logbuffer进行刷盘
+
++ `unsigned long buf_next_to_write`：准备flush的redolog的位置，执行完继续推进。
++ `volatile bool	is_extending;`：为了避免redo日志过大超过buffer，当redo日志超过buf_size/2时，就会扩展；扩展后，就不会缩减。
++ `write_lsn`/`current_flush_lsn`/`flushed_to_disk_lsn`：buf的刷盘分为两步write和sync，write_lsn是最近write的lsn；current_flush_lsn是正在执行write+flush操作的lsn；flushed_to_disk_lsn是已经flush到磁盘的lsn(注意这里是lsn，上面buf中的偏移是ulint)。
++ `n_pending_flushes`/`flush_event`：当前等待redo sync的任务，最大值为1；有`mutex`控制对flush_event的互斥访问，从而设置n_pending_flushes。
+
+#### checkpoint相关
+
++ `log_group_capacity`：表示当前日志文件的总容量，值为:(Redo log文件总大小 - redo 文件个数 * LOG_FILE_HDR_SIZE) * 0.9，LOG_FILE_HDR_SIZE 为 4*512 字节；超过该容量会重用之前的日志，如果日志对应的page没有刷盘，那么就会丢失数据。
+
++ `max_modified_age_async/max_modified_age_sync/max_checkpoint_age_async/max_checkpoint_age`：进行preflush和CHECKPOINT的一些阈值点。
+
+  ![image-20190529170008180](/image/innodb-page-flush.png)
+
++ `next_checkpoint_no`：每次CHECKPOINT后递增
+
++ `last_checkpoint_lsn/next_checkpoint_lsn`：最近的CHECKPOINT点与当前的CHECKPOINT点；完成之后，last<-next；
+
++ `append_on_checkpoint` ：5.7新增，checkpoint时需要额外记录的redo记录，需要在`mutex`下互斥访问。在做DDL时（例如增删列），会先将包含MLOG_FILE_RENAME2日志记录的buf挂到这个变量上。 在DDL完成后，再清理掉。(log_append_on_checkpoint),主要是防止DDL期间crash产生的数据词典不一致。
+
+  ```c
+  /** Set extra data to be written to the redo log during checkpoint.
+  @param[in]	buf	data to be appended on checkpoint, or NULL
+  @return pointer to previous data to be appended on checkpoint */
+  mtr_buf_t*
+  log_append_on_checkpoint(
+  	mtr_buf_t*	buf)
+  {
+  	log_mutex_enter();
+  	mtr_buf_t*	old = log_sys->append_on_checkpoint;
+  	log_sys->append_on_checkpoint = buf;
+  	log_mutex_exit();
+  	return(old);
+  }
+  ```
+
++ `n_pending_checkpoint_writes`：大于0时，表示有CHECKPOINT正在进行。如果此时用户发起CHECKPOINT，那么该值+1；结束后该值-1(`log_io_complete`)；
+
++ `checkpoint_buf_ptr/checkpoint_buf`：像日志中写入CHECKPOINT信息的缓冲区
+
++ `checkpoint_lock`：CHECKPOINT信息的缓冲区写入的互斥lock
+
+将log_t上的操作如下图
+
+![image-20190529175154766](/image/innodb-log-t.png)
+
+用户线程执行的mtr结束后，需要将本地的日志copy到logbuffer中，同时将修改的脏页放到flush_list中。
 
 ## Undo LOG
 
-相对于PostgreSQL中，将旧版本的数据放在当前文件中的方式；在InnoDB中，Undo日志记录了行的旧值，当需要找到旧版本的数据时，需要按照undo链进行寻找(如果链长，就会比较耗时)。有数据变更的事务都需要一个undo record，如下是一个**undo record**：
+相对于PostgreSQL中，将旧版本的数据放在当前文件中的方式；在InnoDB中，Undo日志记录了行的旧值，当需要找到旧版本的数据时，需要按照undo链进行寻找。有数据变更的事务都需要一个undo record，如下是一个**undo record**：
 
-```bash
-Primary_Key_Value Old_trx_id Old_values_on_that_row
-```
+![image-20190528183043050](/image/image-20190528183043050.png)
 
 - Primary_Key_Value：包括页号和物理位置。
 - Old_trx_id：更新该行的事务号
@@ -174,27 +315,14 @@ Primary_Key_Value Old_trx_id Old_values_on_that_row
 > 由`innodb_rollback_segments`定了了rollback segment的个数([1,128]），默认128个。每个rseg中，有1024个slot(用了存放undo log)；
 >
 > 128个rseg只有后96个是给用户表使用的，并且每个undo log只能同时给一个事务使用，因此整体的事务并发上限为96*1024。
-
-### undo类型
+>
+> ![image-20190529095215812](/image/undo-innodb.png)
 
 在MySQL中，事务默认是只读事务；如果后期发现有临时表的写入，就分配**临时表的rseg**；若判断为读写事务，则开始分配事务ID和**普通rseg**。
 
-
-```c
-struct trx_undo_ptr_t {
-  trx_rseg_t *rseg;        /*!< rollback segment assigned to the
-                           transaction, or NULL if not assigned
-                           yet */
-  trx_undo_t *insert_undo; /*!< pointer to the insert undo log, or
-                           NULL if no inserts performed yet */
-  trx_undo_t *update_undo; /*!< pointer to the update undo log, or
-                           NULL if no update performed yet */
-};
-```
-
 对于Insert插入的新数据，没有任何老事务可能会读取该新行，所以一般在事务结束后，就将undo log删除，这部分是`insert_undo`。而对于Update和delete的旧数据，需要进行保留，在InnoDB中将其归为一类：`update_undo`。
 
-回滚段是资源是有限的，系统有purge线程定期回收回滚段；每个回滚段上有一个引用计数(`trx_ref_count`)，如果计数为0，表示没有事务在使用，那么purge线程就对其进行回收；回收时，会将该rseg标记为`skip_allocation`，表示该段暂缓分配。
+回滚段是资源是有限的，系统有purge线程定期回收回滚段；每个回滚段上有一个引用计数(`trx_ref_count`)，如果计数为0，表示没有事务在使用，那么purge线程就对其进行回收；回收时，会将该rseg标记为``skip_allocation`，表示该段暂缓分配。
 
 ## Crash Recovery
 
@@ -203,9 +331,16 @@ struct trx_undo_ptr_t {
 在InnoDB中，分为4步：
 
 1. dwbuffer：首先恢复 Doublewrite Buffer中的数据
-2. Scan：从磁盘中读取redo日志记录，将其插入按照LSN排序的红黑树中。
-3. Redo：将脏页插入到flush_list中。
-4. Undo：将未完成的事务，进行回滚。
+
+2. Scan：从磁盘中读取redo日志记录，插入按照LSN排序的红黑树中。
+
+3. Redo：`recv_recovery_from_checkpoint_start`，将重做redo记录，并脏页插入到flush_list中；另外，undo记录也是受redo保护的(临时表除外临时表不记redo），也可以从redo中恢复。
+
+4. Undo：`dict_boot`初始化数据字典子系统；`trx_sys_init_at_db_start`初始化事务子系统，undo段的初始化在此完成；
+
+   ![image-20190529105306507](/image/init-undo.png)
+
+   将Active的事务，进行回滚；对于Prepare的事务，如果对应的binlog已经提交，那么提交，否则回滚。
 
 # MySQL的BinLog
 
