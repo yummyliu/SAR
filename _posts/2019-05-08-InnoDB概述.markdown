@@ -297,7 +297,7 @@ log_t主要负责三项事情：redo日志写入(拷贝)到缓冲区中；redo�
 
 row_ins_clust_index_entry_low
 
-![image-20190603085806115](/image/InnoDB-Insert.png)
+![image-20190603094352875](/image/innodb-insert-overview.png)
 
 
 
