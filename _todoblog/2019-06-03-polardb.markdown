@@ -1,6 +1,6 @@
 ---
 layout: post
-title: PolarFS与NVM
+title: 了解PolarFS与NVM
 date: 2019-06-03 16:17
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -17,7 +17,15 @@ typora-root-url: ../../yummyliu.github.io
 
 ### RDMA
 
-SPDK
+和本地DMA的概念类似，*remote direct memory access* 技术可以使同一网络中的主机绕过其他主机的CPU、cache、操作系统等模块直接读写其他主机的数据。其有如下优势：
+
++ zero-copy：应用程序能够直接执行数据传输，在不涉及到网络软件栈的情况下。数据能够被直接发送到缓冲区或者能够直接从缓冲区里接收，而不需要被复制到网络层。
++ Kernel bypass：应用程序可以直接在用户态执行数据传输，不需要在内核态与用户态之间做上下文切换。
++ No CPU involvement：应用程序可以访问远程主机内存而不消耗远程主机中的任何CPU。远程主机内存能够被读取而不需要远程主机上的进程（或CPU)参与。远程主机的CPU的缓存(cache)不会被访问的内存内容所填充。
++ Message based transactions：数据被处理为离散消息而不是流，消除了应用程序将流切割为不同消息/事务的需求。
++ Scatter/gather entries support：读取多个内存缓冲区然后作为一个流发出去或者接收一个流然后写入到多个内存缓冲区里去。
+
+SPDK是Intel提供的一个操作RDMA的库。
 
 ### Non-Volatile Memory
 
@@ -42,24 +50,37 @@ SPDK
 
 NVMe和NVM不是一个东西；NVMe是和AHCI是同一类同，其是一个存储接口协议，AHCI是早期将HDD接到PCIe上的存储接口协议；NVMe是适配SSD接到PCIe上的存储接口协议。
 
-## 共享分布式文件系统的数据库
+## 分布式文件系统
 
 将传统的本地文件系统抽象为一个分布式文件系统；提供类似的文件api；db基于日志即数据的概念，将redo日志放在分布式文件系统中冗余存储；这样读写节点共享同一份数据。
 
-+ 日志的存储：主节点将redo日志，调用api写入分布式文件系统中。
++ 副本一致性
++ 存储什么数据
 
-+ 数据的构建：ro节点从分布式文件系统中，读取相应的数据；如果
+# PolarDB
 
-+ 从库如何回放：
+我了解的PolarDB的结构如下：
 
-+ 主从内存状态如何保持一致：
++ smart proxy：该层主要用于实现自动的读写分离，负载均衡，以及高可用切换与安全性验证。为了保证session Consistency；在上层的smart proxy会维护下层RO节点的redo日志重放位置，以便于读写分离时将读请求发送到有最新数据的节点。
++ PolarDB Cluster：实现了基于InnoDB的redo日志的物理复制的一主多从的集群，其中存储模块由实现的类POSIX的文件操作API替换，从而将**数据和redolog都**写入到PolarFS中。
++ PolarFS：网络上利用RDMA，wal buffer上利用3D Xpoint介质的NVRam等新硬件优化的分布式文件存储服务。这里的WAL buffer是每个chunkserver对于文件块中更改的wal；不是database的wal buffer。
 
-- 内存中的索引管理：
-- 元数据如何同步：
+![image-20190605141205518](/image/polardb.png)
+
+## PolarDB与Aurora的比较
+
+| 角度               | Aurora                                                       | PolarDB                                                      |
+| ------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| 分布式文件存储     | 存储的数据包括RedoLog和Page，以10GB为单位划分的6副本，基于gossip协议实现数据一致性。 | 存储的数据包括RedoLog和Page，以10GB为单位划分的3副本，基于Parallel-Raft实现的数据一致性。 |
+| 向存储层写入的内容 | 只有redolog，存储层不断重建page；                            | 写入redolog和page。但是通过RDMA与OptaneSSD等新硬件优化。     |
+| 读写一致性         | 基于Quorum协议，读写按照多数派满足的方式获取最新数据。       | 数据读写只在主副本上进行。                                   |
+| 代码               | 增加物理复制的                                               | 增加InnoDB的物理复制；通过修改调用文件的api将数据写入到分布式文件存储中。 |
+| 异常恢复           | 主挂，因为底层不断的进行recovery，从秒升主。不走经典的redo/undo逻辑。 | 类似单机MySQL的恢复方式                                      |
+| 社区融合           | 与社区版本代码相差较大，比较慢跟进新功能。                   | 相对容易跟进新功能。                                         |
 
 
 
-# PolarFS结构概述
+## PolarFS结构概述
 
 ![image-20190604181103288](/image/image-20190604181103288.png)
 
@@ -77,7 +98,7 @@ NVMe和NVM不是一个东西；NVMe是和AHCI是同一类同，其是一个存�
 8. leader通过RDMA，向PolarSwitch返回success
 9. PolarSwitch标记该请求done，向client返回成功。
 
-## PolarFS的关键点
+## PolarDB的优化点
 
 + bypass Net/IO stack
 
@@ -91,20 +112,28 @@ NVMe和NVM不是一个东西；NVMe是和AHCI是同一类同，其是一个存�
 
   向上兼容
 
-+ 避免锁和上下文切换
++ 避免锁和上下文切换：
++ 读写分离中的会话一致性：一般读写分离，如果不是同步复制，只是保证最终一致性；在PolarDB中，提供了会话一致性。
 
-# NVM存储探索
+## PolarDB的关键点
+
+- 日志的存储：主节点将redo日志，调用分布式文件存储api，写入分布式文件系统中。
+
+- 数据的构建：RO节点从分布式文件系统中，读取相应的数据；对于Aurora，如果存储层的数据没有生成好，那么先等待。对于PolarDB，因为是由计算模块进行数据恢复，那么根据不同的复制模式（同步，异步）可能获取的数据不一致。
+
+- 从库如何回放：PolarDB是按照物理复制的方式回放数据。
+
+- 主从内存状态如何保持一致：物理复制
+
+- 内存中的锁管理：与MySQL一致
+- 元数据如何同步：物理复制
+
+# 附：NVM存储探索
 
 SSD本来具有可随机访问，持久存储的特性；但是读写性能上和内存还是有差距；在Intel提出了基于3DX Point介质的新SSD之后，针对非易失性存储器的数据库架构的研究有很多。
 
-## NVM-only 存储架构
++ NVM-only 存储架构：暂不考虑
 
-+ 不考虑
++ NVM+DRAM 混合存储架构
+  + NVM 的组提交(NVRAM group commit)恢复机制.该机制消除了传统管理日志所需要的缓存区,利用批量事务处理模式，减少了确保正确次序所需的写障栅次数。
 
-## NVM+DRAM 混合存储架构
-
-+ NVM 的组提交(NVRAM group commit)恢复机制.该机制消除了传统管理日志所需要的缓存区,利用批量事务
-  处理模式减少了确保正确次序所需的写障栅次数
-+ 
-
-- 
