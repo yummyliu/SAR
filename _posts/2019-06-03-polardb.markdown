@@ -82,6 +82,8 @@ NVMe和NVM不是一个东西；NVMe是和AHCI是同一类同，其是一个存�
 
 ## PolarFS结构概述
 
+PolarFS是一个用户空间的分布式文件系统。MySQL代码可以容易的从Linux FS迁移到PolarFS；提供了O_DIRECT的读写操作；支持数据页的原子写；
+
 ![image-20190604181103288](/image/image-20190604181103288.png)
 
 
@@ -99,6 +101,10 @@ NVMe和NVM不是一个东西；NVMe是和AHCI是同一类同，其是一个存�
 9. PolarSwitch标记该请求done，向client返回成功。
 
 ## PolarDB的优化点
+
++ 硬件：
+
+  (低延迟)Intel Optane DC Solid State Drives(SSDs) /(大容量) Intel 3D NAND SSDs
 
 + bypass Net/IO stack
 
