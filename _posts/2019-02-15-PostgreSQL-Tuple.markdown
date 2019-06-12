@@ -38,6 +38,16 @@ PostgreSQL的堆表由多个页组成。业内结构如上图所示(代码readme
 
 包括偏移和长度两个信心，另外还有一个标记位，标记该行指针的状态。为了节省空间，代码中多处Struct中标记了**位域**，如下，行指针只占4个字节了。
 
+```c
+typedef struct ItemIdData
+{
+	unsigned	lp_off:15,		/* offset to tuple (from start of page) */
+				lp_flags:2,		/* state of item pointer, see below */
+				lp_len:15;		/* byte length of tuple */
+} ItemIdData;
+
+```
+
 # Tuple
 
 ## Tuple Header
@@ -53,7 +63,7 @@ postgres=# SELECT pg_column_size(row());
              24
 ```
 
-一个空行的大小是24byte，说明最后一个byte被对齐了；
+如上，一个空行的大小是24byte，说明最后一个byte被对齐了；
 
 ```sql
 postgres=# SELECT pg_column_size(row(NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL));
@@ -73,9 +83,9 @@ postgres=# SELECT pg_column_size(row(NULL, NULL, NULL, NULL, NULL, NULL, NULL, N
 
 有超过8个空值后，那么就需要重新按照8字节对齐。在Tuple数据中，不会存储Null数据。
 
-在t_infomask2和t_infomask中，存储了若干标记位以及属性列的个数，如下。
+另外在t_infomask2和t_infomask中，存储了属性列的个数以及若干标记位，其中就包括**HEAP_HASNULL(标识bitmap存不存在)**，如下。
 
-![image-20190610151917607](/image/infomask.png)
+![image-20190610175230711](/image/infomask.png)
 
 ## Tuple data
 

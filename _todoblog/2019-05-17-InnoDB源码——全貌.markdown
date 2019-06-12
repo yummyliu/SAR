@@ -29,6 +29,15 @@ mysql57 @5.7.17: error: no type named 'self_ip_exception' in namespace 'boost::g
 #初始化数据目录
 /usr/local/mysql/bin/mysqld --initialize --user=liuyangming --basedir=/usr/local/mysql --datadir=/Users/liuyangming/dbdata/mysql/data
 
+> /usr/local/mysql/bin/mysqld --initialize --user=liuyangming --basedir=/usr/local/mysql --datadir=/Users/liuyangming/dbdata/mysql/data
+2019-06-11T09:33:36.339696Z 0 [Warning] TIMESTAMP with implicit DEFAULT value is deprecated. Please use --explicit_defaults_for_timestamp server option (see documentation for more details).
+2019-06-11T09:33:36.343094Z 0 [Warning] Setting lower_case_table_names=2 because file system for /Users/liuyangming/dbdata/mysql/data/ is case insensitive
+2019-06-11T09:33:36.683098Z 0 [Warning] InnoDB: New log files created, LSN=45790
+2019-06-11T09:33:36.826801Z 0 [Warning] InnoDB: Creating foreign key constraint system tables.
+2019-06-11T09:33:36.904487Z 0 [Warning] No existing UUID has been found, so we assume that this is the first time that this server has been started. Generating a new UUID: fd159870-8c2b-11e9-a017-4a930459b57e.
+2019-06-11T09:33:36.921158Z 0 [Warning] Gtid table is not ready to be used. Table 'mysql.gtid_executed' cannot be opened.
+2019-06-11T09:33:36.923575Z 1 [Note] A temporary password is generated for root@localhost: ;2nu=q02Beiq
+
 #启动mysql服务
 /usr/local/mysql/bin/mysqld_safe --skip-grant-tables  --datadir=/Users/liuyangming/dbdata/mysql/data &
 
