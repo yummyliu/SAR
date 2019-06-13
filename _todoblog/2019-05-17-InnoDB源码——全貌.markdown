@@ -19,7 +19,7 @@ mysql57 @5.7.17: error: no type named 'self_ip_exception' in namespace 'boost::g
 
 上述错误是本地的boost库版本不是特定的 1.59；将本地boost库'brew uninstall boost'后，重新cmake成功。
 
-`cmake . -DDOWNLOAD_BOOST=1 -DWITH_BOOST=/usr/local/Cellar`
+`cmake . -DDOWNLOAD_BOOST=1 -DWITH_BOOST=/usr/local/Cellar -DWITH_DEBUG=1`
 
 然后，make、make install；
 
