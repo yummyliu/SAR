@@ -206,3 +206,18 @@ log_t主要负责三项事情：redo日志写入(拷贝)到缓冲区中；redo�
 ![image-20190613134743737](/image/row_ins_clust_index_entry_low.png)
 
 具体树上的插入`btr_cur_optimistic_insert`：
+
+在MySQL的BufferPool中，分为16K大小的frame；Btree上有一个tree cursor(`btr_cur_t`)和page cursor(`page_cur_t`)。在btr_cur_optimistic_insert函数中，基于之前找到的tree cursor进行插入操作，如下：
+
+![image-20190613173809214](/../Desktop/btr_cur_optimistic_insert.png)
+
+具体业内的插入操作`page_cur_insert_rec_low`中，在MySQL的Page中，记录是按照链表的方式组织的，Header中有一个PageDirectory，只是维护了部分记录的位置，因此在每个记录中有一个N_owned字段，用来记录该记录之前**连续有多少没有在PageDirectory中索引记录**。
+
+![image-20190613175716625](/../Desktop/InnoDB-page-directory.png)
+
+在Page中插入会pagedirectory和n_owned等信息。
+
+![image-20190613175907422](/image/page_cur_insert_rec_low.png)
+
+数据写完了，之后开始写redo日志，由`page_cur_insert_rec_write_log`负责。
+
