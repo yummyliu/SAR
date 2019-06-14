@@ -1,6 +1,6 @@
 ---
 layout: post
-title: InnoDB-RedoLog
+title: InnoDB的RedoLog剖析
 date: 2019-06-11 10:51
 header-img: "img/head.jpg"
 categories: jekyll update
