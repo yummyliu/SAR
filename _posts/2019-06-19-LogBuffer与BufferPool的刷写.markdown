@@ -1,0 +1,324 @@
+---
+layout: post
+title: InnoDB的LogBuffer与BufferPool的刷写逻辑
+date: 2019-06-19 16:49
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+  - InnoDB
+typora-root-url: ../../yummyliu.github.io
+---
+
+* TOC
+{:toc}
+
+# 简述
+
+数据变更可以变成若干个redo record，每个record都有一个`mlog_id_t`的类型。不同的数据库操作对应不同组合的Record，这些record以mtr为单位进行组织，保证原子性。
+
+1. 数据页的变更必须通过mtr，在`mtr_commit()`中将本次mtr变更的所有record，写入redo日志；
+
+   >  注意这里mtr_commit写入的是redo buffer。具体写入磁盘的时机为：
+   >
+   > 1. 事务提交
+   > 2. log buffer的空间使用过半
+   > 3. log CHECKPOINT
+
+2. 一般来说，变更记录会通过`mlog_write_ulint()`函数(或其他类似函数)写入。？有疑问？？
+
+3. 对于一些页面级别的操作，只在记录中记录C函数的编码和参数，节约空间。
+
+   1. 不需要在`trx_undo_header_create() ,trx_undo_insert_header_reuse()`的记录中加参数；
+   2. 不能添加不做任何改变的函数，或者需要依赖页外部数据的函数；当前log模块的函数有完备的页面转换，没有足够的理由不要擅自改动。
+
+   > UNIV_HOTBACKUP
+   > 在InnoDB中，常见一个UNIV_HOTBACKUP宏；这是之前有一个收费的热备工具——ibbackup相关的。现在基本不用了。
+   > https://stackoverflow.com/questions/28916804/what-does-univ-hotbackup-mean-in-innodb-source
+
+本节首先介绍一下redo机制的核心控制结构：`log_t`的机制；然后以Insert为例，介绍insert的流程。
+
+# LOGBUFFER机制与log_t
+
+`log_t*	log_sys`是redo日志系统的关键全局变量。主要负责三项事情：
+
+1. mtr_buf->logbuffer：用户线程mtr_commit时，将mtr_buf中的redo record，拷贝到log buffer中；
+2. logbuffer->logfile：write_mutex控制logbuffer顺序的刷盘；
+3. bufferpool->datafile：log_flush_order_mutex控制flushlist的顺序刷盘；执行CHECKPOINT或preflush。
+
+![image-20190619165143347](/image/logbuffer-flush.png)
+
+上图中将log_t与logbuffer的机制进行了整合描述。MySQL的logbuffer是双buffer设计，每个默认是16MB，其中也是按照512byte的block进行组织，有以下几个主要参数：
+
++ `buf`指向当前写入的logbuffer（`buf_ptr`是没有对齐的起始位置）；
+
++ `first_in_use`表示具体是哪个buffer。
+
++ `volatile bool	is_extending;`：为了避免redo日志过大超过buffer，当redo日志超过buf_size/2时，就会扩展；扩展后，就不会缩减。
+
+其中三个锁分别控制log_t互斥访问(`mutex`)、日志刷盘(`write_mutex`)、数据刷盘(`log_flush_order_mutex`)的操作。
+
+> 这里互斥锁的类型都是：ib_mutex_t；实际上是基于Futex机制实现的FutexMutex（Linux Fast userspace mutex）。
+
+后面基于5.7版代码，逐一了解与三项工作相关的每个成员变量的含义。
+
+## 从mtr_buf到logbuffer
+
+### mtr_commit
+
+这里需要老姐mtr_t的结构，这是mtr的控制结构。
+
++ mtr_t.`m_made_dirty`与mtr_t.`m_modifications`的区别：
+
+  m_modifications只在mtr_open()中调用了，表示可能要写mtr了，但是取决于m_log_mode不同，可能不写redo，也不会刷脏；而m_made_dirty在memo_push中设置为true，此时是真的写redo了，并且也需要刷脏。最后，在mtr_commit提交的时候会判断m_modifications，如果为False，那么可以直接释放资源，提交当前mtr；否则，需要写redo并刷脏。
+
+在mtr_commit的时候，为了保证提前释放mutex后，flush_list的dirty_page的写入是顺序的，这里加了log_flush_order_mutex锁，有以下几步：
+
+```c
+	-> mutex_enter(log_sys->mutex)
+  -> generate lsns
+  -> mutex_enter(log_sys->log_flush_order_mutex)
+  -> mutex_exit(log_sys->mutex)
+  -> mark page dirty and add to flush list
+  -> mutex_exit(log_sys->log_flush_order_mutex)
+```
+
+如图：
+
+![image-20190619165212470](/image/mtr_commit.png)
+
+### 拷贝mtr中的record
+
+- `unsigned long buf_free`：buf中空闲的第一个位置，按照该位置向logbuffer中拷贝record。
+
+- `max_buf_free`：推荐的buf_free的最大值，会判断该值，如果超过max_buf_free，需要刷logbuffer；并设置log_sys->`check_flush_or_checkpoint`为true。
+
+  ```c
+  void log_buffer_extend(len) {
+  ...
+  log_sys->max_buf_free = log_sys->buf_size / LOG_BUF_FLUSH_RATIO - LOG_BUF_FLUSH_MARGIN;
+  ...
+  }
+  ```
+
+关于刷盘有一个关键的函数log_free_check，在该函数中检查是否需要刷盘，然后设置参数check_flush_or_checkpoint。
+
+```c
+/***********************************************************************//**
+Checks if there is need for a log buffer flush or a new checkpoint, and does
+this if yes. Any database operation should call this when it has modified
+more than about 4 pages. NOTE that this function may only be called when the
+OS thread owns no synchronization objects except the dictionary mutex. */
+UNIV_INLINE
+void
+log_free_check(void)
+/*================*/
+{
+...
+
+	if (log_sys->check_flush_or_checkpoint) {
+
+		log_check_margins();
+	}
+}
+```
+
+`log_sys->check_flush_or_checkpoint`：该项为True，表示需要刷logbuffer、或者preflush pool page，或者做CHECKPOINT；其实任何修改了超过4个页的操作，都应该调用`log_free_check`判断是不是需要刷盘。在`log_free_check`中，按照如图逻辑进行具体处理。
+
+![image-20190619165315082](/image/log_free_check.png)
+
+## 从logbuffer到logfile
+
+### 日志刷盘时机
+
+日志的刷盘都是通过调用`void log_write_up_to( lsn_t	lsn, bool	flush_to_disk)`，如果flush_to_disk为True，则表示将参数lsn之前日志都write&**flush**；同时更新相应偏移量。
+
+> 注意在函数log_write_up_to中，在函数返回后确保该lsn之前已经write了（如果flush_to_disk为True，确保也flush了）。如果要写，实际还是写到log_sys->lsn；
+>
+> ```c
+> 	DBUG_PRINT("ib_log", ("write " LSN_PF " to " LSN_PF,
+> 			      log_sys->write_lsn,
+> 			      log_sys->lsn));
+> ...
+> 	write_lsn = log_sys->lsn;
+> ```
+
+满足以下条件来进行日志刷盘：
+
++ LogBuffer中的日志量达到阈值
+
+  **buf_free>max_buf_free**：log_flush_margin:1472；max_buf_free为`buf_size/LOG_BUF_FLUSH_RATIO-LOG_BUF_FLUSH_MARGIN`，大概为小于buf_size的一半。
+
++ 为了保证WAL，即日志先于数据写，所以当数据同步之前，需要确保数据上lsn标记的日志已经刷盘。
+
+  + **checkpoint**时，为了保证最老的脏页的日志提前刷盘，这里会将脏页最老lsn之前的日志刷盘：log_checkpoint:1844
+  + bufferpool中的page进行**其他原因触发的刷盘**时，需要保证日志先写；需要将该page的最新修改的lsn刷盘。buf_flush_write_block_low:1040
+
++ 事务操作调用；事务提交要保证持久化。
+
+  + 删除表空间时，需要强制写redo
+  + log_buffer_flush_to_disk
+  + 主线程主动调用
+  + 事务提交
+  + 等等
+
+### 双buffer切换刷盘
+
+MySQL-5.7中为了提高`log_sys->mutex`这个大锁的并发，添加一个新的write_mutex与双buffer的设计（每个默认16MB大小）。事务提交进行日志刷盘时，在mutex的保护下，进行`log_buffer_switch`——双buffer的切换：
+
+1. 将当前buf的最后一个block，复制到新的buf的首部；
+2. 然后更新buf_free和buf_next_to_write；
+3. 用户线程可以继续将record写入到新的buffer中；同时，旧的buf在write_mutex的保护下进行后续的刷盘操作；
+
+- `unsigned long buf_next_to_write`：准备写盘的redolog的位置，执行完继续推进。
+
+  ```c
+  void
+  log_write_up_to(
+  	lsn_t	lsn,
+  	bool	flush_to_disk)
+  
+  ...
+  	start_offset = log_sys->buf_next_to_write;
+  ...
+  
+  /* Do the write to the log files */
+  	log_group_write_buf(
+  		group, write_buf + area_start,
+  		area_end - area_start + pad_size,
+  
+  ```
+
+- `write_lsn`/`current_flush_lsn`/`flushed_to_disk_lsn`：buf的刷盘分为两步write和flush；每次写盘的时候都是写到log_sys->lsn，这里会将write_lsn设置为log_sys->lsn；表示当前开始从`write_lsn`开始写，`current_flush_lsn`是正在执行flush操作的lsn；flushed_to_disk_lsn是已经flush到磁盘的lsn（**注意这里是lsn，上面mtrbuf向LogBuffer中拷贝的偏移是ulint**）。
+
+- `n_pending_flushes`/`flush_event`：当前等待redo sync的任务，最大值为1；由`mutex`控制对flush_event的互斥访问，从而设置`n_pending_flushes`；设置了flush_event就触发相应线程进行刷盘。
+
+## 从bufferpool到datafile
+
+InnoDB中可能有多个bufferpool，总大小为innodb_buffer_pool_size（小于1G，多个小buffer会合并）；在每个buffer中有一个page hash表，通过(spaceid, pageno)快速找到page位置；
+
+### LRUlist与FLushList
+
+另外每个buffer中还有三个list：freelist、lrulist和flushlist。flushlist中是按照lsn顺序组织dirtypage，lrulist是按照访问先后组织的。刷脏有两种：从flush_list或者lru_list中刷，如下。
+
+```c
+mysql> SHOW ENGINE INNODB STATUS\G
+Pending writes: LRU 0, flush list 0, single page 0
+...
+/*Start a buffer flush batch for LRU or flush list */
+static
+ibool
+buf_flush_start(
+/*============*/
+	buf_pool_t*	buf_pool,	/*!< buffer pool instance */
+	buf_flush_t	flush_type)	/*!< in: BUF_FLUSH_LRU
+					or BUF_FLUSH_LIST */
+{
+```
+
+LRUlist是在数据读取的时候，将page放在LRUlist中；如果修改了，相应块也放在flushlist中：在FLU List上的页面一定在LRU List上，但是反之则不成立。
+
++ LRUlist刷：读取数据的时候空间不足，需要按照最近最少使用的原则从LRUlist中淘汰。
++ FLUSHList刷：脏页超过了阈值(`innodb_max_dirty_pages_pct`)，或者定时的CHECKPOINT活动。
+
+### FLUSHList阈值点
+
+在函数`log_calc_max_ages`中，计算了相应的阈值点
+
+```c
+/*****************************************************************//**
+Calculates the recommended highest values for lsn - last_checkpoint_lsn
+and lsn - buf_get_oldest_modification().
+@retval true on success
+@retval false if the smallest log group is too small to
+accommodate the number of OS threads in the database server */
+static MY_ATTRIBUTE((warn_unused_result))
+bool
+log_calc_max_ages(void)
+/*===================*/
+{
+  ...
+  log_sys->max_modified_age_async = margin
+		- margin / LOG_POOL_PREFLUSH_RATIO_ASYNC;
+	log_sys->max_modified_age_sync = margin
+		- margin / LOG_POOL_PREFLUSH_RATIO_SYNC;
+
+	log_sys->max_checkpoint_age_async = margin - margin
+		/ LOG_POOL_CHECKPOINT_RATIO_ASYNC;
+	log_sys->max_checkpoint_age = margin;
+
+...
+```
+
+- `max_modified_age_async/max_modified_age_sync`：preflush的异步/同步阈值点
+- `max_checkpoint_age_async/max_checkpoint_age`：CHECKPOINT的异步/同步阈值点。
+
+在函数`log_checkpoint_margin`中，判断阈值点，从而执行preflush还是CHECKPOINT。
+
+```c
+static
+void
+log_checkpoint_margin(void)
+/*=======================*/
+{
+  	if (age > log->max_modified_age_sync) {
+
+		/* A flush is urgent: we have to do a synchronous preflush */
+		advance = age - log->max_modified_age_sync;
+	}
+  
+  ...
+    
+  if (checkpoint_age > log->max_checkpoint_age) {
+		/* A checkpoint is urgent: we do it synchronously */
+		checkpoint_sync = true;
+		do_checkpoint = true;
+	}
+  ...
+```
+
+### 其他参数
+
+- `append_on_checkpoint` ：5.7新增，checkpoint时需要额外记录的redo记录，需要在`mutex`下互斥访问。在做DDL时（例如增删列），会先将包含MLOG_FILE_RENAME2日志记录的buf挂到这个变量上。 在DDL完成后，再清理掉。主要是防止DDL期间crash产生的数据词典不一致。
+
+  ```c
+  /** Set extra data to be written to the redo log during checkpoint.
+  @param[in]	buf	data to be appended on checkpoint, or NULL
+  @return pointer to previous data to be appended on checkpoint */
+  mtr_buf_t*
+  log_append_on_checkpoint(
+  	mtr_buf_t*	buf)
+  {
+  	log_mutex_enter();
+  	mtr_buf_t*	old = log_sys->append_on_checkpoint;
+  	log_sys->append_on_checkpoint = buf;
+  	log_mutex_exit();
+  	return(old);
+  }
+  ```
+
+- `n_pending_checkpoint_writes`：大于0时，表示有CHECKPOINT正在进行。如果此时用户发起CHECKPOINT，那么该值+1`log_group_checkpoint`；结束后该值-1(`log_io_complete_checkpoint`)；
+
+- `checkpoint_buf_ptr/checkpoint_buf`：日志中CHECKPOINT信息块的缓冲区。
+
+- `checkpoint_lock`：checkpoint_buf写入的互斥lock
+
+bufferpool中的每个page中有一个oldest_modification和newest_modification；在函数`add_dirty_page_to_flush_list`中，将newest_modification设置为当前刷盘日志记录的end_lsn（buf_flush_note_modification：86）。
+
+- `log_flush_order_mutex`：InnoDB中多个bufferPool共享的flush_list上的锁；确保flush_list的顺序访问。
+
+  > 另外，buf_pool_t的flush_list_mutex是保证flush_list的互斥访问；而不是order。
+
+- `log_group_capacity`：表示当前日志文件的总容量，值为:(Redo log文件总大小 - redo 文件个数 * LOG_FILE_HDR_SIZE) * 0.9，LOG_FILE_HDR_SIZE 为 4*512 字节；超过该容量会重用之前的日志，如果日志对应的page没有刷盘，那么就会丢失数据。
+- `next_checkpoint_no`：每次CHECKPOINT后递增
+- `last_checkpoint_lsn/next_checkpoint_lsn`：最近的CHECKPOINT点与当前的CHECKPOINT点；完成之后，last<-next；
+
+# 总结
+
+基于以上的了解，在log_buffer中有两类偏移量：
+
+1. ulint为单位的：redo record可拷贝写入的buffer的位置（buf_free）；redo缓冲区将要向磁盘刷盘的位置（buf_next_to_write）。
+2. lsn为单位的：write_lsn、current_flush_lsn、flushed_lsn。
+
+在BufferPool中有若干阈值，在函数`log_checkpoint_margin`进行判断，从而决定要preflush还是CHECKPOINT。
+
+用户线程不管进行了什么变更，最终都是表现为若干个mtr；执行的mtr结束后，调用`mtr_commit()`将本地的日志copy到**logbuffer**中，同时将修改的脏页放到**flush_list**中；后续log_t根据一些阈值点，进行日志和数据的刷盘；

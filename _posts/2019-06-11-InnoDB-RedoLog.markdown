@@ -17,7 +17,7 @@ typora-root-url: ../../yummyliu.github.io
 
 ![image-20190613104232099](/image/redorecord.png)
 
-## REDO记录例子
+## REDO记录类型：mlog_id_t
 
 在枚举类型`mlog_id_t`中，共有60多个记录类型。由于每个记录的头部信息都是相同的，根据每个记录类型不同，对应了自己的记录结构的解析方式不同，如下列举了几个记录结构：
 
