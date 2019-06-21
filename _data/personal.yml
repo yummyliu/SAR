@@ -3,7 +3,7 @@
   position: "Database Engineer"
   #company: "Tantan"
   location: "Beijing, China"
-  email: "sdwhlym@qq.com"
+  email: "sdwhlym@gmail.com"
   book: "PostgreSQL指南：内幕探索"
   gravatar: "/image/about-me.jpg"
   bio: "C/C++ PostgreSQL/MySQL etc."
@@ -26,7 +26,7 @@
     #  logo: "fa-twitter"
     linkedin:
       url: "https://www.linkedin.com/in/阳明-刘-a0720ab7"
-      text: "/刘阳明"
+      text: "刘阳明"
       btnClass: "btn-linkedin"
       logo: "fa-linkedin"
     github:
@@ -34,16 +34,16 @@
       text: "yummyliu"
       btnClass: "btn-github"
       logo: "fa-github"
-    stackoverflow:
-      url: "http://stackoverflow.com/users/4116391/young"
-      text: "young"
+      #stackoverflow:
+      #  url: "http://stackoverflow.com/users/4116391/young"
+      #  text: "young"
+      #  btnClass: "btn-stackoverflow"
+      #  logo: "fa-stack-overflow"
+    weibo:
+      url: "http://weibo.com/yummmyliu"
+      text: "劉蒲湾"
       btnClass: "btn-stackoverflow"
-      logo: "fa-stack-overflow"
-    # soundcloud:
-    #   url: "http://soundcloud.com/yourid"
-    #   text: "/yourid"
-    #   btnClass: "btn-soundcloud"
-    #   logo: "fa-soundcloud"
+      logo: "fa-weibo"
 
 # Featured Tags
 featured-tags: true                     # whether or not using Feature-Tags
