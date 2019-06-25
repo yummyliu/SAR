@@ -126,6 +126,31 @@ log_free_check(void)
 
 ![image-20190619165315082](/image/log_free_check.png)
 
+### 例：insert涉及的redo记录的拷贝
+
+1. jj 
+2. MLOG_2BYTES
+3. MLOG_2BYTES
+4. MLOG_2BYTES
+5. **mtr_t::commit()**
+6. MLOG_UNDO_INSERT
+7. **mtr_t::commit()**
+8. MLOG_COMP_REC_INSERT
+9. **mtr_t::commit()**
+10. MLOG_FILE_NAME
+11. MLOG_2BYTES
+12. MLOG_FILE_NAME
+13. MLOG_1BYTE
+14. MLOG_4BYTES
+15. MLOG_4BYTES
+16. MLOG_4BYTES
+17. MLOG_FILE_NAME
+18. MLOG_WRITE_STRING
+19. **mtr_t::commit()**
+20. MLOG_2BYTES
+21. MLOG_4BYTES
+22. **mtr_t::commit()**
+
 ## 从logbuffer到logfile
 
 ### 日志刷盘时机

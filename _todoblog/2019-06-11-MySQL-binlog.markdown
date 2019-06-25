@@ -5,6 +5,7 @@ date: 2019-06-11 18:28
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
+  - MySQL
 typora-root-url: ../../yummyliu.github.io
 ---
 
@@ -160,6 +161,66 @@ SQL thread：读取relay log，按照event重做数据。
 + FLUSH LOGS
 + 当前relaylog大于配置项([`max_relay_log_size`](https://dev.mysql.com/doc/refman/5.7/en/replication-options-slave.html#sysvar_max_relay_log_size))。
 
+## GTID-based replication
+
+> [GTID-based replication](https://dev.mysql.com/doc/refman/5.7/en/replication-gtids.html)
+
+全局事务ID，每个事务由GTID标识，在master上跟踪事务状态并在slave上应用。gtid在整个复制集群中是唯一的，slave中如果重做了某个gtid标识的事务，那么后续该gtid标识的事务则不予理睬。
+
+在master上，客户端事务提交的时候会写入到binlog中。然后分配一个gtid；并且gtid的生成确保是单调的，并且是没有空隙的。如果事务没有写入到binlog中，那么就不会生成gtid（比如事务是只读的）。
+
+在slave端，系统表`mysql.gtid_executed`维护了已经应用过的gtid。如果某个gtid对应的binlog正在执行，那么此时如果执行相同gtid的binlog会被block。
+
+GTID具体就是由冒号连接的两个ID的组合：
+
+```ini
+GTID = source_id:transaction_id
+```
+
+source_id就是master的server_id（server_uuid上面配置中体现）。transaction_id是一个序列值，表示那些事务在master上commit成功了。比如，`3E11FA47-71CA-11E1-9E33-C80AA9429562:23`表示在uuid=3E11FA47-71CA-11E1-9E33-C80AA9429562的server上事务号23的事务提交成功了。
+
+> GTID set
+>
+> ```
+> 2174B383-5441-11E8-B90A-C80AA9429562:1-3:11:47-49, 24DA167-0C0C-11E8-8442-00059A3C7B00:1-19
+> ```
+>
+> 一组gtid可以表示为一个gtid set；如上例，具体语法如下。
+>
+> ```
+> gtid_set:
+>     uuid_set [, uuid_set] ...
+>     | ''
+> 
+> uuid_set:
+>     uuid:interval[:interval]...
+> 
+> uuid:
+>     hhhhhhhh-hhhh-hhhh-hhhh-hhhhhhhhhhhh
+> 
+> h:
+>     [0-9|A-F]
+> 
+> interval:
+>     n[-n]
+> 
+>     (n >= 1)
+> ```
+
+在系统表mysql.gtid_executed中，维护了gtid的状态；binlog中也有gtid的状态，如果崩溃的时候没有及时更新gtid_executed的数据，那么恢复的时候会从binlog中读取。
+
+### GTID的生命周期
+
+1. 当事务提交需要写binlog时，分配一个gtid；并将这个gtid事件写盘（Gtid_log_event），并且该gtid在事务日志之前。
+2. 当binlog要轮转或者server关闭时，server将之前的binlog的所有事务的gtid写入到gtid_executed中。
+3. 事务提交后，将gtid非原子性地更新在全局变量`@@GLOBAL.gtid_executed`中；在复制机制中，该变量表示了服务的当前状态。
+4. slave收到binlog并落盘为relaylog后，读取gtid然后设置全局变量`gtdi_next`；该变量表示下一个事务必须使用这个gtid（slave在session级别设置该变量）。
+5. slave确认该gtid当前没人正在使用，如果有确保只有一个线程在执行该gtid事务相关的日志；在系统变量：gtid_owned中标明了每个gtid和threadid的对应关系。
+6. 某线程获得gtid_next的gtid的所有权后，slave开始恢复对应事务；这里slave不会产生新的事务。
+7. 如果slave开启了binlog，事务提交时，会在之前写入Gtid_log_event的日志；如果binlog轮转，那么就在系统表gtid_executed中写入之前日志所有的gtid。
+8. 如果slave没有开启binlog，gtid会原子性地写入到gtid_executed表中；然后再事务日志中加一条插入系统表的操作。这时gtid_executed表在主从上都是完整的记录。（这里在5.7中，DML事务是原子的，DDL不是；那么在DDL事务中，可能GTID不一致）。
+9. TODO
+
 # BinLog代码模块
 
 binlog中按照事务的先后顺序组织，每个事务分为若干个event。binlog按照event写入相关的数据，slave按照event调用对应的函数回放数据。
@@ -229,3 +290,4 @@ event的内容按照如下约定写入：
   + 如果变长串是event内容的最后一个，如果没有length前缀；那么就可以通过event的长度得出。
 
 TODO：https://dev.mysql.com/doc/internals/en/event-header-fields.html
+
