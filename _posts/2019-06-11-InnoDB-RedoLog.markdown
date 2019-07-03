@@ -1,6 +1,6 @@
 ---
 layout: post
-title: InnoDB的RedoLog剖析
+title: InnoDB源码——RedoLog剖析
 date: 2019-06-11 10:51
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -116,7 +116,7 @@ mysql> show global variables like '%innodb_log_file%';
 数据变更可以变成若干个redo record，每个record都有一个`mlog_id_t`的类型。不同的数据库操作对应不同组合的Record。
 
 1. 数据页的变更必须通过mtr，在`mtr_commit()`中将本次mtr变更的所有record，写入redo日志；
-   
+  
    >  注意这里mtr_commit写入的是redo buffer。具体写入磁盘的时机为：
    >
    > 1. 事务提交

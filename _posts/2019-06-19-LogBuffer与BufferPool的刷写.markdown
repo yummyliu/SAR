@@ -1,6 +1,6 @@
 ---
 layout: post
-title: InnoDB的LogBuffer与BufferPool的刷写逻辑
+title: InnoDB源码——日志与数据刷写逻辑
 date: 2019-06-19 16:49
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -128,7 +128,7 @@ log_free_check(void)
 
 ### 例：insert涉及的redo记录的拷贝
 
-1. jj 
+1. MLOG_UNDO_HDR_REUSE 
 2. MLOG_2BYTES
 3. MLOG_2BYTES
 4. MLOG_2BYTES
@@ -150,6 +150,10 @@ log_free_check(void)
 20. MLOG_2BYTES
 21. MLOG_4BYTES
 22. **mtr_t::commit()**
+
+
+
+MLOG_INIT_FILE_PAGE2
 
 ## 从logbuffer到logfile
 

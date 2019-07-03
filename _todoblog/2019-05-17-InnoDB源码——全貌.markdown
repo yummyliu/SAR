@@ -73,3 +73,7 @@ bin/mysqladmin shutdown
 
 # Mutex与读写锁的实现
 
+# InnoDB的byte读写
+
+storage/innobase/include/mach0data.ic
+
