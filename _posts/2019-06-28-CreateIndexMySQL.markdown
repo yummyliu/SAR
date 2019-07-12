@@ -57,7 +57,12 @@ dictionary cache是全局共享对象的cache，比如：
 
 ![innodb files](/image/innodb-tablespace.png)
 
-在外存中，按照表空间（space）进行组织；
+在外存中，按照表空间（space）进行组织；当启动了`innodb_file_per_table`参数后，每个数据表对应一个文件（参看系统表：INFORMATION_SCHEMA.INNODB_SYS_DATAFILES）。但是全局共享的对象，需要放在共享的表空间space0（全局变量`：innodb_data_file_path，默认为ibdata1）中：
+
++ data dictionary（InnoDB表的元信息）
++ change buffer
++ double write buffer
++ undo log
 
 每个space有若干个file或者diskpartition；其中spaceid=0为系统表空间，其中有一些全局共享的结构：
 
@@ -65,7 +70,7 @@ dictionary cache是全局共享对象的cache，比如：
 + doublewrite buffer
 + 数据目录
 
-每个file分为若干个segment；其中有LeafNodeSegment、NonLeafNodeSegment、rollbacksegment。
+每个file分为若干个segment；其中有LeafNodeSegment、NonLeafNodeSegment、rollbacksegment，见[General Tablespace](https://dev.mysql.com/doc/refman/5.7/en/general-tablespaces.html)。
 
 每个segment中有若干个固定大小的page
 
@@ -175,7 +180,7 @@ dictionary cache是全局共享对象的cache，比如：
 
 ## 加载索引数据
 
-*ha_inplace_alter_table->row_merge_build_indexes*`；加载索引数据时，需要在mergefile上进行外部归并排序，因为要进行多次每个阶段的输出在一个临时文件tmpfile中；在排序之前先申请一个内存缓存区block（mergefilebuffer）；
+*ha_inplace_alter_table->row_merge_build_indexes*；加载索引数据时，需要在mergefile上进行外部归并排序，因为要进行多次每个阶段的输出在一个临时文件tmpfile中；在排序之前先申请一个内存缓存区block（mergefilebuffer）；
 
 1. 创建mergefile的内存缓冲区block，并初始化；
 
@@ -265,6 +270,12 @@ dictionary cache是全局共享对象的cache，比如：
 
    2. 判读数据可见性：如果online createindex，那么通过`row_vers_build_for_consistent_read`构建可重复读的readview；否则，只是通过`rec_get_deleted_flag`判断数据是否标记删除了。
 
+      因此，在MySQL中二级索引是简介的查询，需要[两次index lookup](https://stackoverflow.com/questions/56609196/innodb-secondary-index-includes-value-instead-of-pointer-to-pk-how-is-it-enough)。由于缓存的是值，因此文档中，不建议主键设置过大。
+
+      > [Clustered and Secondary Indexes](https://dev.mysql.com/doc/refman/5.7/en/innodb-index-types.html)
+      >
+      > If the primary key is long, the secondary indexes use more space, so it is advantageous to have a short primary key.
+
    3. 将index record转换为要插入row：`row_build_w_add_vcol`。
 
       > 相对应的有将row，转换为index record：`row_build_index_entry`
@@ -274,8 +285,13 @@ dictionary cache是全局共享对象的cache，比如：
    **写buffer**
 
    1. 遍历各个index
+
    2. 将tuple插入到sortbuffer中`row_merge_buf_add` ;
+
+      通过这个函数可以看出，二级索引中写的是（二级索引的列，主键的值），而不是主键的物理位置。
+
    3. buffer满了之后（95324）:
+
       1. 先排序`row_merge_buf_sort`；
       2. 然后将buf写到block中`row_merge_buf_write`；
       3. 将block写回磁盘中`row_merge_write`。
@@ -354,7 +370,11 @@ rowlog中的类型有两种，如上：
 + `ROW_OP_DELETE`最终对应着`btr_cur_optimistic_delete`
 + `ROW_OP_INSERT`最终对应着`btr_cur_optimistic_insert`
 
+# 崩溃恢复
 
+> https://dev.mysql.com/doc/refman/5.7/en/innodb-online-ddl-operations.html
+>
+> If the server exits while creating a secondary index, upon recovery, MySQL drops any partially created indexes. You must re-run the [`ALTER TABLE`](https://dev.mysql.com/doc/refman/5.6/en/alter-table.html) or [`CREATE INDEX`](https://dev.mysql.com/doc/refman/5.6/en/create-index.html) statement.
 
 
 
