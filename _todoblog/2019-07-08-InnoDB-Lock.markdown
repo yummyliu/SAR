@@ -10,9 +10,57 @@ typora-root-url: ../../yummyliu.github.io
 ---
 * TOC
 {:toc}
-# MySQL锁机制简述
+# InnoDB的LockSystem
 
 ## 显式事务锁
+
+描述一个锁从两个维度：粒度和力度。在InnoDB中，从粒度上分为表锁和行锁；在不同的粒度上，又根据力度的不同分为不同类型。但都是在一个结构中表示`lock_t`，根据`is_record_lock`（提取type_mode的标记为）来判断锁的粒度。
+
+```c
+	/** Determine if the lock object is a record lock.
+	@return true if record lock, false otherwise. */
+	bool is_record_lock() const
+	{
+		return(type() == LOCK_REC);
+	}
+	ulint type() const {
+		return(type_mode & LOCK_TYPE_MASK);
+	}
+```
+
+type_mode是一个无符号的32位整型，低1字节为lock_mode；低2字节为lock_type；再高的字节为行锁的类型标记，如下定义：
+
+```c
+/** Lock modes and types */
+/* Basic lock modes */
+enum lock_mode {
+	LOCK_IS = 0,	/* intention shared */
+	LOCK_IX,	/* intention exclusive */
+	LOCK_S,		/* shared */
+	LOCK_X,		/* exclusive */
+	LOCK_AUTO_INC,	/* locks the auto-inc counter of a table in an exclusive mode */
+	LOCK_NONE,	/* this is used elsewhere to note consistent read */
+	LOCK_NUM = LOCK_NONE, /* number of lock modes */
+	LOCK_NONE_UNSET = 255
+};
+/* @{ */
+#define LOCK_MODE_MASK	0xFUL	/*!< mask used to extract mode from the
+				type_mode field in a lock */
+/** Lock types */
+/* @{ */
+#define LOCK_TABLE	16	/*!< table lock */
+#define	LOCK_REC	32	/*!< record lock */
+#define LOCK_TYPE_MASK	0xF0UL	/*!< mask used to extract lock type from the
+				type_mode field in a lock */
+#define LOCK_ORDINARY	0	/*!< this flag denotes an ordinary
+				next-key lock in contrast to LOCK_GAP
+				or LOCK_REC_NOT_GAP */
+#define LOCK_GAP	512	
+#define LOCK_REC_NOT_GAP 1024	
+#define LOCK_INSERT_INTENTION 2048 
+#define LOCK_PREDICATE	8192	/*!< Predicate lock */
+#define LOCK_PRDT_PAGE	16384	/*!< Page lock */
+```
 
 ### 表锁
 
@@ -64,114 +112,29 @@ typora-root-url: ../../yummyliu.github.io
 
   当查询的索引具有唯一性时，Next-Key Lock降级为Record Lock。
 
-+ **Insert Intention Lock**：Insert语句的特殊的GapLock；插入数据时，需要请求插入间隙的GapLock；避免并发对同一个间隙的插入。
++ **Insert Intention Lock**：Insert语句的特殊的GapLock；gap锁存在的唯一目的是防止有其他事务进行插入，从而造成幻读。假如利用gap锁来代替插入意向锁，那么两个事务则不能同时对一个gap进行插入。因此为了更高的并发性所以使用插入意向gap锁；插入意向锁的使得insert同一个间隙的不同键值的查询之间不阻塞，提高并发；但是还是会阻塞update、delete操作。
 
-```c
-/* Precise modes */
-#define LOCK_ORDINARY	0	/*!< this flag denotes an ordinary
-				next-key lock in contrast to LOCK_GAP
-				or LOCK_REC_NOT_GAP */
-#define LOCK_GAP	512	/*!< when this bit is set, it means that the
-				lock holds only on the gap before the record;
-				for instance, an x-lock on the gap does not
-				give permission to modify the record on which
-				the bit is set; locks of this type are created
-				when records are removed from the index chain
-				of records */
-#define LOCK_REC_NOT_GAP 1024	/*!< this bit means that the lock is only on
-				the index record and does NOT block inserts
-				to the gap before the index record; this is
-				used in the case when we retrieve a record
-				with a unique key, and is also used in
-				locking plain SELECTs (not part of UPDATE
-				or DELETE) when the user has set the READ
-				COMMITTED isolation level */
-#define LOCK_INSERT_INTENTION 2048 /*!< this bit is set when we place a waiting
-				gap type record lock request in order to let
-				an insert of an index record to wait until
-				there are no conflicting locks by other
-				transactions on the gap; note that this flag
-				remains set when the waiting lock is granted,
-				or if the lock is inherited to a neighboring
-				record */
-#define LOCK_PREDICATE	8192	/*!< Predicate lock */
-#define LOCK_PRDT_PAGE	16384	/*!< Page lock */
-```
+  当多个事务在**同一区间**（gap）插入**位置不同**的多条数据时，事务之间**不需要互相等待**
 
 > `innodb_locks_unsafe_for_binlog`
 >
 > 该参数的作用和将隔离级别设置为 READ COMMITTED相同，是一个将要废弃的参数。
 
-### MySQL层的加锁相关操作
-
-`handle_query`，MySQL执行每个SQL语句分为五步：
-
-```
- - Preparation
- - Locking of tables
- - Optimization
- - Execution or explain
- - Cleanup
-```
-
-在第二步，调用`ha_innobase::external_lock`对表加表级别的锁；非显式LOCK时，在执行每条语句之前执行该函数，进行表级锁定；后续根据SQL类型调用不同的函数处理。
-
-> 在执行一次查询中，以为会走到row_sel，但是没有走到；而是走到了row_search_mvcc。那么row_search_mvcc和row_sel的区别是什么？
+> **监控视图**
 >
-> - row_search_mvcc：在InnoDB的向上接口中（index_read）调用，读取InnoDB中的数据；并且利用mvcc的机制，读取该事务应该看到的数据。
-> - row_sel_step：Query graph中的select步骤，[基本没啥用](https://www.slideshare.net/plinux/mysql01)。
+> ```sql
+> select * from information_schema.innodb_trx\G; -- 查看当前的事务信息
+> select * from information_schema.innodb_locks\G; --查看当前的锁信息
+> select * from information_schema.innodb_lock_waits\G; --- 查看当前的锁等待信息
+> --可以联表查，查找自己想要的结果。
+> select * from sys.innodb_lock_waits\G; -- 查看当前的锁等待信息
+> show engine innodb status\G;
+> ---还可以通过当前执行了执行了什么语句
+> select * from  performance_schema.events_statements_current\G; 
+> show full processlist;
+> ```
 
-**Select是如何执行的（ha_innobase::index_read）？**
-
-`execute_sqlcom_select`
-
-如果用户这里只讨论用户非显式指定表锁的查询过程。首先对于每个表，可能存在多个table handle实例。
-
-1. 调用external_lock加锁（底层是调用InnoDB的external_lock）；并设置其他参数，比如m_prebuilt->sql_stat_start和trx->n_mysql_tables_in_use。
-2. 如果m_prebuilt->sql_stat_start为true，在index_read中，将预先设置好m_prebuilt->template（其中应该是表数据结构的设置）。
-3. 调用row_search_for_mysql，如果m_prebuilt->sql_stat_start为true，那么创建一个该事务的readview。
-4. 执行SELECT，执行index_read；如果是join，可能多次执行。
-5. SELECT结束，释放external_lock中的锁；如果n_mysql_tables_in_use为0：
-   1. 当autocommit=0，执行commit
-   2. 释放sql语句占用的资源。
-
-在查询的时候，在mysql层将select/insert/update进行分发；对于select只有读操作，会在执行之前在表上加is锁；然后调用row_search_mvcc，这里分为6步（代码注释）：
-
-1. 释放AHI上的s-latch
-
-2. `row_sel_dequeue_cached_row_for_mysql`，从预读的cache中读取行
-
-3. 查找AHI；对于可能会外部存储的行（比如text类型），不能使用AHI
-
-   > we cannot use the adaptive hash index in a search in the case the row may be long and there may be externally stored fields
-   >
-   > !prebuilt->templ_contains_blob
-
-4. 打开或还原一个index cursor；根据是不是第一次执行（prebuilt->sql_stat_start），决定要不要创建一个readview（trx_assign_read_view(trx);），或者加意向锁（err = lock_table(0, index->table, prebuilt->select_lock_type == LOCK_S  ? LOCK_IS : LOCK_IX, thr);）。
-
-   然后，开始查询`btr_pcur_open_with_no_init->btr_cur_search_to_nth_level`，定位索引位置。
-
-5. 在索引位置处，找到匹配的元组。
-
-6. cursor移动到下一个元组
-
-这里的读操作是基于一个cursor，开始的时候会根据一致性锁定读还是非锁定读，决定创建一个readview还是加意向锁；row_search_mvcc通过上层的get_next调用；每次row_search_mvcc读取一行，然后将cursor保存起来，下次再restore读取。
-
-### 监控视图
-
-```sql
-select * from information_schema.innodb_trx\G; -- 查看当前的事务信息
-select * from information_schema.innodb_locks\G; --查看当前的锁信息
-select * from information_schema.innodb_lock_waits\G; --- 查看当前的锁等待信息
---可以联表查，查找自己想要的结果。
-select * from sys.innodb_lock_waits\G; -- 查看当前的锁等待信息
-show engine innodb status\G;
----还可以通过当前执行了执行了什么语句
-select * from  performance_schema.events_statements_current\G; 
-show full processlist;
-```
-
-> **注意**没有幻读有幻写
+> **注意** 在MySQL的默认隔离级别RR下，同样比标准SQL更加严格，即，没有幻读；但是[没有幻读有幻写](https://blog.pythian.com/understanding-mysql-isolation-levels-repeatable-read/)
 >
 > + 其他事务更新了数据
 >
@@ -246,33 +209,199 @@ show full processlist;
 
 ## 隐式内存锁
 
-基于系统提供的原子操作，实现的内存并发访问机制：
+```c
+/* The hash table structure */
+struct hash_table_t {
+	enum hash_table_sync_t	type;	/*<! type of hash_table. */
+#if defined UNIV_AHI_DEBUG || defined UNIV_DEBUG
+# ifndef UNIV_HOTBACKUP
+	ibool			adaptive;/* TRUE if this is the hash
+					table of the adaptive hash
+					index */
+# endif /* !UNIV_HOTBACKUP */
+#endif /* UNIV_AHI_DEBUG || UNIV_DEBUG */
+	ulint			n_cells;/* number of cells in the hash table */
+	hash_cell_t*		array;	/*!< pointer to cell array */
+#ifndef UNIV_HOTBACKUP
+	ulint			n_sync_obj;/* if sync_objs != NULL, then
+					the number of either the number
+					of mutexes or the number of
+					rw_locks depending on the type.
+					Must be a power of 2 */
+	union {
+		ib_mutex_t*	mutexes;/* NULL, or an array of mutexes
+					used to protect segments of the
+					hash table */
+		rw_lock_t*	rw_locks;/* NULL, or an array of rw_lcoks
+					used to protect segments of the
+					hash table */
+	} sync_obj;
 
-+ **mutex**，内存结构的串行访问，主要用在一些共享的数据结构上。
-  + Dictionary mutex（Dictionary header)
-  + Transaction undo mutex，Transaction system header的并发访问，在修改indexpage前，在Transaction system的header中写入一个undo log entry。
-  + Rollback segment mutex，Rollback segment header的并发访问，当需要在回滚段中添加一个新的undopage时，需要申请这个mutex。
-  + lock_sys_wait_mutex：lock timeout data
-  + lock_sys_mutex：lock_sys_t
-  + trx_sys_mutex：trx_sys_t
-  + Thread mutex：后台线程调度的mutex
-  + query_thr_mutex：保护查询线程的更改
-  + trx_mutex：trx_t
-  + Search system mutex
-  + Buffer pool mutex
-  + Log mutex
-  + Memory pool mutex 
+	mem_heap_t**		heaps;	/*!< if this is non-NULL, hash
+					chain nodes for external chaining
+					can be allocated from these memory
+					heaps; there are then n_mutexes
+					many of these heaps */
+#endif /* !UNIV_HOTBACKUP */
+	mem_heap_t*		heap;
+#ifdef UNIV_DEBUG
+	ulint			magic_n;
+# define HASH_TABLE_MAGIC_N	76561114
+#endif /* UNIV_DEBUG */
+};
+```
 
-+ **rw_lock（latch）**，读写操作的并发访问，在MySQL中主要就是针对Btree的并发访问，其中有两种锁粒度：index和block。而对于树结构的访问，如果只是读操作，那么，non-leaf节点只是用来查找leafnode，当找到之后，分支的lock可以释放了；而如果是写操作，只有需要节点分裂或者合并，那么整条路径都需要加xlock（当insert时，判断leafnode是否非满；当delete时，判断leafnode中记录数是否大于一半）。
-  + Secondary index tree latch ，Secondary index non-leaf 和 leaf的读写
-  + Clustered index tree latch，Clustered index non-leaf 和 leaf的读写
-  + Purge system latch，Undo log pages的读写，
-  + Filespace management latch，file page的读写
-  + 等等
+内存锁的对象是buf_page中的page，即`buf_pool->page_hash`；page_hash是如上结果的hash表；其中的sync_obj就是该hash表中的元素的锁，有两种：mutex和rw_lock。
 
-### InnoDB的rw_lock
+### mutex
 
-rw_lock的相关操作在`sync/sync0rw.cc`中，共有四种类型，（在5.7新加了一个[SX](https://dev.mysql.com/worklog/task/?id=6363)类型），用在btree和mtr中。
+上述的事务锁是和Transaction相关的并发控制；而在InnoDB的内存中，还有基于系统提供的原子操作，和用户线程相关的存并发访问机制（latch），分为两种：
+
+1. **mutex（sync0sync.h）**，内存结构的串行访问，主要用在一些共享的数据结构上。
+
++ Dictionary mutex（Dictionary header)
++ Transaction undo mutex，Transaction system header的并发访问，在修改indexpage前，在Transaction system的header中写入一个undo log entry。
++ Rollback segment mutex，Rollback segment header的并发访问，当需要在回滚段中添加一个新的undopage时，需要申请这个mutex。
++ lock_sys_wait_mutex：lock timeout data
++ lock_sys_mutex：lock_sys_t
++ trx_sys_mutex：trx_sys_t
++ Thread mutex：后台线程调度的mutex
++ query_thr_mutex：保护查询线程的更改
++ trx_mutex：trx_t
++ Search system mutex
++ Buffer pool mutex
++ Log mutex
++ Memory pool mutex 
+
+2. **rw_lock（sync0rw.h）**，读写操作的并发访问，在MySQL中主要就是针对Btree的并发访问，其中有两种锁粒度：index和block。而对于树结构的访问，如果只是读操作，那么，non-leaf节点只是用来查找leafnode，当找到之后，分支的lock可以释放了；而如果是写操作，只有需要节点分裂或者合并，那么整条路径都需要加xlock（当insert时，判断leafnode是否非满；当delete时，判断leafnode中记录数是否大于一半）。
+
++ Secondary index tree latch ，Secondary index non-leaf 和 leaf的读写
++ Clustered index tree latch，Clustered index non-leaf 和 leaf的读写
++ Purge system latch，Undo log pages的读写，
++ Filespace management latch，file page的读写
++ 等等
+
+### rw_lock
+
+rw_lock基于如下结构实现的自旋锁。多个readthread可以持有一个s模式的rw_lock。但是，x模式的rw_lock只能被一个writethread持有；为了避免writethread被多个readthread饿死，writethread可以通过排队的方式阻塞新的readthread，每排队一个writethread将lockword减X_LOCK_DECR（新的SX锁等待时，减X_LOCK_HALF_DECR）。在wl6363中，标明了加了SX锁后lock_word不同取值的意思；其中lock_word=0表示加了xlock；lock_word= 0x20000000没有加锁；
+
+```c
+struct rw_lock_t
+#ifdef UNIV_DEBUG
+	: public latch_t
+#endif /* UNIV_DEBUG */
+{
+	/** Holds the state of the lock. */
+	volatile lint	lock_word;
+
+	/** 1: there are waiters */
+	volatile ulint	waiters;
+
+	/** Default value FALSE which means the lock is non-recursive.
+	The value is typically set to TRUE making normal rw_locks recursive.
+	In case of asynchronous IO, when a non-zero value of 'pass' is
+	passed then we keep the lock non-recursive.
+
+	This flag also tells us about the state of writer_thread field.
+	If this flag is set then writer_thread MUST contain the thread
+	id of the current x-holder or wait-x thread.  This flag must be
+	reset in x_unlock functions before incrementing the lock_word */
+	volatile bool	recursive;
+
+	/** number of granted SX locks. */
+	volatile ulint	sx_recursive;
+
+	/** This is TRUE if the writer field is RW_LOCK_X_WAIT; this field
+	is located far from the memory update hotspot fields which are at
+	the start of this struct, thus we can peek this field without
+	causing much memory bus traffic */
+	bool		writer_is_wait_ex;
+
+	/** Thread id of writer thread. Is only guaranteed to have sane
+	and non-stale value iff recursive flag is set. */
+	volatile os_thread_id_t	writer_thread;
+
+	/** Used by sync0arr.cc for thread queueing */
+	os_event_t	event;
+
+	/** Event for next-writer to wait on. A thread must decrement
+	lock_word before waiting. */
+	os_event_t	wait_ex_event;
+
+	/** File name where lock created */
+	const char*	cfile_name;
+
+	/** last s-lock file/line is not guaranteed to be correct */
+	const char*	last_s_file_name;
+
+	/** File name where last x-locked */
+	const char*	last_x_file_name;
+
+	/** Line where created */
+	unsigned	cline:13;
+
+	/** If 1 then the rw-lock is a block lock */
+	unsigned	is_block_lock:1;
+
+	/** Line number where last time s-locked */
+	unsigned	last_s_line:14;
+
+	/** Line number where last time x-locked */
+	unsigned	last_x_line:14;
+
+	/** Count of os_waits. May not be accurate */
+	uint32_t	count_os_wait;
+
+	/** All allocated rw locks are put into a list */
+	UT_LIST_NODE_T(rw_lock_t) list;
+
+#ifdef UNIV_PFS_RWLOCK
+	/** The instrumentation hook */
+	struct PSI_rwlock*	pfs_psi;
+#endif /* UNIV_PFS_RWLOCK */
+
+#ifndef INNODB_RW_LOCKS_USE_ATOMICS
+	/** The mutex protecting rw_lock_t */
+	mutable ib_mutex_t mutex;
+#endif /* INNODB_RW_LOCKS_USE_ATOMICS */
+
+#ifdef UNIV_DEBUG
+/** Value of rw_lock_t::magic_n */
+# define RW_LOCK_MAGIC_N	22643
+
+	/** Constructor */
+	rw_lock_t()
+	{
+		magic_n = RW_LOCK_MAGIC_N;
+	}
+
+	/** Destructor */
+	virtual ~rw_lock_t()
+	{
+		ut_ad(magic_n == RW_LOCK_MAGIC_N);
+		magic_n = 0;
+	}
+
+	virtual std::string to_string() const;
+	virtual std::string locked_from() const;
+
+	/** For checking memory corruption. */
+	ulint		magic_n;
+
+	/** In the debug version: pointer to the debug info list of the lock */
+	UT_LIST_BASE_NODE_T(rw_lock_debug_t) debug_list;
+
+	/** Level in the global latching order. */
+	latch_level_t	level;
+
+#endif /* UNIV_DEBUG */
+
+}
+```
+
+
+
+在5.7中，rw_lock共有四种类型，（在5.7新加了一个[SX](https://dev.mysql.com/worklog/task/?id=6363)类型）。
 
 ```c
 enum rw_lock_type_t {
@@ -290,12 +419,11 @@ enum rw_lock_type_t {
  */
 ```
 
-通过新加的和这个SX rwlock，进一步缩小的X的范围；即，当修改数据页时会导致树结构发生变化时，只将可能发生变化的branch page加X，而在整个树上加SX即可；这样其他分支的读操作就不会受到影响。
+这个新加的SX锁，从功能上可以由一个S锁加一个X锁代替。但是这样需要额外的原子操作，因此将两个整个为一个SX锁。当持有SX锁时，申请X锁需要'x-lock;sx-unlock;'。当持有X锁时，X锁可也降级为SX锁，而不需要'sx-lock；x-unlock'；。
 
-在对Btree操作时，针对如下Btree的不同操作，对Btree的Index(内存dict_cache中的dict_index_t结构)或者block加不同模式的rw_lock。
+在对Btree操作时，针对如下Btree的不同操作，对Btree的Index(内存dict_cache中的dict_index_t结构)或者Page(buf_pool->page)加不同模式的rw_lock。Btree有如下的基本操作模式，作为btr_cur_search_to_nth_level的参数latch_mode（无符号32位整型）的低字节；而高字节放一些标记位。
 
 ```c
-
 /** Latching modes for btr_cur_search_to_nth_level(). */
 enum btr_latch_mode {
 	/** Search a record on a leaf page and S-latch it. */
@@ -319,20 +447,20 @@ enum btr_latch_mode {
 };
 ```
 
-#### 加锁入口
+# rw_lock与读写操作
 
-入口是`btr_cur_search_to_nth_level`，因为不管查询还是修改都是先定位具体的page，进行相应的加锁操作；然后再进行读取或者变更。
+这里只讨论Btree的操作，InnoDB的Btree的任何读写操作，首先需要定位Btree的位置（`btr_cur_search_to_nth_level`），返回一个目标leafpage的cursor；基于该cursor，开始的时候会根据一致性锁定读还是非锁定读，决定创建一个readview还是加意向锁；MySQL层通过get_next不断调用`row_search_mvcc`；每次`row_search_mvcc`读取一行，然后将cursor保存起来，下次再restore读取。
 
-该函数参数`latch_mode`，低位是`btr_latch_mode`枚举，高位是若干不同意义的宏（include/btr0btr.h），宏根据insert/delete/delete_mark分为互斥的三类；通过latch_mode判断加锁的**粒度**和**力度**。
+## 加锁入口
 
-如下是该函数的加锁逻辑：
+入口是`btr_cur_search_to_nth_level`，该函数参数`latch_mode`，低位是`btr_latch_mode`枚举，高位是若干不同意义的宏（include/btr0btr.h），宏根据insert/delete/delete_mark分为互斥的三类。如下是该函数的大体逻辑：
 
 1. 函数一开始，识别高位的标记得到如下信息后，将高位信息抹除。
-   + btr_op：决定ibuf的操作（btr0cur.c:1117）
+   + btr_op：ibuf的操作，需要buf的操作（btr0cur.c:1117）
    
      ```c
      /** Buffered B-tree operation types, introduced as part of delete buffering. */
-  enum btr_op_t {
+    enum btr_op_t {
      	BTR_NO_OP = 0,			/*!< Not buffered */
      	BTR_INSERT_OP,			/*!< Insert, do not ignore UNIQUE */
      	BTR_INSERT_IGNORE_UNIQUE_OP,	/*!< Insert, ignoring UNIQUE */
@@ -358,13 +486,11 @@ enum btr_latch_mode {
    
 2. `btr_search_guess_on_hash`，首先尝试基于AHI查询，成功就返回。
 
-3. 在第一步中，将高位的标记信息已经抹除；这里（btr0cur.cc:959）基于latch_mode和第一步解析处理的信息，决定`upper_rw_latch`的力度；
-
-   这里测试时是简单查询，因此给index加s。
+3. 在第一步中，将高位的标记信息已经抹除；这里（btr0cur.cc:959）基于latch_mode和第一步解析处理的信息，对index加rw_lock:
 
    `mtr_s_lock(dict_index_get_lock(index), mtr);`
 
-   除了upper_rw_latch外，还有`root_leaf_rw_latch`
+   如果对index加X，那么`upper_rw_latch`就是RW_X_LATCH，如果对index加S，那么`upper_rw_latch`就是RW_S_LATCH；
 
 4. 根据参数`mode`定义的查询模式 ，决定非叶子节点的查询模式（1043）。
 
@@ -394,34 +520,124 @@ enum btr_latch_mode {
    };
    ```
 
-5. (search_loop)递归查找，直到到达指定层
+5. (search_loop)递归查找，直到到达指定level（大部分情况是找到叶子节点，即，level=0）
 
-   1. 确定rw_latch的模型
+   1. 确定rw_latch的模型；非特殊情况，第三步的`upper_rw_latch`就是这里的rw_latch类型。
 
-   2.  插入一级索引（可使用AHI）
+   2. `buf_page_get_gen`按照rw_latch类型读取page到buf_pool中，并加锁。
 
-   3. 插入二级索引（可能使用ibuf）
+      ```c
+      	switch (rw_latch) {
+      			case RW_SX_LATCH:
+      		rw_lock_sx_lock_inline(&fix_block->lock, 0, file, line);\
+      ```
 
-      1. buf_page_get_gen读取具体的page；
+   3. 1265，第一次取出的root节点；通过root节点的得到Btree的height；
 
-         如果block=null，那么就要用ibuf
+   4. 1440，根据取出的page；根据目标tuple，采用二分法，在page中定位page_cursor；
 
-      2. 判断是否锁定left sibling
+      ```c
+      	/* Perform binary search until the lower and upper limit directory
+      	slots come to the distance 1 of each other */
+      
+      	while (up - low > 1) {
+      		mid = (low + up) / 2;
+      
+      		cmp = cmp_dtuple_rec_with_match(
+      			tuple, mid_rec, offsets, &cur_matched_fields);
+      	}
+      ```
 
-      3. 取出page（`page = buf_block_get_frame(block);`）
+   5. 1487，不是最终的level；height—;
+
+   6. 1780，迭代到该节点的子节点；n_blocks++；在查找过程中维护了一个路径block数组。
+
+   7. 继续迭代search_loop，直到height==0（1306），这时根据latch_mode进行遍历过程的收尾；如果不需要调整树结构，那么将遍历过的分支都释放掉，同时也释放掉index上的锁。
 
 6. (1862)找到后设置cursor的low_match和up_match等参数
+
 7. 函数退出，因为调用`btr_cur_search_to_nth_level`的调用者可能已经在外面加锁了，由参数has_search_latch判断，该参数只能为0或者`RW_S_LATCH`；如果设置了该参数，那么退出是会对index加s锁 `rw_lock_s_lock(btr_get_search_latch(index))`。
 
 ————————————————————————————————————
 
-#### SELECT的rwlock
+加锁的对象是针对buffer pool中的page，首先通过hash找到buffer pool中的page；然后对该内存的page对象加锁
+
+```c
+	hash_lock = buf_page_hash_lock_get(buf_pool, page_id);
+loop:
+	block = guess;
+
+	rw_lock_s_lock(hash_lock);
+```
 
 
 
-#### INSERT的rwlock
+## SELECT的rwlock
 
-#### 总结
+
+
+## INSERT的rwlock
+
+以悲观Insert为例
+
+1. row_ins_clust_index_entry：3322；**BTR_MODIFY_TREE**
+
+   ```c
+   	err = row_ins_clust_index_entry_low(
+   		flags, BTR_MODIFY_TREE, index, n_uniq, entry,
+   		n_ext, thr, dup_chk_only);
+   ```
+
+2. btr_cur_search_to_nth_level：976；给索引加SX锁
+
+   ```c
+   			mtr_sx_lock(dict_index_get_lock(index), mtr);
+   ```
+
+3. 在查找的过程中，不需要加锁（rw_latch=RW_NO_LATCH）；在1071行判断时，不满足任何条件，跳出。
+
+4. 最终将找到的leafpage加X。
+
+   ```c
+   	if (height == 0) {
+   		if (rw_latch == RW_NO_LATCH) {
+   			latch_leaves = btr_cur_latch_leaves(
+   				block, page_id, page_size, latch_mode,
+   				cursor, mtr);
+   		}
+   ```
+   
+5. 执行btr_cur_pessimistic_insert的时候index->lock->lock_word = 0x10000000了；即已经在上述步骤中加了SXlock。这时，该index不能被其他线程修改，但是可以读。然后再pessimistic insert中，通过`btr_page_split_and_insert`修改定位的cursor的page；
+
+   修改的时候需要在上层添加一个node_ptr(`btr_insert_on_non_leaf_level`)；这里接着调用btr_cur_search_to_nth_level（这里的latch_mode就是BTR_CONT_MODIFY_TREE，如下），然后乐观或者悲观的插入。
+
+   ```c
+   			btr_cur_search_to_nth_level(
+   				index, level, tuple, PAGE_CUR_LE,
+   				BTR_CONT_MODIFY_TREE,
+   				&cursor, 0, file, line, mtr);
+   ```
+
+   最终找到的时候，对找打的block加X锁；
+
+   ```c
+   			if (latch_mode == BTR_CONT_MODIFY_TREE) {
+   				child_block = btr_block_get(
+   					page_id, page_size, RW_X_LATCH,
+   					index, mtr);
+   ```
+
+因此，总结步骤如下：
+
+1. 在插入的时候首先通过btr_cur_search_to_nth_level在整个index上加SX锁，然后进行定位，并对找到的page加适合的锁；
+2. 调用btr_cur_pessimistic_insert，进行分裂
+3. 分裂的时候如果需要继续分裂，还是通过btr_cur_search_to_nth_level定位并加锁后，重复操作。
+
+
+
+## DELETE的rw_lock
+
+# 总结
 
 查询扫描前，在索引树上加`btr_search_s_lock`；找到之后释放
 

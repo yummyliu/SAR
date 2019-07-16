@@ -316,6 +316,17 @@ mtr同之前
 
 btr_attach_half_pages
 
+在btr_attach_half_pages中，调用btr_insert_on_non_leaf_level向non-leaf page中插入一个node_ptr；还是和插入叶子节点类似的逻辑，先btr_cur_search_to_nth_level，然后btr_cur_optimistic_insert；如果乐观的不行，然后悲观的插入。
+
+```c
+			btr_cur_search_to_nth_level(
+				index, level, tuple, PAGE_CUR_LE,
+				BTR_CONT_MODIFY_TREE,
+				&cursor, 0, file, line, mtr);
+```
+
+
+
 无mtr
 
 #### 转移记录
@@ -342,7 +353,7 @@ MLOG_COMP_REC_INSERT
 
 MLOG_2BYTES
 
-#### 如果插入失败，重新组织page结构；或者继续分裂
+#### 如果插入失败，重新组织page结构；
 
 n_iterations++
 

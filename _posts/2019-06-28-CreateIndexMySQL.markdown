@@ -40,6 +40,8 @@ CREATE [UNIQUE | FULLTEXT | SPATIAL] INDEX index_name
 
 ## 整体数据组织
 
+![img](/image/InnoDB数据组织.png)
+
 创建索引涉及了InnoDB中的内存和外存的数据组织，比如dictionary cache，block/page/frame等分别是什么意思：
 
 ![image-20190701113428176](/image/image-20190701113428176.png)

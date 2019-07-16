@@ -17,7 +17,7 @@ typora-root-url: ../../yummyliu.github.io
 
 **图1. 数据库的主要模块（图来自论文Architecture of db）**
 
-![adb](/image/arch_db.jpeg)
+![adb](/image/arch-db.png)
 
 ## 1. 有效的存储
 
