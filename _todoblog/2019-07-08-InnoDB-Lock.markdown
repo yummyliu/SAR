@@ -447,13 +447,13 @@ enum btr_latch_mode {
 };
 ```
 
-# rw_lock与读写操作
+# Btree的rw_lock与读写操作
 
 这里只讨论Btree的操作，InnoDB的Btree的任何读写操作，首先需要定位Btree的位置（`btr_cur_search_to_nth_level`），返回一个目标leafpage的cursor；基于该cursor，开始的时候会根据一致性锁定读还是非锁定读，决定创建一个readview还是加意向锁；MySQL层通过get_next不断调用`row_search_mvcc`；每次`row_search_mvcc`读取一行，然后将cursor保存起来，下次再restore读取。
 
 ## 加锁入口
 
-入口是`btr_cur_search_to_nth_level`，该函数参数`latch_mode`，低位是`btr_latch_mode`枚举，高位是若干不同意义的宏（include/btr0btr.h），宏根据insert/delete/delete_mark分为互斥的三类。如下是该函数的大体逻辑：
+入口是`btr_cur_search_to_nth_level`，该函数参数`latch_mode`，低位是`btr_latch_mode`枚举，高位是若干不同意义的宏（include/btr0btr.h），宏根据insert/delete/delete_mark分为互斥的三类，如下是该函数的大体逻辑：
 
 1. 函数一开始，识别高位的标记得到如下信息后，将高位信息抹除。
    + btr_op：ibuf的操作，需要buf的操作（btr0cur.c:1117）
@@ -486,7 +486,7 @@ enum btr_latch_mode {
    
 2. `btr_search_guess_on_hash`，首先尝试基于AHI查询，成功就返回。
 
-3. 在第一步中，将高位的标记信息已经抹除；这里（btr0cur.cc:959）基于latch_mode和第一步解析处理的信息，对index加rw_lock:
+3. 在第一步中，将高位的标记信息已经抹除；这里（btr0cur.cc:959）基于latch_mode和第一步解析处理的信息，对index加rw_lock，如下:
 
    `mtr_s_lock(dict_index_get_lock(index), mtr);`
 
@@ -574,7 +574,7 @@ loop:
 
 ## SELECT的rwlock
 
-
+Select就是S锁。
 
 ## INSERT的rwlock
 
@@ -635,7 +635,108 @@ loop:
 
 
 
-## DELETE的rw_lock
+## UPDATE的rwlock
+
+更新行的具体逻辑的入口函数是`row_upd_clust_step`。同样是分为乐观更新和悲观更新。在row_upd_clust_step之前，先调用`btr_cur_search_to_nth_level`定位了要更新的cursor位置；这里在执行如下更新代码之前，首先恢复cursor`	success = btr_pcur_restore_position(mode, pcur, &mtr);`，在恢复cursor时给对应的page加X锁`btr_cur_optimistic_latch_leaves`；加锁位置在buf0buf.cc:4720。
+
+```c++
+	if (node->cmpl_info & UPD_NODE_NO_SIZE_CHANGE) {
+		err = btr_cur_update_in_place(
+			flags | BTR_NO_LOCKING_FLAG, btr_cur,
+			offsets, node->update,
+			node->cmpl_info, thr, thr_get_trx(thr)->id, mtr);
+	} else {
+		err = btr_cur_optimistic_update(
+			flags | BTR_NO_LOCKING_FLAG, btr_cur,
+			&offsets, offsets_heap, node->update,
+			node->cmpl_info, thr, thr_get_trx(thr)->id, mtr);
+	}
+
+	if (err == DB_SUCCESS) {
+		goto success;
+	}
+```
+
+在update的时候，如果更新的列是有序的，那么需要标记删除+插入，见如下代码(`row_upd_clust_rec`)，否则就直接执行。
+
+更新的时候，如果新元组的大小和原来相同，那么就写完undo日志`trx_undo_report_row_operation`后，直接原地更新： `btr_cur_update_in_place->row_upd_rec_in_place`。
+
+```c++
+	if (row_upd_changes_ord_field_binary(index, node->update, thr,
+					     node->row, node->ext)) {
+
+		/* Update causes an ordering field (ordering fields within
+		the B-tree) of the clustered index record to change: perform
+		the update by delete marking and inserting.
+
+		TODO! What to do to the 'Halloween problem', where an update
+		moves the record forward in index so that it is again
+		updated when the cursor arrives there? Solution: the
+		read operation must check the undo record undo number when
+		choosing records to update. MySQL solves now the problem
+		externally! */
+
+		err = row_upd_clust_rec_by_insert(
+			flags, node, index, thr, referenced, &mtr);
+
+		if (err != DB_SUCCESS) {
+
+			goto exit_func;
+		}
+
+		node->state = UPD_NODE_UPDATE_ALL_SEC;
+	} else {
+		err = row_upd_clust_rec(
+			flags, node, index, offsets, &heap, thr, &mtr);
+
+		if (err != DB_SUCCESS) {
+
+			goto exit_func;
+		}
+
+		node->state = UPD_NODE_UPDATE_SOME_SEC;
+	}
+```
+
+## DELETE的rwlock
+
+在InnoDB中，上层的Delete和Update最终都是调用的`row_update_for_mysql(((byte*) record, m_prebuilt);)`，只不过是参数内容不同`m_prebuilt->upd_node->is_delete = TRUE;`。
+
+在InnoDB中发起delete，只是在要删除的元组上标记删除，相当于是一次更新操作；
+
+最后发起删除的是purge线程；
+
+Purge线程类似PostgreSQL的Vacuum，会清理update/delete中标记删除的数据。产生标记删除的事务放在一个history_list中，由参数`innodb_max_purge_lag`控制大小。
+
+Purge线程在发起删除的时候，不管是清理一级索引还是二级索引。都是先尝试乐观删除
+
++ 一级索引：`row_purge_remove_clust_if_poss_low(BTR_MODIFY_LEAF)->btr_cur_optimistic_delete`
++ 二级索引：`row_purge_remove_sec_if_poss_leaf`
+
+然后再悲观删除
+
++ 一级索引：`row_purge_remove_clust_if_poss_low(BTR_MODIFY_TREE)->btr_cur_pessimistic_delete`
++ 二级索引：`row_purge_remove_sec_if_poss_tree`
+
+关于Delete过程的锁，同样是在调用`btr_cur_optimistic_delete`函数之前，调用`btr_pcur_restore_position_func`读取cursor时，对page进行加X锁`btr_cur_optimistic_latch_leaves`。而在整个索引上加SX。
+
+在删除过程中，对Btree的操作有两种：btr_lift_page_up、btr_compress。
+
++ btr_compress：如果达到merge_threshold的话，将该block和相邻的block合并；
+
++ btr_lift_page_up：如果没有左右相邻的page，如下判断，那么将该叶子节点的记录提升到father节点中。
+
+```c
+	if (left_page_no == FIL_NULL && right_page_no == FIL_NULL) {
+		/* The page is the only one on the level, lift the records
+		to the father */
+
+		merge_block = btr_lift_page_up(index, block, mtr);
+		goto func_exit;
+	}
+```
+
+
 
 # 总结
 

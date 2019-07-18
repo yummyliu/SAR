@@ -96,6 +96,24 @@ dictionary cache是全局共享对象的cache，比如：
 
 版本>=5.6.7，加入了Online Create Index的特性，创建二级索引的时候可读可写（还是会短暂block一下，但是已经影响很小了）；对于创建索引过程中对表进行的修改，放在RowLog（不是redolog）中；
 
+————————————————————————————————————
+
+InnoDB Instrinsic Tables：InnoDB引擎内部的表，没有undo和redo，用户不可创建，只供引擎内部使用。
+
++ Index Page的物理结构
+
+![image-20190718113614074](/image/INDEX_Page_Overview.png)
+
++ Index Page的逻辑结构
+
+  ![image-20190530163445011](/image/innodb-page-directory.png)
+
+> dict_index_t->n_uniq：在dict_index_t->n_fields中，从前向后，足够用来判断键唯一的列数。
+>
+> **n_owned**
+>
+> 在InnoDB中，表是按照B+Tree的方式存储。每个页中，都有一个PageDirectory(如下图)。其中保存了该页内的record的偏移量。由于不是每个record在PageDirectory中都有一个slot（这称为sparse slots），因此每个record中就有了一个n_owned变量，保存了该recored所own的record数，类似于前向元组数。
+
 # 创建过程
 
 入口函数是`mysql_inplace_alter_table`。分为以下几步：
