@@ -52,12 +52,6 @@ enum lock_mode {
 #define	LOCK_REC	32	/*!< record lock */
 #define LOCK_TYPE_MASK	0xF0UL	/*!< mask used to extract lock type from the
 				type_mode field in a lock */
-#define LOCK_ORDINARY	0	/*!< this flag denotes an ordinary
-				next-key lock in contrast to LOCK_GAP
-				or LOCK_REC_NOT_GAP */
-#define LOCK_GAP	512	
-#define LOCK_REC_NOT_GAP 1024	
-#define LOCK_INSERT_INTENTION 2048 
 #define LOCK_PREDICATE	8192	/*!< Predicate lock */
 #define LOCK_PRDT_PAGE	16384	/*!< Page lock */
 ```
@@ -98,6 +92,8 @@ enum lock_mode {
 
 另外，还有一种特殊的表锁：Auto-Inc Lock，当有AUTO_INCREMENT列时，插入数据时会有这个锁，由参数**innodb_autoinc_lock_mode**控制自增长的控制算法，该锁持有到语句结束，而不是事务结束。由于并发插入的存在，自增长的值是不连续的；那么，基于statement的主从复制可能出现问题；因此，启用auto_increment后，需要是有row模式的主从复制。
 
+> 这里讲的都是InnoDB中的锁，在MySQL层还有一个MDL，需要注意的是，MDL锁并不是对表加锁，而是在加表锁前的一个预检查，如果能拿到MDL锁，下一步加相应的表锁。
+
 ### 行锁
 
 ![image-20190712104111800](/image/InnoDB-lock.png)
@@ -114,11 +110,36 @@ enum lock_mode {
 
 + **Insert Intention Lock**：Insert语句的特殊的GapLock；gap锁存在的唯一目的是防止有其他事务进行插入，从而造成幻读。假如利用gap锁来代替插入意向锁，那么两个事务则不能同时对一个gap进行插入。因此为了更高的并发性所以使用插入意向gap锁；插入意向锁的使得insert同一个间隙的不同键值的查询之间不阻塞，提高并发；但是还是会阻塞update、delete操作。
 
-  当多个事务在**同一区间**（gap）插入**位置不同**的多条数据时，事务之间**不需要互相等待**
+  当多个事务在**同一区间**（gap）插入**位置不同**的多条数据时，事务之间**不需要互相等待**。
 
 > `innodb_locks_unsafe_for_binlog`
 >
 > 该参数的作用和将隔离级别设置为 READ COMMITTED相同，是一个将要废弃的参数。
+
+
+
+行锁通过`RecLock`类型定义，其中成员变量m_rec_id（RecID）唯一确定加锁的目标单位，由三个参数确定：spaceid/pageno/heapno(页内记录的编号)。
+
+行锁的加锁对象是索引中的record，在文档[Locks Set by Different SQL Statements in InnoDB](https://dev.mysql.com/doc/refman/5.7/en/innodb-locks-set.html)中，表述InnoDB会将扫描过的元组进行加锁。
+
+> `InnoDB`does not remember the exact `WHERE` condition, but only knows which index ranges were scanned.
+>
+> It is important to create good indexes so that your queries do not unnecessarily scan many rows.
+
+对于，锁定读/update/delete，这些语句扫描了那些元组，就将哪些元组加指定模式的锁，如下是行锁的类型标记；
+
+```c
+#define LOCK_ORDINARY	0	/*!< this flag denotes an ordinary
+				next-key lock in contrast to LOCK_GAP
+				or LOCK_REC_NOT_GAP */
+#define LOCK_GAP	512	
+#define LOCK_REC_NOT_GAP 1024	
+#define LOCK_INSERT_INTENTION 2048 
+```
+
+当标记了LOCK_ORDINARY，表示只锁了该record。当标记了LOCK_GAP表示将该元组之前的间隙锁定了（不包括该元组）。
+
+在检查锁冲突时，按照m_rec_id在lock_sys->rec_hash中遍历该目标page中的所有锁，检查是否有冲突（猜想如果没有间隙锁这个机制，那么就不需要遍历整个page了）；如果冲突那么入队列等待；
 
 > **监控视图**
 >
@@ -134,78 +155,7 @@ enum lock_mode {
 > show full processlist;
 > ```
 
-> **注意** 在MySQL的默认隔离级别RR下，同样比标准SQL更加严格，即，没有幻读；但是[没有幻读有幻写](https://blog.pythian.com/understanding-mysql-isolation-levels-repeatable-read/)
->
-> + 其他事务更新了数据
->
-> ```sql
-> mysql> start transaction;
-> mysql> select * from t;
-> +-----+--------+------+---------+------+
-> | a   | b      | c    | d       | e    |
-> +-----+--------+------+---------+------+
-> ...
-> | 394 | asdf | asdf | asdf    |  399 |
-> | 395 | asdf | asdf | asdf    |  400 |
-> | 397 | asdf | asdf | asdfasd |  402 |
-> +-----+------+------+---------+------+
-> Query OK, 0 rows affected (0.00 sec)
-> mysql> select * from t where a = 396;
-> Empty set (0.00 sec)
-> 
-> mysql> update t set b = 'pwrite' where a = 396;
-> Query OK, 1 row affected (0.00 sec)
-> Rows matched: 1  Changed: 1  Warnings: 0
-> 
-> mysql> select * from t where a = 396;
-> +-----+--------+------+---------+------+
-> | a   | b      | c    | d       | e    |
-> +-----+--------+------+---------+------+
-> | 396 | pwrite | asdf | asdfasd |  402 |
-> +-----+--------+------+---------+------+
-> 1 row in set (0.00 sec)
-> 
-> mysql> commit;
-> Query OK, 0 rows affected (0.01 sec)
-> ```
->
-> 在第3行查询之前，在另一个事务中执行如下更新：
->
-> ```sql
-> update t set a = 396 where e = 402;
-> ```
->
-> + 其他事务插入了数据
->
-> ```sql
-> | 395 | asdf       | asdf | asdf    |  400 |
-> | 396 | pwrite     | asdf | asdfasd |  402 |
-> | 397 | new insert | asdf | s       |  403 |
-> | 398 | new insert | s    | s       |  404 |
-> +-----+------------+------+---------+------+
-> 399 rows in set (0.01 sec)
-> 
-> mysql> update t set e=405 where a = 399;
-> Query OK, 0 rows affected (0.00 sec)
-> Rows matched: 1  Changed: 0  Warnings: 0
-> 
-> mysql> commit;
-> Query OK, 0 rows affected (0.00 sec)
-> ```
->
-> 发现：
->
-> 当前事务select不可见，即，不能看到新事务提交的数据，满足可重复读；
->
-> 但是当前事务执行update，却能够更新；更新之后再select，可以看到这个新元组？
->
-> 因此，可知MySQL的RR级别的实现，在read的时候确实更加严格没有幻读了。但是，事务需要修改的时候，对于其他事务新插入的数据，是不能看到的；对于其他事务修改的数据是可以看到了的，😹还有这种操作。。。
->
-> 因此，对于MySQL的RR级别，有如下结论：
->
-> 1. 当只是select语句时，是没有幻读（Phantom Read）的；比如*mysqldump with –single-transaction*。
-> 2. 当事务修改数据了，RR级别的表现是有所不同；对于没有修改的行，是RR；对于修改的行，是RC。因为，SQL标准中对此没有定义，那么也不能说违反了SQL语义。
-> 3. 当事务写了新数据时，该事务就使用已经提交的数据，而不是该事务的readview；所以，InnoDB的事务修改总是基于最新的提交的数据进行修改。
+> 关于隔离级别的有我的文章
 
 ## 隐式内存锁
 
@@ -449,78 +399,63 @@ enum btr_latch_mode {
 
 # Btree的rw_lock与读写操作
 
-这里只讨论Btree的操作，InnoDB的Btree的任何读写操作，首先需要定位Btree的位置（`btr_cur_search_to_nth_level`），返回一个目标leafpage的cursor；基于该cursor，开始的时候会根据一致性锁定读还是非锁定读，决定创建一个readview还是加意向锁；MySQL层通过get_next不断调用`row_search_mvcc`；每次`row_search_mvcc`读取一行，然后将cursor保存起来，下次再restore读取。
+这里只讨论Btree的操作，InnoDB的Btree的任何读写操作，首先需要定位Btree的位置（`btr_cur_search_to_nth_level`），返回一个目标leafpage的cursor；
+
+基于该cursor，开始的时候会根据一致性锁定读还是非锁定读，决定创建一个readview还是加意向锁；
+
+如果是查询操作，之后MySQL层通过get_next不断调用`row_search_mvcc`；每次`row_search_mvcc`读取一行，然后将cursor保存起来，下次再restore读取。
 
 ## 加锁入口
 
-入口是`btr_cur_search_to_nth_level`，该函数参数`latch_mode`，低位是`btr_latch_mode`枚举，高位是若干不同意义的宏（include/btr0btr.h），宏根据insert/delete/delete_mark分为互斥的三类，如下是该函数的大体逻辑：
+入口是`btr_cur_search_to_nth_level`，该函数参数`latch_mode`决定的加锁的类型。
 
-1. 函数一开始，识别高位的标记得到如下信息后，将高位信息抹除。
-   + btr_op：ibuf的操作，需要buf的操作（btr0cur.c:1117）
+`latch_mode`低位是`btr_latch_mode`枚举，
+
+```c
+enum btr_latch_mode {
+	/** Search a record on a leaf page and S-latch it. */
+	BTR_SEARCH_LEAF = RW_S_LATCH,
+	/** (Prepare to) modify a record on a leaf page and X-latch it. */
+	BTR_MODIFY_LEAF	= RW_X_LATCH,
+	/** Obtain no latches. */
+	BTR_NO_LATCHES = RW_NO_LATCH,
+	/** Start modifying the entire B-tree. */
+	BTR_MODIFY_TREE = 33,
+	/** Continue modifying the entire B-tree. */
+	BTR_CONT_MODIFY_TREE = 34,
+	/** Search the previous record. */
+	BTR_SEARCH_PREV = 35,
+	/** Modify the previous record. */
+	BTR_MODIFY_PREV = 36,
+	/** Start searching the entire B-tree. */
+	BTR_SEARCH_TREE = 37,
+	/** Continue searching the entire B-tree. */
+	BTR_CONT_SEARCH_TREE = 38
+};
+```
+
+高位是若干不同意义的宏（include/btr0btr.h），宏根据insert/delete/delete_mark分为互斥的三类。如下是该函数的大体逻辑：
+
+1. 函数一开始，识别高位的标记得到如下信息，之后后将高位信息抹除(`BTR_LATCH_MODE_WITHOUT_FLAGS`)。
+   + btr_op：需要ibuf缓存的操作（`btr_op_t`，btr0cur.c:1117）
    
-     ```c
-     /** Buffered B-tree operation types, introduced as part of delete buffering. */
-    enum btr_op_t {
-     	BTR_NO_OP = 0,			/*!< Not buffered */
-     	BTR_INSERT_OP,			/*!< Insert, do not ignore UNIQUE */
-     	BTR_INSERT_IGNORE_UNIQUE_OP,	/*!< Insert, ignoring UNIQUE */
-     	BTR_DELETE_OP,			/*!< Purge a delete-marked record */
-     	BTR_DELMARK_OP			/*!< Mark a record for deletion */
-     };
-     ```
+   + estimate：是否是在查询优化阶段，调用的`btr_cur_search_to_nth_level`。
    
-   + estimate：在查询优化阶段，调用的`btr_cur_search_to_nth_level`
+   + lock_intention：要对Btree进行的修改意图（`btr_intention_t`）。
    
-   + lock_intention：要对Btree进行的修改意图。
-   
-     ```c
-     /** Modification types for the B-tree operation. */
-     enum btr_intention_t {
-     	BTR_INTENTION_DELETE,
-     	BTR_INTENTION_BOTH,
-     	BTR_INTENTION_INSERT
-     };
-     ```
-   
-   + modify_external：在BTR_MODIFY_LEAF模式中，是否要修改外部存储的数据。
+   + modify_external：在BTR_MODIFY_LEAF模式中，是否需要修改外部存储的数据。
    
 2. `btr_search_guess_on_hash`，首先尝试基于AHI查询，成功就返回。
 
-3. 在第一步中，将高位的标记信息已经抹除；这里（btr0cur.cc:959）基于latch_mode和第一步解析处理的信息，对index加rw_lock，如下:
+3. 在第一步中，将高位的标记信息已经抹除；这里（btr0cur.cc:959）基于latch_mode和第一步得到的信息，对index加rw_lock；
 
-   `mtr_s_lock(dict_index_get_lock(index), mtr);`
+   比如给Index加S锁：`mtr_s_lock(dict_index_get_lock(index), mtr);`
 
-   如果对index加X，那么`upper_rw_latch`就是RW_X_LATCH，如果对index加S，那么`upper_rw_latch`就是RW_S_LATCH；
+   另外，根据对index加锁类型，设置变量`upper_rw_latch`（rw_lock_type_t ），后续给索引块加锁会参考。
 
-4. 根据参数`mode`定义的查询模式 ，决定非叶子节点的查询模式（1043）。
+4. 根据参数`mode`定义的查询模式 ，决定cursor搜索方式（page_cur_mode_t，与键值的比较，Btree大于等于还是小于等大小关系，Rtree是否相交/包含等位置关系）（1043）。
 
-   ```c
-   /* Page cursor search modes; the values must be in this order! */
-   enum page_cur_mode_t {
-   	PAGE_CUR_UNSUPP	= 0,
-   	PAGE_CUR_G	= 1,
-   	PAGE_CUR_GE	= 2,
-   	PAGE_CUR_L	= 3,
-   	PAGE_CUR_LE	= 4,
-   
-   /*      PAGE_CUR_LE_OR_EXTENDS = 5,*/ /* This is a search mode used in
-   				 "column LIKE 'abc%' ORDER BY column DESC";
-   				 we have to find strings which are <= 'abc' or
-   				 which extend it */
-   
-   /* These search mode is for search R-tree index. */
-   	PAGE_CUR_CONTAIN		= 7,
-   	PAGE_CUR_INTERSECT		= 8,
-   	PAGE_CUR_WITHIN			= 9,
-   	PAGE_CUR_DISJOINT		= 10,
-   	PAGE_CUR_MBR_EQUAL		= 11,
-   	PAGE_CUR_RTREE_INSERT		= 12,
-   	PAGE_CUR_RTREE_LOCATE		= 13,
-   	PAGE_CUR_RTREE_GET_FATHER	= 14
-   };
-   ```
-
-5. (search_loop)递归查找，直到到达指定level（大部分情况是找到叶子节点，即，level=0）
+5. (search_loop)递归查找，直到到达指定level（大部分情况level=0，即找到叶子节点；level!=0的一种情况是节点分裂，需要向父节点添加node_ptr）。
 
    1. 确定rw_latch的模型；非特殊情况，第三步的`upper_rw_latch`就是这里的rw_latch类型。
 
@@ -534,7 +469,7 @@ enum btr_latch_mode {
 
    3. 1265，第一次取出的root节点；通过root节点的得到Btree的height；
 
-   4. 1440，根据取出的page；根据目标tuple，采用二分法，在page中定位page_cursor；
+   4. 1440，根据取出的page；根据目标tuple，采用二分法，在page中定位page_cursor（可以是最终的叶子节点的键值对，可以是非叶子节点的node_ptr）；
 
       ```c
       	/* Perform binary search until the lower and upper limit directory
@@ -552,15 +487,21 @@ enum btr_latch_mode {
 
    6. 1780，迭代到该节点的子节点；n_blocks++；在查找过程中维护了一个路径block数组。
 
-   7. 继续迭代search_loop，直到height==0（1306），这时根据latch_mode进行遍历过程的收尾；如果不需要调整树结构，那么将遍历过的分支都释放掉，同时也释放掉index上的锁。
+   7. 继续迭代search_loop
+
+   8. 直到height==0（1306），这时根据latch_mode进行遍历过程的收尾；
+
+      + 如果不需要调整树结构（并且！BTR_MODIFY_EXTERNAL），那么将遍历过的分支都释放掉；释放indextree的S锁。
 
 6. (1862)找到后设置cursor的low_match和up_match等参数
 
-7. 函数退出，因为调用`btr_cur_search_to_nth_level`的调用者可能已经在外面加锁了，由参数has_search_latch判断，该参数只能为0或者`RW_S_LATCH`；如果设置了该参数，那么退出是会对index加s锁 `rw_lock_s_lock(btr_get_search_latch(index))`。
+7. 函数退出，因为调用`btr_cur_search_to_nth_level`的调用者可能已经在外面加锁了，那么退出还是对index加s锁 。
+
+   （由参数has_search_latch判断，该参数只能为0或者`RW_S_LATCH`；）
 
 ————————————————————————————————————
 
-加锁的对象是针对buffer pool中的page，首先通过hash找到buffer pool中的page；然后对该内存的page对象加锁
+加锁的对象是针对buffer pool中的page，buffer_pool中的page是通过hash表组织的；加锁的时候首先通过(spaceid,pageno)的hash值，找到buffer pool中的page；然后对该内存的page对象加锁，如下。
 
 ```c
 	hash_lock = buf_page_hash_lock_get(buf_pool, page_id);
@@ -569,12 +510,6 @@ loop:
 
 	rw_lock_s_lock(hash_lock);
 ```
-
-
-
-## SELECT的rwlock
-
-Select就是S锁。
 
 ## INSERT的rwlock
 
@@ -588,15 +523,15 @@ Select就是S锁。
    		n_ext, thr, dup_chk_only);
    ```
 
-2. btr_cur_search_to_nth_level：976；给索引加SX锁
+   1. btr_cur_search_to_nth_level：976；给索引加SX锁
 
    ```c
    			mtr_sx_lock(dict_index_get_lock(index), mtr);
    ```
 
-3. 在查找的过程中，不需要加锁（rw_latch=RW_NO_LATCH）；在1071行判断时，不满足任何条件，跳出。
+   + 在查找的过程中，不需要加锁（rw_latch=RW_NO_LATCH）；在1071行判断时，不满足任何条件，跳出。
 
-4. 最终将找到的leafpage加X。
+   + 最终将找到的leafpage加X。
 
    ```c
    	if (height == 0) {
@@ -606,26 +541,32 @@ Select就是S锁。
    				cursor, mtr);
    		}
    ```
-   
-5. 执行btr_cur_pessimistic_insert的时候index->lock->lock_word = 0x10000000了；即已经在上述步骤中加了SXlock。这时，该index不能被其他线程修改，但是可以读。然后再pessimistic insert中，通过`btr_page_split_and_insert`修改定位的cursor的page；
 
-   修改的时候需要在上层添加一个node_ptr(`btr_insert_on_non_leaf_level`)；这里接着调用btr_cur_search_to_nth_level（这里的latch_mode就是BTR_CONT_MODIFY_TREE，如下），然后乐观或者悲观的插入。
+   2. 执行btr_cur_pessimistic_insert
+      + 此时index->lock->lock_word = 0x10000000了；即已经在上述步骤中加了SXlock。这时，该index不能被其他线程修改，但是可以读。
+      + 然后在pessimistic insert中，通过`btr_page_split_and_insert`修改btr_cur_search_to_nth_level中定位的cursor的page；
 
-   ```c
-   			btr_cur_search_to_nth_level(
-   				index, level, tuple, PAGE_CUR_LE,
-   				BTR_CONT_MODIFY_TREE,
-   				&cursor, 0, file, line, mtr);
-   ```
+   3. 第二步修改叶子节点的时候需要在上层添加一个node_ptr(`btr_insert_on_non_leaf_level`)；
 
-   最终找到的时候，对找打的block加X锁；
+      + 这里接着调用btr_cur_search_to_nth_level（这里的latch_mode就是BTR_CONT_MODIFY_TREE，如下），但是level就不是0了，因为要找分支节点。
 
-   ```c
-   			if (latch_mode == BTR_CONT_MODIFY_TREE) {
-   				child_block = btr_block_get(
-   					page_id, page_size, RW_X_LATCH,
-   					index, mtr);
-   ```
+        ```c
+        			btr_cur_search_to_nth_level(
+        				index, level, tuple, PAGE_CUR_LE,
+        				BTR_CONT_MODIFY_TREE,
+        				&cursor, 0, file, line, mtr);
+        ```
+
+      + 然后乐观或者悲观的插入；继续重复这个过程。
+
+      + 最终找到的时候，对找到的block(level!=0)加X锁；
+
+        ```c
+        			if (latch_mode == BTR_CONT_MODIFY_TREE) {
+        				child_block = btr_block_get(
+        					page_id, page_size, RW_X_LATCH,
+        					index, mtr);
+        ```
 
 因此，总结步骤如下：
 
@@ -633,33 +574,18 @@ Select就是S锁。
 2. 调用btr_cur_pessimistic_insert，进行分裂
 3. 分裂的时候如果需要继续分裂，还是通过btr_cur_search_to_nth_level定位并加锁后，重复操作。
 
-
-
 ## UPDATE的rwlock
 
-更新行的具体逻辑的入口函数是`row_upd_clust_step`。同样是分为乐观更新和悲观更新。在row_upd_clust_step之前，先调用`btr_cur_search_to_nth_level`定位了要更新的cursor位置；这里在执行如下更新代码之前，首先恢复cursor`	success = btr_pcur_restore_position(mode, pcur, &mtr);`，在恢复cursor时给对应的page加X锁`btr_cur_optimistic_latch_leaves`；加锁位置在buf0buf.cc:4720。
+更新行的具体逻辑的入口函数是`row_upd_clust_step`。同样是分为乐观更新和悲观更新。
 
-```c++
-	if (node->cmpl_info & UPD_NODE_NO_SIZE_CHANGE) {
-		err = btr_cur_update_in_place(
-			flags | BTR_NO_LOCKING_FLAG, btr_cur,
-			offsets, node->update,
-			node->cmpl_info, thr, thr_get_trx(thr)->id, mtr);
-	} else {
-		err = btr_cur_optimistic_update(
-			flags | BTR_NO_LOCKING_FLAG, btr_cur,
-			&offsets, offsets_heap, node->update,
-			node->cmpl_info, thr, thr_get_trx(thr)->id, mtr);
-	}
+在row_upd_clust_step之前，
 
-	if (err == DB_SUCCESS) {
-		goto success;
-	}
-```
+1. 先调用`btr_cur_search_to_nth_level`定位了要更新的cursor位置；此时只是查找，索引加S锁。然后将cursor存起来。
 
-在update的时候，如果更新的列是有序的，那么需要标记删除+插入，见如下代码(`row_upd_clust_rec`)，否则就直接执行。
+2. 恢复cursor`	success = btr_pcur_restore_position(mode, pcur, &mtr);`，在恢复cursor时给对应的page加X锁`btr_cur_optimistic_latch_leaves`；加锁位置在buf0buf.cc:4720。
+3. 执行如下代码进行更新，首先尝试乐观更新；更新的时候，如果新元组的大小和原来相同，那么就写完undo日志`trx_undo_report_row_operation`后，直接原地更新： `btr_cur_update_in_place->row_upd_rec_in_place`。
 
-更新的时候，如果新元组的大小和原来相同，那么就写完undo日志`trx_undo_report_row_operation`后，直接原地更新： `btr_cur_update_in_place->row_upd_rec_in_place`。
+在update的时候，如果更新的列是有序的，那么需要标记删除+插入，见如下代码(`row_upd_clust_rec`)，这里存在一个**Halloween problem**问题（通过undo构建版本解决）。
 
 ```c++
 	if (row_upd_changes_ord_field_binary(index, node->update, thr,
@@ -708,17 +634,27 @@ Select就是S锁。
 
 Purge线程类似PostgreSQL的Vacuum，会清理update/delete中标记删除的数据。产生标记删除的事务放在一个history_list中，由参数`innodb_max_purge_lag`控制大小。
 
-Purge线程在发起删除的时候，不管是清理一级索引还是二级索引。都是先尝试乐观删除
+> history_list ?
+
+Purge线程在发起删除的时候，不管是清理一级索引还是二级索引，都是先尝试乐观删除：
 
 + 一级索引：`row_purge_remove_clust_if_poss_low(BTR_MODIFY_LEAF)->btr_cur_optimistic_delete`
 + 二级索引：`row_purge_remove_sec_if_poss_leaf`
 
-然后再悲观删除
+然后再悲观删除：
 
 + 一级索引：`row_purge_remove_clust_if_poss_low(BTR_MODIFY_TREE)->btr_cur_pessimistic_delete`
 + 二级索引：`row_purge_remove_sec_if_poss_tree`
 
-关于Delete过程的锁，同样是在调用`btr_cur_optimistic_delete`函数之前，调用`btr_pcur_restore_position_func`读取cursor时，对page进行加X锁`btr_cur_optimistic_latch_leaves`。而在整个索引上加SX。
+————————————————————————————————————
+
+关于Delete过程的锁，同样是在调用`btr_cur_optimistic_delete`函数之前，
+
++ 在调用`btr_pcur_restore_position_func`读取cursor时，对page进行加X锁（`btr_cur_optimistic_latch_leaves`）。
+
++ 而在整个索引上加SX。
+
+————————————————————————————————————
 
 在删除过程中，对Btree的操作有两种：btr_lift_page_up、btr_compress。
 
@@ -736,7 +672,7 @@ Purge线程在发起删除的时候，不管是清理一级索引还是二级索
 	}
 ```
 
-
+> 如何递归？
 
 # 总结
 
@@ -753,3 +689,5 @@ Purge线程在发起删除的时候，不管是清理一级索引还是二级索
 [mysql-rr](https://blog.pythian.com/understanding-mysql-isolation-levels-repeatable-read/)
 
 [mysql-index-lock](http://mysql.taobao.org/monthly/2015/07/05/)
+
+[尝试理解lock](https://github.com/octachrome/innodb-locks)

@@ -11,9 +11,9 @@ typora-root-url: ../../yummyliu.github.io
 ---
 
 > * TOC
-> {:toc}
+{:toc}
 
-### ANSI SQL的隔离级别
+# ANSI SQL的并发异常
 
 ANSI SQL 为了预防三种不同的异常现象，定义了四个隔离级别。
 
@@ -28,9 +28,7 @@ SQL标准定义了四个级别的事务隔离。 最严格的是Serializable，�
 
 另外三个级别是根据现象来定义的，这是由**并发事务之间的交互**产生的，而这并不是每个层次都会发生的。 由于Serializable的定义，在这个级别上这些现象都是不可能的。 （这并不奇怪：如果交易的效果必须与一次运行一致，那么您怎么看到交互造成的现象？）
 
-### **并发**异常
-
-#### 脏读：
+## 脏读
 
 事务读到了另一个正在运行的事务未提交的数据；
 
@@ -41,7 +39,7 @@ SQL标准定义了四个级别的事务隔离。 最严格的是Serializable，�
 | select a from t where b=3;(a = 5) |                                |
 |                                   | Rollback;                      |
 
-#### 不可重复读
+## 不可重复读
 
 事务重新读取之前读过的数据时，发现该数据被另一个**提交的事务update**了；脏读和不可重复很像，区别在于脏读在T2还未提交时，就读了。
 
@@ -63,7 +61,7 @@ SQL标准定义了四个级别的事务隔离。 最严格的是Serializable，�
 > + 如果**在SERIALIZABLE级别中**，由于读的数据是**事务**开始时的快照，**t1只有读**不会出现问题；如果t1也对数据进行了变更，那么提交的时候，db会检查t1提交的结果和按照t1/t2（即，以事务开始时间算）顺序的串行结果是否一致，一致可提交，否则就是**提交冲突**；此时，t1需要回滚（这就发生了序列化错误）。
 > + 或者**在RC中**，由于读的数据是**查询**开始时的快照，同时也没有串行化保证，也不会有提交冲突。
 
-#### 幻读
+## 幻读
 
 由于另一个事务**Insert**了一条新数据，导致这个旧事务的某些查询结果变了，比如count(*)。
 
@@ -76,26 +74,100 @@ SQL标准定义了四个级别的事务隔离。 最严格的是Serializable，�
 
 在基于锁的并发控制中，采用RR，意味着会将读出的数据行加锁。但是不会在表的某一范围（比如例子中只会对2条数据加锁）加锁，这样别的事务会在该范围内插入一条数据；后面同样的查询就会多出一条来。
 
-#### 串行化异常
+## 串行化异常
 
 一组成功提交的事务的结果，和以任何串行的顺序提交的事务的结果都是不同的。
 
-### SQL标准和PostgreSQL中实现的事务隔离级别比较
+# 对比学习MySQL与PgSQL的隔离级别实现
 
+这里只讨论SQL标准中的隔离级别，另外，除了标准SQL中定义的隔离级别，在不同的db中，也衍生出比较特性的隔离级别，感兴趣可以看论文“ A Critique of ANSI SQL Isolation Levels”。
+
+> ![img](/image/ansi-sql-isolation-levels.png)
+
+这里就不讨论读未提交，觉得没有没有意义（没想到什么场景，有人会刻意读未提交的数据）。PostgreSQL默认是RC级别，MySQL默认是RR级别。
+
+## RC（Read Commit）
 
 在PG中，开启一个事务可以请求上述四种隔离级别(SERIALIZABLE,REPEATABLE READ, READ COMMITTED , READ UNCOMMITTED); 但是RU这个级别，其实就是RC。在RR级别中，也不会有幻读现象。SQL标准定义了四个隔离级别只是定义个哪些现象不能发生，没有说哪些现象一定发生。
 
 > **NOTE**：在PG里一些数据类型和函数有特殊的事务行为，特别地，对一个sequence的修改，其他事务里面可见，当前事务意外终止，也不会回滚。
 
-### 隔离级别外传
+## RR（Repeat Read）
 
-另外，除了标准SQL中定义的隔离级别，在不同的db中，也衍生出比较特性的隔离级别，感兴趣可以看论文“ A Critique of ANSI SQL Isolation Levels”。
+注意 在MySQL的默认隔离级别RR下，同样比标准SQL更加严格，即，没有幻读；但是没有幻读有幻写
 
-![img](/image/ansi-sql-isolation-levels.png)
+- 其他事务更新了数据
 
-###### 图1 隔离级别 from A Critique of ANSI SQL Isolation Levels
+  mysql> start transaction;
+  mysql> select * from t;
+  +-----+--------+------+---------+------+
+  | a   | b      | c    | d       | e    |
+  +-----+--------+------+---------+------+
+  ...
+  | 394 | asdf | asdf | asdf    |  399 |
+  | 395 | asdf | asdf | asdf    |  400 |
+  | 397 | asdf | asdf | asdfasd |  402 |
+  +-----+------+------+---------+------+
+  Query OK, 0 rows affected (0.00 sec)
+  mysql> select * from t where a = 396;
+  Empty set (0.00 sec)
 
-##### 参考文献
+  mysql> update t set b = 'pwrite' where a = 396;
+  Query OK, 1 row affected (0.00 sec)
+  Rows matched: 1  Changed: 1  Warnings: 0
+
+  mysql> select * from t where a = 396;
+  +-----+--------+------+---------+------+
+  | a   | b      | c    | d       | e    |
+  +-----+--------+------+---------+------+
+  | 396 | pwrite | asdf | asdfasd |  402 |
+  +-----+--------+------+---------+------+
+  1 row in set (0.00 sec)
+
+  mysql> commit;
+  Query OK, 0 rows affected (0.01 sec)
+
+在第3行查询之前，在另一个事务中执行如下更新：
+
+```
+update t set a = 396 where e = 402;
+```
+
+- 其他事务插入了数据
+
+  | 395 | asdf       | asdf | asdf    |  400 |
+  | 396 | pwrite     | asdf | asdfasd |  402 |
+  | 397 | new insert | asdf | s       |  403 |
+  | 398 | new insert | s    | s       |  404 |
+  +-----+------------+------+---------+------+
+  399 rows in set (0.01 sec)
+
+  mysql> update t set e=405 where a = 399;
+  Query OK, 0 rows affected (0.00 sec)
+  Rows matched: 1  Changed: 0  Warnings: 0
+
+  mysql> commit;
+  Query OK, 0 rows affected (0.00 sec)
+
+发现：
+
+当前事务select不可见，即，不能看到新事务提交的数据，满足可重复读；
+
+但是当前事务执行update，却能够更新；更新之后再select，可以看到这个新元组？
+
+因此，可知MySQL的RR级别的实现，在read的时候确实更加严格没有幻读了。但是，事务需要修改的时候，对于其他事务新插入的数据，是不能看到的；对于其他事务修改的数据是可以看到了的，😹还有这种操作。。。
+
+因此，对于MySQL的RR级别，有如下结论：
+
+1. 当只是select语句时，是没有幻读（Phantom Read）的；比如mysqldump with –single-transaction。
+2. 当事务修改数据了，RR级别的表现是有所不同；对于没有修改的行，是RR；对于修改的行，是RC。因为，SQL标准中对此没有定义，那么也不能说违反了SQL语义。
+3. 当事务写了新数据时，该事务就使用已经提交的数据，而不是该事务的readview；所以，InnoDB的事务修改总是基于最新的提交的数据进行修改。
+
+InnoDB provides REPEATABLE READ for read-only SELECT, but it behaves as if you use READ COMMITTED for all write queries
+
+## Serializable
+
+# 参考文献
 
 [wiki](https://en.wikipedia.org/wiki/Isolation_(database_systems)#Dirty_reads)
 
