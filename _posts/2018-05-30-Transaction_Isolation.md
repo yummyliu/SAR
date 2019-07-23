@@ -10,7 +10,6 @@ tags:
 typora-root-url: ../../yummyliu.github.io
 ---
 
-* TOC
 {:toc}
 
 # SQL92与并发异常
