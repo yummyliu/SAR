@@ -1,7 +1,7 @@
 ---
 layout: post
-title: 对比PgSQL和MySQL学习事务的隔离级别
-date: 2018-05-30 18:06
+title: PostgreSQL和MySQL的事务隔离级别对比
+date: 2019-06-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
