@@ -96,7 +96,7 @@ enum lock_mode {
 
 ### 行锁
 
-![image-20190712104111800](/image/InnoDB-lock.png)
+![image-20190723161700433](/image/InnoDB-Lock.png)
 
 + **Record Lock**：基于主键锁定某个记录
 
