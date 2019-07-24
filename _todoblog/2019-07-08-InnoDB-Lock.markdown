@@ -14,7 +14,7 @@ typora-root-url: ../../yummyliu.github.io
 
 ## 显式事务锁
 
-描述一个锁从两个维度：粒度和力度。在InnoDB中，从粒度上分为表锁和行锁；在不同的粒度上，又根据力度的不同分为不同类型。但都是在一个结构中表示`lock_t`，根据`is_record_lock`（提取type_mode的标记为）来判断锁的粒度。
+描述一个锁从两个维度：粒度和力度。在InnoDB中，从粒度上分为表锁和行锁；在不同的粒度上，又根据力度的不同分为不同类型。但都是在一个结构中表示`lock_t`，根据`is_record_lock`（提取type_mode的标记位）来判断锁的粒度。
 
 ```c
 	/** Determine if the lock object is a record lock.
@@ -126,7 +126,7 @@ enum lock_mode {
 >
 > It is important to create good indexes so that your queries do not unnecessarily scan many rows.
 
-对于，锁定读/update/delete，这些语句扫描了那些元组，就将哪些元组加指定模式的锁，如下是行锁的类型标记；
+对于，LockRead/update/delete，这些语句扫描了那些元组，就将哪些元组加指定模式的锁，如下是行锁的类型标记；
 
 ```c
 #define LOCK_ORDINARY	0	/*!< this flag denotes an ordinary
