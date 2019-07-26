@@ -45,7 +45,7 @@ typora-root-url: ../../yummyliu.github.io
 2. logbuffer->logfile：write_mutex控制logbuffer顺序的刷盘；
 3. bufferpool->datafile：log_flush_order_mutex控制flushlist的顺序刷盘；执行CHECKPOINT或preflush。
 
-![image-20190619165143347](/image/logbuffer-flush.png)
+![image-20190725135903922](/image/logbuffer-flush.png)
 
 上图中将log_t与logbuffer的机制进行了整合描述。MySQL的logbuffer是双buffer设计，每个默认是16MB，其中也是按照512byte的block进行组织，有以下几个主要参数：
 

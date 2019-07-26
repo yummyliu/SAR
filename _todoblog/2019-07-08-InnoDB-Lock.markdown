@@ -157,6 +157,28 @@ enum lock_mode {
 
 > 关于隔离级别的有我的文章
 
+### readview
+
++ low_limit_id：high water mark，大于等于view->low_limit_id的事务对于view都是不可见的
++ up_limit_id：low water mark，小于view->up_limit_id的事务对于view一定是可见的
++ low_limit_no：trx_no小于view->low_limit_no的undo log对于view是可以purge的
++ rw_trx_ids：读写事务数组
+
+trx_undo_build_roll_ptr
+
+```c
+	roll_ptr = (roll_ptr_t) is_insert << 55
+		| (roll_ptr_t) rseg_id << 48
+		| (roll_ptr_t) page_no << 16
+		| offset;
+```
+
+RC基于语句开始时最大已提交的事务ID。RR基于事务开始时最大已提交的事务ID。
+
+#### history list
+
+可见性判断
+
 ## 隐式内存锁
 
 ```c
