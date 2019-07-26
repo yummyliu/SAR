@@ -1,6 +1,6 @@
 ---
 layout: post
-title: InnoDB源码——日志与数据刷写逻辑
+title: InnoDB源码——LogBuffer与事务提交过程
 date: 2019-06-19 16:49
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -11,9 +11,6 @@ typora-root-url: ../../yummyliu.github.io
 
 * TOC
 {:toc}
-
-# 简述
-
 数据变更可以变成若干个redo record，每个record都有一个`mlog_id_t`的类型。不同的数据库操作对应不同组合的Record，这些record以mtr为单位进行组织，保证原子性。
 
 1. 数据页的变更必须通过mtr，在`mtr_commit()`中将本次mtr变更的所有record，写入redo日志；
@@ -24,20 +21,17 @@ typora-root-url: ../../yummyliu.github.io
    > 2. log buffer的空间使用过半
    > 3. log CHECKPOINT
 
-2. 一般来说，变更记录会通过`mlog_write_ulint()`函数(或其他类似函数)写入。？有疑问？？
+2. 一般来说，变更记录会通过`mlog_write_ulint()`函数(或其他类似函数)写入。
 
 3. 对于一些页面级别的操作，只在记录中记录C函数的编码和参数，节约空间。
 
    1. 不需要在`trx_undo_header_create() ,trx_undo_insert_header_reuse()`的记录中加参数；
    2. 不能添加不做任何改变的函数，或者需要依赖页外部数据的函数；当前log模块的函数有完备的页面转换，没有足够的理由不要擅自改动。
 
-   > UNIV_HOTBACKUP
-   > 在InnoDB中，常见一个UNIV_HOTBACKUP宏；这是之前有一个收费的热备工具——ibbackup相关的。现在基本不用了。
-   > https://stackoverflow.com/questions/28916804/what-does-univ-hotbackup-mean-in-innodb-source
 
-本节首先介绍一下redo机制的核心控制结构：`log_t`的机制；然后以Insert为例，介绍insert的流程。
+本节基于redo机制的核心控制结构：`log_t`来介绍事务提交时LogBuffer的作用。
 
-# LOGBUFFER机制与log_t
+# LogBuffer与事务提交
 
 `log_t*	log_sys`是redo日志系统的关键全局变量。主要负责三项事情：
 
@@ -47,7 +41,7 @@ typora-root-url: ../../yummyliu.github.io
 
 ![image-20190725135903922](/image/logbuffer-flush.png)
 
-上图中将log_t与logbuffer的机制进行了整合描述。MySQL的logbuffer是双buffer设计，每个默认是16MB，其中也是按照512byte的block进行组织，有以下几个主要参数：
+上图中将log_t与logbuffer的机制进行了整合描述。InnoDB的logbuffer是双buffer设计，每个默认是16MB，其中也是按照512byte的block进行组织，关于双Buffer有以下主要参数：
 
 + `buf`指向当前写入的logbuffer（`buf_ptr`是没有对齐的起始位置）；
 
@@ -65,26 +59,17 @@ typora-root-url: ../../yummyliu.github.io
 
 ### mtr_commit
 
-这里需要老姐mtr_t的结构，这是mtr的控制结构。
+这里需要了解mtr_t的结构，这是mtr的控制结构。
 
 + mtr_t.`m_made_dirty`与mtr_t.`m_modifications`的区别：
 
-  m_modifications只在mtr_open()中调用了，表示可能要写mtr了，但是取决于m_log_mode不同，可能不写redo，也不会刷脏；而m_made_dirty在memo_push中设置为true，此时是真的写redo了，并且也需要刷脏。最后，在mtr_commit提交的时候会判断m_modifications，如果为False，那么可以直接释放资源，提交当前mtr；否则，需要写redo并刷脏。
+  m_modifications表示该mtr可能进行了修改，在mtr_commit时，还需判断mtr中的记录数，得知是否需要拷贝redo record；
+  
+  m_made_dirty表示产生了脏页，需要将脏页追加到flush_list中。如下mtr_commit的流程图：
+  
+  ![image-20190726161153296](/image/mtr_commit.png)
 
-在mtr_commit的时候，为了保证提前释放mutex后，flush_list的dirty_page的写入是顺序的，这里加了log_flush_order_mutex锁，有以下几步：
-
-```c
-	-> mutex_enter(log_sys->mutex)
-  -> generate lsns
-  -> mutex_enter(log_sys->log_flush_order_mutex)
-  -> mutex_exit(log_sys->mutex)
-  -> mark page dirty and add to flush list
-  -> mutex_exit(log_sys->log_flush_order_mutex)
-```
-
-如图：
-
-![image-20190619165212470](/image/mtr_commit.png)
+在mtr_commit的时候，为了保证提前释放mutex后，flush_list的dirty_page的写入是顺序的，这里加了log_flush_order_mutex锁，减下·小了临界区的大小，提高了整体的并发度。
 
 ### 拷贝mtr中的record
 
@@ -122,54 +107,47 @@ log_free_check(void)
 }
 ```
 
-`log_sys->check_flush_or_checkpoint`：该项为True，表示需要刷logbuffer、或者preflush pool page，或者做CHECKPOINT；其实任何修改了超过4个页的操作，都应该调用`log_free_check`判断是不是需要刷盘。在`log_free_check`中，按照如图逻辑进行具体处理。
+`log_sys->check_flush_or_checkpoint`：该项为True，表示需要刷logbuffer、或者preflush pool page，或者做CHECKPOINT；其实任何修改了超过4个页的操作，都应该调用`log_free_check`判断是不是需要刷盘。在`log_free_check`中，按照如图逻辑进行具体处理：
 
-![image-20190619165315082](/image/log_free_check.png)
+![image-20190726164051545](/image/log_free_check.png)
 
-### 例：insert涉及的redo记录的拷贝
+**例子：insert涉及的redo记录的拷贝**
 
-1. MLOG_UNDO_HDR_REUSE 
-2. MLOG_2BYTES
-3. MLOG_2BYTES
-4. MLOG_2BYTES
-5. **mtr_t::commit()**
-6. MLOG_UNDO_INSERT
-7. **mtr_t::commit()**
-8. MLOG_COMP_REC_INSERT
-9. **mtr_t::commit()**
-10. MLOG_FILE_NAME
-11. MLOG_2BYTES
-12. MLOG_FILE_NAME
-13. MLOG_1BYTE
-14. MLOG_4BYTES
-15. MLOG_4BYTES
-16. MLOG_4BYTES
-17. MLOG_FILE_NAME
-18. MLOG_WRITE_STRING
-19. **mtr_t::commit()**
-20. MLOG_2BYTES
-21. MLOG_4BYTES
-22. **mtr_t::commit()**
+如下是简单insert中，涉及的五个mtr：
 
-
-
-MLOG_INIT_FILE_PAGE2
+1. 重用UNDO头部
+   1. MLOG_UNDO_HDR_REUSE 
+   2. MLOG_2BYTES
+   3. MLOG_2BYTES
+   4. MLOG_2BYTES
+   5. **mtr_t::commit()**
+2. 插入UNDO记录
+   1. MLOG_UNDO_INSERT
+   2. **mtr_t::commit()**
+3. 插入数据
+   1. MLOG_COMP_REC_INSERT
+   2. **mtr_t::commit()**
+4. xa prepare
+   1. MLOG_FILE_NAME
+   2. MLOG_2BYTES
+   3. MLOG_FILE_NAME
+   4. MLOG_1BYTE
+   5. MLOG_4BYTES
+   6. MLOG_4BYTES
+   7. MLOG_4BYTES
+   8. MLOG_FILE_NAME
+   9. MLOG_WRITE_STRING
+   10. **mtr_t::commit()**
+5. xa commit
+   1. MLOG_2BYTES
+   2. MLOG_4BYTES
+   3. **mtr_t::commit()**
 
 ## 从logbuffer到logfile
 
 ### 日志刷盘时机
 
-日志的刷盘都是通过调用`void log_write_up_to( lsn_t	lsn, bool	flush_to_disk)`，如果flush_to_disk为True，则表示将参数lsn之前日志都write&**flush**；同时更新相应偏移量。
-
-> 注意在函数log_write_up_to中，在函数返回后确保该lsn之前已经write了（如果flush_to_disk为True，确保也flush了）。如果要写，实际还是写到log_sys->lsn；
->
-> ```c
-> 	DBUG_PRINT("ib_log", ("write " LSN_PF " to " LSN_PF,
-> 			      log_sys->write_lsn,
-> 			      log_sys->lsn));
-> ...
-> 	write_lsn = log_sys->lsn;
-> ```
+日志的刷盘是通过调用`void log_write_up_to( lsn_t	lsn, bool	flush_to_disk)`，如果flush_to_disk为True，则表示将参数lsn之前日志都write&**flush**；同时更新相应偏移量。
 
 满足以下条件来进行日志刷盘：
 
@@ -190,44 +168,55 @@ MLOG_INIT_FILE_PAGE2
   + 事务提交
   + 等等
 
+> 注意日志的刷盘可能有多种触发条件，因此在函数log_write_up_to中，在函数返回后**只是确保该lsn之前已经write了**（如果flush_to_disk为True，确保也flush了）。如果，没有到达指定lsn，才会写，实际还是写到log_sys->lsn；
+>
+> ```c
+> 	DBUG_PRINT("ib_log", ("write " LSN_PF " to " LSN_PF,
+> 			      log_sys->write_lsn,
+> 			      log_sys->lsn));
+> ...
+> 	write_lsn = log_sys->lsn;
+> ```
+
 ### 双buffer切换刷盘
 
 MySQL-5.7中为了提高`log_sys->mutex`这个大锁的并发，添加一个新的write_mutex与双buffer的设计（每个默认16MB大小）。事务提交进行日志刷盘时，在mutex的保护下，进行`log_buffer_switch`——双buffer的切换：
 
 1. 将当前buf的最后一个block，复制到新的buf的首部；
-2. 然后更新buf_free和buf_next_to_write；
+
+2. 然后更新buf_free和buf_next_to_write
+
+   + `unsigned long buf_next_to_write`：准备写盘的redolog的位置，执行完继续推进。
+
+   ```c
+   void
+   log_write_up_to(
+   	lsn_t	lsn,
+   	bool	flush_to_disk)
+   
+   ...
+   	start_offset = log_sys->buf_next_to_write;
+   ...
+   
+   /* Do the write to the log files */
+   	log_group_write_buf(
+   		group, write_buf + area_start,
+   		area_end - area_start + pad_size,
+   
+   ```
+
 3. 用户线程可以继续将record写入到新的buffer中；同时，旧的buf在write_mutex的保护下进行后续的刷盘操作；
 
-- `unsigned long buf_next_to_write`：准备写盘的redolog的位置，执行完继续推进。
-
-  ```c
-  void
-  log_write_up_to(
-  	lsn_t	lsn,
-  	bool	flush_to_disk)
-  
-  ...
-  	start_offset = log_sys->buf_next_to_write;
-  ...
-  
-  /* Do the write to the log files */
-  	log_group_write_buf(
-  		group, write_buf + area_start,
-  		area_end - area_start + pad_size,
-  
-  ```
-
-- `write_lsn`/`current_flush_lsn`/`flushed_to_disk_lsn`：buf的刷盘分为两步write和flush；每次写盘的时候都是写到log_sys->lsn，这里会将write_lsn设置为log_sys->lsn；表示当前开始从`write_lsn`开始写，`current_flush_lsn`是正在执行flush操作的lsn；flushed_to_disk_lsn是已经flush到磁盘的lsn（**注意这里是lsn，上面mtrbuf向LogBuffer中拷贝的偏移是ulint**）。
-
-- `n_pending_flushes`/`flush_event`：当前等待redo sync的任务，最大值为1；由`mutex`控制对flush_event的互斥访问，从而设置`n_pending_flushes`；设置了flush_event就触发相应线程进行刷盘。
+   + `write_lsn`/`current_flush_lsn`/`flushed_to_disk_lsn`：buf的刷盘分为两步write和flush；每次写盘的时候都是写到log_sys->lsn，这里会将write_lsn设置为log_sys->lsn；表示当前开始从`write_lsn`开始写，`current_flush_lsn`是正在执行flush操作的lsn；flushed_to_disk_lsn是已经flush到磁盘的lsn（**注意这里是lsn，上面mtrbuf向LogBuffer中拷贝的偏移是ulint**）。
+   + `n_pending_flushes`/`flush_event`：当前等待redo sync的任务，最大值为1；由`mutex`控制对flush_event的互斥访问，从而设置`n_pending_flushes`；设置了flush_event就触发相应线程进行刷盘。
 
 ## 从bufferpool到datafile
 
 InnoDB中可能有多个bufferpool，总大小为innodb_buffer_pool_size（小于1G，多个小buffer会合并）；在每个buffer中有一个page hash表，通过(spaceid, pageno)快速找到page位置；
 
-### LRUlist与FLushList
+### 三个List
 
-另外每个buffer中还有三个list：freelist、lrulist和flushlist。flushlist中是按照lsn顺序组织dirtypage，lrulist是按照访问先后组织的。刷脏有两种：从flush_list或者lru_list中刷，如下。
+每个buffer中还有三个list：freelist、lrulist和flushlist。flushlist中是按照lsn顺序组织dirtypage，lrulist是按照访问先后组织的。刷脏有两种：从flush_list或者lru_list中刷，如下。
 
 ```c
 mysql> SHOW ENGINE INNODB STATUS\G
@@ -244,7 +233,7 @@ buf_flush_start(
 {
 ```
 
-LRUlist是在数据读取的时候，将page放在LRUlist中；如果修改了，相应块也放在flushlist中：在FLU List上的页面一定在LRU List上，但是反之则不成立。
+LRU List是在数据读取的时候，将page放在LRUlist中；如果修改了，相应块也放在flushlist中：在Flush List上的页面一定在LRU List上，但是反之则不成立。
 
 + LRUlist刷：读取数据的时候空间不足，需要按照最近最少使用的原则从LRUlist中淘汰。
 + FLUSHList刷：脏页超过了阈值(`innodb_max_dirty_pages_pct`)，或者定时的CHECKPOINT活动。
@@ -305,7 +294,7 @@ log_checkpoint_margin(void)
   ...
 ```
 
-### 其他参数
+## 其他参数
 
 - `append_on_checkpoint` ：5.7新增，checkpoint时需要额外记录的redo记录，需要在`mutex`下互斥访问。在做DDL时（例如增删列），会先将包含MLOG_FILE_RENAME2日志记录的buf挂到这个变量上。 在DDL完成后，再清理掉。主要是防止DDL期间crash产生的数据词典不一致。
 
