@@ -180,6 +180,8 @@ log_free_check(void)
 
 ### 双buffer切换刷盘
 
+![image-20190809205526703](/image/logbuffer-detail.png)
+
 MySQL-5.7中为了提高`log_sys->mutex`这个大锁的并发，添加一个新的write_mutex与双buffer的设计（每个默认16MB大小）。事务提交进行日志刷盘时，在mutex的保护下，进行`log_buffer_switch`——双buffer的切换：
 
 1. 将当前buf的最后一个block，复制到新的buf的首部；

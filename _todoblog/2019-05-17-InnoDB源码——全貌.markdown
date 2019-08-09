@@ -65,15 +65,122 @@ bin/mysqladmin shutdown
 
 
 
+https://dbtut.com/index.php/2018/09/21/benchmark-performance-of-mysql-using-sysbench/
 
 
-# Record结构
 
-# Page结构
+https://unix.stackexchange.com/questions/476802/install-mysql-5-7-using-bash-script-with-centos
 
-# Mutex与读写锁的实现
 
-# InnoDB的byte读写
 
-storage/innobase/include/mach0data.ic
+```
+
+
+
+sysbench /usr/share/sysbench/oltp_read_write.lua --mysql-host=localhost --mysql-port=3306 --mysql-user=root --mysql-password='Newhakase-labs123@' --mysql-db=sbtest --db-driver=mysql --tables=3 --table-size=10000000  prepare
+
+
+
+
+
+sysbench /usr/share/sysbench/oltp_read_write.lua --mysql-host=localhost --mysql-port=3306 --mysql-user=root --mysql-password='Newhakase-labs123@' --mysql-db=sbtest --db-driver=mysql --tables=3 --table-size=10000000 --report-interval=10 --threads=128 --time=600 run 2>&1
+```
+
+
+
+
+
+
+
+effective-disk 335
+
+```
+SQL statistics:
+    queries performed:
+        read:                            2819572
+        write:                           805592
+        other:                           402796
+        total:                           4027960
+    transactions:                        201398 (335.25 per sec.)
+    queries:                             4027960 (6705.05 per sec.)
+    ignored errors:                      0      (0.00 per sec.)
+    reconnects:                          0      (0.00 per sec.)
+
+General statistics:
+    total time:                          600.7334s
+    total number of events:              201398
+
+Latency (ms):
+         min:                                  5.42
+         avg:                                381.67
+         max:                               5028.89
+         95th percentile:                    995.51
+         sum:                            76867286.91
+
+Threads fairness:
+    events (avg/stddev):           1573.4219/30.95
+    execution time (avg/stddev):   600.5257/0.18
+```
+
+cloud-disk-3.0 242
+
+```
+SQL statistics:
+    queries performed:
+        read:                            2040500
+        write:                           583000
+        other:                           291500
+        total:                           2915000
+    transactions:                        145750 (242.77 per sec.)
+    queries:                             2915000 (4855.43 per sec.)
+    ignored errors:                      0      (0.00 per sec.)
+    reconnects:                          0      (0.00 per sec.)
+
+General statistics:
+    total time:                          600.3571s
+    total number of events:              145750
+
+Latency (ms):
+         min:                                  5.94
+         avg:                                527.17
+         max:                               8215.67
+         95th percentile:                   1648.20
+         sum:                            76835164.59
+
+Threads fairness:
+    events (avg/stddev):           1138.6719/29.13
+    execution time (avg/stddev):   600.2747/0.03
+```
+
+
+
+local-ssd 2141
+
+```
+SQL statistics:
+    queries performed:
+        read:                            17987984
+        write:                           5139424
+        other:                           2569712
+        total:                           25697120
+    transactions:                        1284856 (2141.11 per sec.)
+    queries:                             25697120 (42822.21 per sec.)
+    ignored errors:                      0      (0.00 per sec.)
+    reconnects:                          0      (0.00 per sec.)
+
+General statistics:
+    total time:                          600.0873s
+    total number of events:              1284856
+
+Latency (ms):
+         min:                                  1.52
+         avg:                                 59.78
+         max:                                715.62
+         95th percentile:                    144.97
+         sum:                            76804222.50
+
+Threads fairness:
+    events (avg/stddev):           10037.9375/63.52
+    execution time (avg/stddev):   600.0330/0.01
+```
 
