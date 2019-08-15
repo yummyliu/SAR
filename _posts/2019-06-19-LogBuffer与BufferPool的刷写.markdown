@@ -13,35 +13,48 @@ typora-root-url: ../../yummyliu.github.io
 {:toc}
 数据变更可以变成若干个redo record，每个record都有一个`mlog_id_t`的类型。不同的数据库操作对应不同组合的Record，这些record以mtr为单位进行组织，保证原子性。
 
-1. 数据页的变更必须通过mtr，在`mtr_commit()`中将本次mtr变更的所有record，写入redo日志；
-
-   >  注意这里mtr_commit写入的是redo buffer。具体写入磁盘的时机为：
-   >
-   > 1. 事务提交
-   > 2. log buffer的空间使用过半
-   > 3. log CHECKPOINT
-
-2. 一般来说，变更记录会通过`mlog_write_ulint()`函数(或其他类似函数)写入。
-
-3. 对于一些页面级别的操作，只在记录中记录C函数的编码和参数，节约空间。
-
-   1. 不需要在`trx_undo_header_create() ,trx_undo_insert_header_reuse()`的记录中加参数；
-   2. 不能添加不做任何改变的函数，或者需要依赖页外部数据的函数；当前log模块的函数有完备的页面转换，没有足够的理由不要擅自改动。
+> 1. 数据页的变更必须通过mtr，在`mtr_commit()`中将本次mtr变更的所有record，写入redo日志；
+>
+>    >  注意这里mtr_commit写入的是redo buffer。具体写入磁盘的时机为：
+>    >
+>    > 1. 事务提交
+>    > 2. log buffer的空间使用过半
+>    > 3. log CHECKPOINT
+>
+> 2. 一般来说，变更记录会通过`mlog_write_ulint()`函数(或其他类似函数)写入。
+>
+> 3. 对于一些页面级别的操作，只在记录中记录C函数的编码和参数，节约空间。
+>
+>    1. 不需要在`trx_undo_header_create() ,trx_undo_insert_header_reuse()`的记录中加参数；
+>    2. 不能添加不做任何改变的函数，或者需要依赖页外部数据的函数；当前log模块的函数有完备的页面转换，没有足够的理由不要擅自改动。
+>
 
 
 本节基于redo机制的核心控制结构：`log_t`来介绍事务提交时LogBuffer的作用。
 
 # LogBuffer与事务提交
 
-`log_t*	log_sys`是redo日志系统的关键全局变量。主要负责三项事情：
+`log_t*	log_sys`是redo日志系统的关键全局变量。负责三项事情：
 
-1. mtr_buf->logbuffer：用户线程mtr_commit时，将mtr_buf中的redo record，拷贝到log buffer中；
-2. logbuffer->logfile：write_mutex控制logbuffer顺序的刷盘；
-3. bufferpool->datafile：log_flush_order_mutex控制flushlist的顺序刷盘；执行CHECKPOINT或preflush。
+1. logrecord从mtr_buf复制到logbuffer：用户线程mtr_commit时，将mtr_buf中的redo record，拷贝到log buffer中；
+2. logrecord从logbuffer复制到logfile：write_mutex控制logbuffer顺序的刷盘；
+3. dirtypage从bufferpool刷写到datafile：log_flush_order_mutex控制flushlist的顺序刷盘；执行CHECKPOINT或preflush。
 
-![image-20190725135903922](/image/logbuffer-flush.png)
+![image-20190815150922711](/image/logbuffer-flush.png)
 
-上图中将log_t与logbuffer的机制进行了整合描述。InnoDB的logbuffer是双buffer设计，每个默认是16MB，其中也是按照512byte的block进行组织，关于双Buffer有以下主要参数：
+InnoDB的logbuffer是双buffer设计，每个默认是16MB，可以进行伸展；
+
+在mtr_commit时，UserThread将自己事务对应的多个mtr复制到logbuffer中；在logbuffer中，每接收到496byte的logrecord，就将这组logrecord包装一个12byte的block header和一个4byte的block tailer，成为一个logblock。刷盘会对齐512字节刷盘。
+
+在事务提交时，双Buffer进行切换；切换时会将当前buffer的最后一个block，复制到新buffer的头部，因为最后一个block可能没有写满，要继续按照lsn进行**连续写入**。
+
+> LSN
+>
+> log_sys中维护了redo日志已经写到的日志序列号；LSN可以看做是将所有日志拼接在一起，**去掉logfileheader数据**，然后在整个大文件中的文件偏移量。如下在log_init函数中，log_sys->lsn起始位置是算上LOG_BLOCK_HDR_SIZE，但是没有算上LOG_FILE_HDR_SIZE。
+>
+> log_sys->lsn = LOG_START_LSN + LOG_BLOCK_HDR_SIZE;
+
+双buffer有以下主要参数：
 
 + `buf`指向当前写入的logbuffer（`buf_ptr`是没有对齐的起始位置）；
 
@@ -67,7 +80,7 @@ typora-root-url: ../../yummyliu.github.io
   
   m_made_dirty表示产生了脏页，需要将脏页追加到flush_list中。如下mtr_commit的流程图：
   
-  ![image-20190726161153296](/image/mtr_commit.png)
+  ![image-20190815173343250](/image/mtr_commit.png)
 
 在mtr_commit的时候，为了保证提前释放mutex后，flush_list的dirty_page的写入是顺序的，这里加了log_flush_order_mutex锁，减下·小了临界区的大小，提高了整体的并发度。
 
