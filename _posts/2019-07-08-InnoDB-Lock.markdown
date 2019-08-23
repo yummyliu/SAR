@@ -1,16 +1,185 @@
 ---
 layout: post
-title: MySQL的线程锁与Btree的互动
+title: MySQL的Lock剖析
 date: 2019-07-08 10:07
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-  - InnoDB
+  - MySQL
 typora-root-url: ../../yummyliu.github.io
 ---
 * TOC
 {:toc}
-# 隐式内存锁
+# InnoDB的LockSystem
+
+## 显式事务锁
+
+描述一个锁从两个维度：粒度和力度。在InnoDB中，从粒度上分为表锁和行锁；在不同的粒度上，又根据力度的不同分为不同类型。但都是在一个结构中表示`lock_t`，根据`is_record_lock`（提取type_mode的标记位）来判断锁的粒度。
+
+```c
+	/** Determine if the lock object is a record lock.
+	@return true if record lock, false otherwise. */
+	bool is_record_lock() const
+	{
+		return(type() == LOCK_REC);
+	}
+	ulint type() const {
+		return(type_mode & LOCK_TYPE_MASK);
+	}
+```
+
+type_mode是一个无符号的32位整型，低1字节为lock_mode；低2字节为lock_type；再高的字节为行锁的类型标记，如下定义：
+
+```c
+/** Lock modes and types */
+/* Basic lock modes */
+enum lock_mode {
+	LOCK_IS = 0,	/* intention shared */
+	LOCK_IX,	/* intention exclusive */
+	LOCK_S,		/* shared */
+	LOCK_X,		/* exclusive */
+	LOCK_AUTO_INC,	/* locks the auto-inc counter of a table in an exclusive mode */
+	LOCK_NONE,	/* this is used elsewhere to note consistent read */
+	LOCK_NUM = LOCK_NONE, /* number of lock modes */
+	LOCK_NONE_UNSET = 255
+};
+/* @{ */
+#define LOCK_MODE_MASK	0xFUL	/*!< mask used to extract mode from the
+				type_mode field in a lock */
+/** Lock types */
+/* @{ */
+#define LOCK_TABLE	16	/*!< table lock */
+#define	LOCK_REC	32	/*!< record lock */
+#define LOCK_TYPE_MASK	0xF0UL	/*!< mask used to extract lock type from the
+				type_mode field in a lock */
+#define LOCK_PREDICATE	8192	/*!< Predicate lock */
+#define LOCK_PRDT_PAGE	16384	/*!< Page lock */
+```
+
+### 表锁
+
+在MySQL中，有表锁和行锁；在DML中，一般就是行锁，默认的存储引擎InnoDB实现的就是行锁，有X/S两种模式（5.7中加了SX模式）。
+
+当我们要对某个page中的一行记录进行锁定时，需要对上层的table加意向锁——IS/IX，意为该事务中有意向对表中的某些行加X、S锁。意向锁是InnoDB存储引擎自己维护的，用户无法手动添加意向锁。
+
+通过阅读代码，可以看出执行每次操作MySQL上层直接发起`MySQL_lock_table->Innodb::external_lock(F_WRLCK/F_RDLCK)`。结束之后再`MySQL_unlock_table->Innodb::external_lock(F_UNLCK) `。其中模式只有三种（直接使用的Linux文件操作的宏定义）如下：
+
+```c
+#define F_RDLCK 0
+#define F_WRLCK 1
+#define F_UNLCK 2
+// 这是linux头文件中的定义；但是在my_global.h中，是
+#define F_RDLCK 1
+#define F_WRLCK 2
+#define F_UNLCK 3
+// 注意区分
+```
+
+注意意向锁是表级别的锁（其实就是在整个一级索引上加index->lock），其和表锁X/S有相应的兼容性判断：
+
+| -    | IS               | IX     | S      | X                |
+| ---- | ---------------- | ------ | ------ | ---------------- |
+| IS   | 兼容(compatible) | 兼容   | 兼容   | 不兼容(conflict) |
+| IX   | 兼容             | 兼容   | 不兼容 | 不兼容           |
+| S    | 兼容             | 不兼容 | 兼容   | 不兼容           |
+| X    | 不兼容           | 不兼容 | 不兼容 | 不兼容           |
+
+————————————————————————————————————
+
+除了通过锁来进行并发控制（**一致性锁定读**，select for update/select for shared/update where / delete where）；另外，在默认情况下。事务第一次读的时候会通过undo空间提供的多版本，构建一个readview，提供**一致性非锁定读**；这就是RR级别下，可重复读的实现方式。比如，`mysqldump --single-transaction`时，就是基于RR级别的读快照进行导出。
+
+————————————————————————————————————
+
+另外，还有一种特殊的表锁：Auto-Inc Lock，当有AUTO_INCREMENT列时，插入数据时会有这个锁，由参数**innodb_autoinc_lock_mode**控制自增长的控制算法，该锁持有到语句结束，而不是事务结束。由于并发插入的存在，自增长的值是不连续的；那么，基于statement的主从复制可能出现问题；因此，启用auto_increment后，需要是有row模式的主从复制。
+
+> 这里讲的都是InnoDB中的锁，在MySQL层还有一个MDL，需要注意的是，MDL锁并不是对表加锁，而是在加表锁前的一个预检查，如果能拿到MDL锁，下一步加相应的表锁。
+
+### 行锁
+
+![image-20190723161700433](/image/innodb-lockmanager.png)
+
++ **Record Lock**：基于主键锁定某个记录
+
++ **Gap Lock**：要求隔离级别是RR，并且innodb_locks_unsafe_for_binlog=0；这时，如果查询走非唯一索引或者查询是范围读，那么会加GapLock。
+
++ **Next-Key Lock**：前提是启用了GapLock，其是Record Lock和该Record之前区间的Gap Lock的结合；否则，只是recordLock。
+
+  当给一个record加x/s锁时，其实是给该record加recordlock，和该record之前的一个gap加了gaplock；即给一个左开右闭的区间加了锁。避免幻读。
+
+  当查询的索引具有唯一性时，Next-Key Lock降级为Record Lock。
+
++ **Insert Intention Lock**：Insert语句的特殊的GapLock；gap锁存在的唯一目的是防止有其他事务进行插入，从而造成幻读。假如利用gap锁来代替插入意向锁，那么两个事务则不能同时对一个gap进行插入。因此为了更高的并发性所以使用插入意向gap锁；插入意向锁的使得insert同一个间隙的不同键值的查询之间不阻塞，提高并发；但是还是会阻塞update、delete操作。
+
+  当多个事务在**同一区间**（gap）插入**位置不同**的多条数据时，事务之间**不需要互相等待**。
+
+> `innodb_locks_unsafe_for_binlog`
+>
+> 该参数的作用和将隔离级别设置为 READ COMMITTED相同，是一个将要废弃的参数。
+
+
+
+行锁通过`RecLock`类型定义，其中成员变量m_rec_id（RecID）唯一确定加锁的目标单位，由三个参数确定：spaceid/pageno/heapno(页内记录的编号)。
+
+行锁的加锁对象是索引中的record，在文档[Locks Set by Different SQL Statements in InnoDB](https://dev.mysql.com/doc/refman/5.7/en/innodb-locks-set.html)中，表述InnoDB会将扫描过的元组进行加锁。
+
+> `InnoDB`does not remember the exact `WHERE` condition, but only knows which index ranges were scanned.
+>
+> It is important to create good indexes so that your queries do not unnecessarily scan many rows.
+
+对于，LockRead/update/delete，这些语句扫描了那些元组，就将哪些元组加指定模式的锁，如下是行锁的类型标记；
+
+```c
+#define LOCK_ORDINARY	0	/*!< this flag denotes an ordinary
+				next-key lock in contrast to LOCK_GAP
+				or LOCK_REC_NOT_GAP */
+#define LOCK_GAP	512	
+#define LOCK_REC_NOT_GAP 1024	
+#define LOCK_INSERT_INTENTION 2048 
+```
+
+当标记了LOCK_ORDINARY，表示只锁了该record。当标记了LOCK_GAP表示将该元组之前的间隙锁定了（不包括该元组）。
+
+在检查锁冲突时，按照m_rec_id在lock_sys->rec_hash中遍历该目标page中的所有锁，检查是否有冲突（猜想如果没有间隙锁这个机制，那么就不需要遍历整个page了）；如果冲突那么入队列等待；
+
+> **监控视图**
+>
+> ```sql
+> select * from information_schema.innodb_trx\G; -- 查看当前的事务信息
+> select * from information_schema.innodb_locks\G; --查看当前的锁信息
+> select * from information_schema.innodb_lock_waits\G; --- 查看当前的锁等待信息
+> --可以联表查，查找自己想要的结果。
+> select * from sys.innodb_lock_waits\G; -- 查看当前的锁等待信息
+> show engine innodb status\G;
+> ---还可以通过当前执行了执行了什么语句
+> select * from  performance_schema.events_statements_current\G; 
+> show full processlist;
+> ```
+
+> 关于隔离级别的有我的文章
+
+### readview
+
++ low_limit_id：high water mark，大于等于view->low_limit_id的事务对于view都是不可见的
++ up_limit_id：low water mark，小于view->up_limit_id的事务对于view一定是可见的
++ low_limit_no：trx_no小于view->low_limit_no的undo log对于view是可以purge的
++ rw_trx_ids：读写事务数组
+
+trx_undo_build_roll_ptr
+
+```c
+	roll_ptr = (roll_ptr_t) is_insert << 55
+		| (roll_ptr_t) rseg_id << 48
+		| (roll_ptr_t) page_no << 16
+		| offset;
+```
+
+RC基于语句开始时最大已提交的事务ID。RR基于事务开始时最大已提交的事务ID。
+
+#### history list
+
+可见性判断
+
+## 隐式内存锁
 
 ```c
 /* The hash table structure */
@@ -56,7 +225,7 @@ struct hash_table_t {
 
 内存锁的对象是buf_page中的page，即`buf_pool->page_hash`；page_hash是如上结果的hash表；其中的sync_obj就是该hash表中的元素的锁，有两种：mutex和rw_lock。
 
-## mutex
+### mutex
 
 上述的事务锁是和Transaction相关的并发控制；而在InnoDB的内存中，还有基于系统提供的原子操作，和用户线程相关的存并发访问机制（latch），分为两种：
 
@@ -84,9 +253,125 @@ struct hash_table_t {
 + Filespace management latch，file page的读写
 + 等等
 
-## rw_lock
+### rw_lock
 
 rw_lock基于如下结构实现的自旋锁。多个readthread可以持有一个s模式的rw_lock。但是，x模式的rw_lock只能被一个writethread持有；为了避免writethread被多个readthread饿死，writethread可以通过排队的方式阻塞新的readthread，每排队一个writethread将lockword减X_LOCK_DECR（新的SX锁等待时，减X_LOCK_HALF_DECR）。在wl6363中，标明了加了SX锁后lock_word不同取值的意思；其中lock_word=0表示加了xlock；lock_word= 0x20000000没有加锁；
+
+```c
+struct rw_lock_t
+#ifdef UNIV_DEBUG
+	: public latch_t
+#endif /* UNIV_DEBUG */
+{
+	/** Holds the state of the lock. */
+	volatile lint	lock_word;
+
+	/** 1: there are waiters */
+	volatile ulint	waiters;
+
+	/** Default value FALSE which means the lock is non-recursive.
+	The value is typically set to TRUE making normal rw_locks recursive.
+	In case of asynchronous IO, when a non-zero value of 'pass' is
+	passed then we keep the lock non-recursive.
+
+	This flag also tells us about the state of writer_thread field.
+	If this flag is set then writer_thread MUST contain the thread
+	id of the current x-holder or wait-x thread.  This flag must be
+	reset in x_unlock functions before incrementing the lock_word */
+	volatile bool	recursive;
+
+	/** number of granted SX locks. */
+	volatile ulint	sx_recursive;
+
+	/** This is TRUE if the writer field is RW_LOCK_X_WAIT; this field
+	is located far from the memory update hotspot fields which are at
+	the start of this struct, thus we can peek this field without
+	causing much memory bus traffic */
+	bool		writer_is_wait_ex;
+
+	/** Thread id of writer thread. Is only guaranteed to have sane
+	and non-stale value iff recursive flag is set. */
+	volatile os_thread_id_t	writer_thread;
+
+	/** Used by sync0arr.cc for thread queueing */
+	os_event_t	event;
+
+	/** Event for next-writer to wait on. A thread must decrement
+	lock_word before waiting. */
+	os_event_t	wait_ex_event;
+
+	/** File name where lock created */
+	const char*	cfile_name;
+
+	/** last s-lock file/line is not guaranteed to be correct */
+	const char*	last_s_file_name;
+
+	/** File name where last x-locked */
+	const char*	last_x_file_name;
+
+	/** Line where created */
+	unsigned	cline:13;
+
+	/** If 1 then the rw-lock is a block lock */
+	unsigned	is_block_lock:1;
+
+	/** Line number where last time s-locked */
+	unsigned	last_s_line:14;
+
+	/** Line number where last time x-locked */
+	unsigned	last_x_line:14;
+
+	/** Count of os_waits. May not be accurate */
+	uint32_t	count_os_wait;
+
+	/** All allocated rw locks are put into a list */
+	UT_LIST_NODE_T(rw_lock_t) list;
+
+#ifdef UNIV_PFS_RWLOCK
+	/** The instrumentation hook */
+	struct PSI_rwlock*	pfs_psi;
+#endif /* UNIV_PFS_RWLOCK */
+
+#ifndef INNODB_RW_LOCKS_USE_ATOMICS
+	/** The mutex protecting rw_lock_t */
+	mutable ib_mutex_t mutex;
+#endif /* INNODB_RW_LOCKS_USE_ATOMICS */
+
+#ifdef UNIV_DEBUG
+/** Value of rw_lock_t::magic_n */
+# define RW_LOCK_MAGIC_N	22643
+
+	/** Constructor */
+	rw_lock_t()
+	{
+		magic_n = RW_LOCK_MAGIC_N;
+	}
+
+	/** Destructor */
+	virtual ~rw_lock_t()
+	{
+		ut_ad(magic_n == RW_LOCK_MAGIC_N);
+		magic_n = 0;
+	}
+
+	virtual std::string to_string() const;
+	virtual std::string locked_from() const;
+
+	/** For checking memory corruption. */
+	ulint		magic_n;
+
+	/** In the debug version: pointer to the debug info list of the lock */
+	UT_LIST_BASE_NODE_T(rw_lock_debug_t) debug_list;
+
+	/** Level in the global latching order. */
+	latch_level_t	level;
+
+#endif /* UNIV_DEBUG */
+
+}
+```
+
+
 
 在5.7中，rw_lock共有四种类型，（在5.7新加了一个[SX](https://dev.mysql.com/worklog/task/?id=6363)类型）。
 
