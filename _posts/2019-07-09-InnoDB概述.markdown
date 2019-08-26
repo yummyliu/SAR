@@ -98,6 +98,11 @@ MySQL即主要提供了Relational Query Procesor的功能，InnoDB就是上图�
 
 ### 读写最小单元——Record
 
+> 在innobase/include/rem0rec.ic；列出了record中各个值的偏移
+>
+> /* We list the byte offsets from the origin of the record, the mask,
+> and the shift needed to obtain each bit-field of the record. */
+
 ![image-20190726105136952](/image/InnoDB读写最小单元.png)
 
 在上述Page中，我们可以看到其中的Record按照链表的形式组织起来。每个Record记录了其前向和后向Record的偏移。注意这个偏移是真实Record的数据部分的起始位置，如上图所示。另外，在每个Record中都有两(三)个隐藏列：
