@@ -231,7 +231,7 @@ if (btr_cur_limit_optimistic_insert_debug > 1\
 
 申请一个新的page，然后将需要分出去的记录转移过去，最后将记录插入到正确的page中。
 
-![image-20190826192337895](/image/btr_page_split_and_insert.png)
+![image-20190826205715267](/image/btr_page_split_and_insert.png)
 
 1. 找到split_rec，节点的分裂位置，无mtr
 
