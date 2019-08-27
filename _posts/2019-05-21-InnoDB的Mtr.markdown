@@ -86,7 +86,7 @@ enum mtr_state_t {
 
 ## 1. 分配undo空间
 
-** tr x_undo_assign_undo**
+**trx_undo_assign_undo**
 
 + MLOG_UNDO_HDR_REUSE：insert的undo页在提交的时候就没有用了，只是在insert事务回滚的时候才用上；所以，insert的undo分配每次都是重用之前的cache，只是修改头部数据即可；而update就是需要创建一个undopage header文件块，如下。
 
@@ -204,12 +204,12 @@ undo的操作就两种，插入和修改；
 
 # 悲观的Insert涉及的mtr
 
-```c++
-# define LIMIT_OPTIMISTIC_INSERT_DEBUG(NREC, CODE)\
-if (btr_cur_limit_optimistic_insert_debug > 1\
-    && (NREC) >= (ulint)btr_cur_limit_optimistic_insert_debug) {\
-        CODE;\
-}
+```c
+  # define LIMIT_OPTIMISTIC_INSERT_DEBUG(NREC, CODE)\
+  if (btr_cur_limit_optimistic_insert_debug > 1\
+      && (NREC) >= (ulint)btr_cur_limit_optimistic_insert_debug) {\
+          CODE;\
+  }
 ```
 
 插入的时候首先尝试乐观的插入——`BTR_MODIFY_LEAF`，当乐观的方式返回DB_FAIL时；进行`BTR_MODIFY_TREE`模式的插入——`btr_cur_pessimistic_insert`。
@@ -235,6 +235,8 @@ if (btr_cur_limit_optimistic_insert_debug > 1\
 
 1. 找到split_rec，节点的分裂位置，无mtr
 
+2. 分配新page
+
    MLOG_1BYTE： xdes_set_bit，表空间的Extent Descriptor的修改。
 
    MLOG_4BYTES：frag_n_used ，空闲碎片表中已经用掉的碎片。
@@ -243,7 +245,7 @@ if (btr_cur_limit_optimistic_insert_debug > 1\
 
    MLOG_4BYTES：fseg_set_nth_frag_page_no，设置碎片的pageno
 
-2. 分配并初始化一个空闲的page
+3. 并初始化一个空闲的page
 
    MLOG_COMP_PAGE_CREATE
 
@@ -257,9 +259,11 @@ if (btr_cur_limit_optimistic_insert_debug > 1\
 
    MLOG_COMP_REC_INSERT
 
-   MLOG_4BYTES：btr_page_set_prev
+   MLOG_4BYTES：设置老page的next
 
-   MLOG_4BYTES：btr_page_set_next
+   MLOG_4BYTES：设置新page的prev，btr_page_set_prev
+
+   MLOG_4BYTES：设置新page的next，btr_page_set_next
 
    > 在btr_attach_half_pages中，调用btr_insert_on_non_leaf_level向non-leaf page中插入一个node_ptr；还是和插入叶子节点类似的逻辑，先btr_cur_search_to_nth_level，然后btr_cur_optimistic_insert；如果乐观的不行，然后悲观的插入。
    >
@@ -274,6 +278,7 @@ if (btr_cur_limit_optimistic_insert_debug > 1\
    >
    > ```c++
    > #define	DATA_INT	6	/* integer: can be any size 1 - 8 bytes */
+   > 
    > #define	DATA_SYS_CHILD	7	/* address of the child page in node pointer */
    > ```
 
@@ -301,7 +306,7 @@ if (btr_cur_limit_optimistic_insert_debug > 1\
 
 申请一个新的page，将原root的记录，转移到新page中；重建旧的root，作为新的root；然后对新page进行节点分裂。
 
-![image-20190826203014438](/image/btr_root_raise_and_insert.png)
+![image-20190827084346097](/image/btr_root_raise_and_insert.png)
 
 1. 申请新page
 
