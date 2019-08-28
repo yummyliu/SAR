@@ -332,9 +332,7 @@ undo的操作就两种，插入和修改；
 
 # Btree悲观删除涉及的mtr
 
-TODO
+![image-20190828202208557](/image/btr_compress.png)
 
-btr_compress
-
-btr_lift_page_up
+很多MTR都是和INSERT类似的，这里只是简单表示Btree悲观删除的逻辑。
 
