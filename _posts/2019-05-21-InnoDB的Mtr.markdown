@@ -202,7 +202,7 @@ undo的操作就两种，插入和修改；
   ```
 
 
-# 悲观的Insert涉及的mtr
+# Btree悲观插入涉及的mtr
 
 ```c
   # define LIMIT_OPTIMISTIC_INSERT_DEBUG(NREC, CODE)\
@@ -330,5 +330,11 @@ undo的操作就两种，插入和修改；
 
 
 
+# Btree悲观删除涉及的mtr
 
+TODO
+
+btr_compress
+
+btr_lift_page_up
 
