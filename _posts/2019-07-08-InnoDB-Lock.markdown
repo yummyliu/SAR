@@ -1,3 +1,13 @@
+---
+layout: post
+title: InnoDB的Btree与rwlock互动解析
+date: 2019-07-08 16:35
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+  - InnoDB
+typora-root-url: ../../yummyliu.github.io
+---
 * TOC
 {:toc}
 # 隐式线程锁
