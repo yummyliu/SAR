@@ -127,6 +127,8 @@ enum btr_latch_mode {
 
 入口是`btr_cur_search_to_nth_level`，如下是该函数的大体逻辑：
 
+![image-20190830121803173](/image/btr_cur_search_to_nth_level.png)
+
 ### **1. 初始化扫描指令**；
 
 函数一开始，识别高位的标记得到如下信息，之后后将高位信息抹除(`BTR_LATCH_MODE_WITHOUT_FLAGS`)。
