@@ -34,28 +34,28 @@ typora-root-url: ../../yummyliu.github.io
 
 > storage/innobase/include/ut0link_buf.h
 >
->  Link buffer - concurrent data structure which allows:
+> Link buffer - concurrent data structure which allows:
 >
->          - concurrent addition of links
->          - single-threaded tracking of connected path created by links
->          - limited size of window with holes (missing links)
-
-```c++
-template <typename Position = uint64_t>
-class Link_buf {
-...
-/** Capacity of the buffer. */
-  size_t m_capacity;
-
-  /** Pointer to the ring buffer (unaligned). */
-  std::atomic<Distance> *m_links;
-
-...
-```
+> ```c
+>      - concurrent addition of links
+>      - single-threaded tracking of connected path created by links
+>      - limited size of window with holes (missing links)
+>        
+> template <typename Position = uint64_t>
+> class Link_buf {
+> ...
+> /** Capacity of the buffer. */
+>   size_t m_capacity;
+> 
+>   /** Pointer to the ring buffer (unaligned). */
+>   std::atomic<Distance> *m_links;
+> 
+> ...
+> ```
 
 这是一个固定大小的环形数组，每个slot原子更新，整个数据循环重用；另外，有一个线程负责遍历并清理用过的slot（在empty slot处会暂停遍历），并更新**最远连续可达的LSN**。
 
-![img](/Users/liuyangming/Desktop/8.0-link_buf.png)
+![image-20190905210458918](/image/link-buf.png)
 
 这种新数据结构在log_sys中有两个，分别负责LogBuffer和flushlist的写入，如下：
 
@@ -103,7 +103,7 @@ alignas(INNOBASE_CACHE_LINE_SIZE)
 
 用户线程继续填充了部分slot，如下:
 
-![img](/Users/liuyangming/Desktop/redo-next-write-to-log-buffer-2.png)
+![img](/image/redo-next-write-to-log-buffer-2.png)
 
 log_writer线程会继续更新buf_ready_for_write_lsn
 
