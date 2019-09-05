@@ -12,7 +12,17 @@ typora-root-url: ../../yummyliu.github.io
 
 * TOC
 {:toc}
-# 图
+
+
+# edit
+
+![](/image/vim-edit.png)
+
+# make
+
+![](/image/vim-make.png)
+
+# debug
 
 ![](/image/vim-gdb.png)
 
