@@ -30,57 +30,26 @@ typora-root-url: ../../yummyliu.github.io
 
 ## LinkBuf结构
 
-在8.0中，添加了一个新的数据结构：LinkBuf；
-
 > storage/innobase/include/ut0link_buf.h
->
-> Link buffer - concurrent data structure which allows:
->
-> ```c
->      - concurrent addition of links
->      - single-threaded tracking of connected path created by links
->      - limited size of window with holes (missing links)
->        
-> template <typename Position = uint64_t>
-> class Link_buf {
-> ...
-> /** Capacity of the buffer. */
->   size_t m_capacity;
-> 
->   /** Pointer to the ring buffer (unaligned). */
->   std::atomic<Distance> *m_links;
-> 
-> ...
-> ```
-
-这是一个固定大小的环形数组，每个slot原子更新，整个数据循环重用；另外，有一个线程负责遍历并清理用过的slot（在empty slot处会暂停遍历），并更新**最远连续可达的LSN**。
 
 ![image-20190905210458918](/image/link-buf.png)
 
-这种新数据结构在log_sys中有两个，分别负责LogBuffer和flushlist的写入，如下：
+在8.0中，添加了一个新的数据结构：Link Buffer。
 
-```c++
-struct alignas(INNOBASE_CACHE_LINE_SIZE) log_t {
-...
-alignas(INNOBASE_CACHE_LINE_SIZE)
+这是一个固定大小的环形缓存，每个slot中存储了link对象。link可以看做是[from, to]表示的一个区间，对于一个link：[from, to]，通过from%m_capacity得到对应的slotindex，然后在该slot中存储了该区间的长度`to - from`。当前位置原子更新，整个数组循环重用；
 
-      /** The recent written buffer.
-      Protected by: sn_lock or writer_mutex. */
-      Link_buf<lsn_t> recent_written;
+另外，有相应的线程负责遍历并清理用过的slot，在empty slot（slot中的val，即length=0，就是一个空slot，详情参考`advance_tail_until`函数）处会暂停遍历，并更新m_tail。
 
-  alignas(INNOBASE_CACHE_LINE_SIZE)
+在源码中，定义为一个模板，在log_sys应用中，有两个场景：
 
-      /** The recent closed buffer.
-      Protected by: sn_lock or closer_mutex. */
-      Link_buf<lsn_t> recent_closed;
-...
-```
++ `Link_buf<lsn_t> recent_written`：LogBuffer的有序写入，在`log_buffer_write_completed`中，首先等待**recent_written.has_space**，然后`recent_written.add_link`。对应的在log_writer中，会推进recent_written的m_tail。
++ `Link_buf<lsn_t> recent_closed`：FlushList的有序写入，在mtr_commit中，先在`log_wait_for_space_in_log_recent_closed`等待recent_closed可以写入，然后`add_dirty_blocks_to_flush_list`。对应的在log_closer中，会推进recent_closed的m_tail。
 
 ## *写入LogBuffer：recent_written*
 
-该对象是跟踪已经写入到LogBuffer中的记录；通过该对象的maxLSN（**最远可达LSN**）可以得知任何小于maxlsn的记录已经写入完毕了。如果进行故障恢复，只会恢复到这里；该结构上的遍历线程为log_writer，同样也会将连续的记录刷盘（下节）。
+该对象是跟踪已经写入到LogBuffer中的记录；通过该对象的maxLSN，可以得知任何小于maxlsn的记录已经写入完毕了。如果进行故障恢复，最远只会恢复到这里；log_writer读取该结构上的maxLSN，将连续的记录刷盘，同时向前更新maxLSN（下节）。
 
-> log_writer按照读/写slot之前已经确定好了的界限，保证了日志记录的正确顺序。
+> 用户线程在写LogBuffer之前，预留一段空间，保证了日志记录的正确顺序。
 >
 > ```c++
 > Log_handle log_buffer_reserve(log_t &log, size_t len) {
@@ -91,21 +60,19 @@ alignas(INNOBASE_CACHE_LINE_SIZE)
 > }
 > ```
 
-如下例：
+如下例，这是一个LogBuffer，其中有三类lsn标识的界限：
+
+- write_lsn表示已经发起过write的记录(是否sync取决于提交参数)。
+- buf_ready_for_write_lsn表示可以进行write的位置，这之后可以乱序的写入。
+- current_lsn，已经分配给某个userthread进行日志写入的最远位置。
 
 ![img](/image/link_buf2.png)
-
-+ write_lsn表示已经发起过write的记录(是否sync取决于提交参数)。
-
-+ buf_ready_for_write_lsn表示可以进行write的位置，这之后可以乱序的写入。
-
-+ current_lsn，已经分配给某个userthread进行日志写入的最远位置。
 
 用户线程继续填充了部分slot，如下图，这样buf_ready_for_write_lsn就可以更新了：
 
 ![img](/image/redo-next-write-to-log-buffer-2.png)
 
-log_writer线程会继续更新buf_ready_for_write_lsn。
+log_writer线程写完LogBuffer后，会继续更新buf_ready_for_write_lsn。
 
 ![img](/image/redo-next-write-to-log-buffer-3.png)
 
@@ -113,11 +80,11 @@ log_writer线程会继续更新buf_ready_for_write_lsn。
 
 该对象是为了解决5.7中log_sys->flush_order_mutex解决的问题。现在为提高整体的并发度，我们不在保证向flush_list中添加dirty_page是有按LSN有序的。但是还是须满足两个前提条件：
 
-**前提1：保证检查点正确性**：当在某个LSN写入CHECKPOINT记录之后，表示脏页上的最近修改LSN<该CHECKPOINT_LSN的脏页都已经落盘了。
+**前提1：保证检查点正确性**：当在某个LSN写入CHECKPOINT记录之后，表示最近修改LSN<该CHECKPOINT_LSN的内存脏页都已经落盘了。
 
-**前提2：保证数据页刷盘的顺序**：flush list的刷盘必须从最老的page开始；保证数据页按顺序修改，这也有助于推进CHECKPOINT-LSN。
+**前提2：保证数据页刷盘的顺序**：flush list的刷盘必须从最老的page开始，且保证数据页按顺序修改，这也有助于推进CHECKPOINT_LSN。
 
-那么，为了保证以上前提，还要提高效率；这里利用recent_closed的结构，跟踪向flushlist中并发添加脏页的执行过程，并给出连续脏页的最大LSN(下称为M)。那么任何比M小的脏页已经按LSN顺序添加完成，modify-LSN比M大L（有限的宽松）的脏页可以提前添加。因此，基于recent_closed实现一个**relaxed order  flush lists**。
+那么，为了保证以上前提，还要提高效率；这里利用recent_closed的结构，跟踪向flushlist中并发添加脏页的执行过程，并给出连续脏页的最大LSN(下称为M)。那么任何比M小的脏页已经按LSN顺序添加完成，modifyLSN<=M+L（有限的宽松）的脏页可以提前添加。因此，基于recent_closed实现一个**relaxed order  flush lists**。
 
 每次mtr_commit将日志写入到LogBuffer之后，会将mtr.start_lsn到mtr.end_lsn之间的脏页放到对应的flushlist中；在新的设计中，当用户线程需要拷贝脏页时，如果recent_closed的M与start_lsn的差值大于L（T2），那么会等待；直到start_lsn - M < L时（T1），用户线程才会将脏页放在对应的flushlist中。
 
@@ -146,27 +113,29 @@ log_writer线程会继续更新buf_ready_for_write_lsn。
 
 ![image-20190906174825675](/image/logbuffer-8.png)
 
-+ log_writer：原来是由UserThread驱动的，每次将整个LogBuffer写出；现在只要LogBuffer中有数据可以写，专门的log_writer线程不断地将日志记录write到pagecache中；为了避免覆盖不完整的block，每次写都是写一个完整的block；同时更新write_lsn。
++ **log_writer**：原来是由UserThread驱动的，每次将整个LogBuffer写出；现在只要LogBuffer中有数据可以写，专门的log_writer线程不断地将日志记录write到pagecache中；为了避免覆盖不完整的block，每次写都是写一个完整的block；同时更新write_lsn。
 
-  > storage/innobase/log/log0write.cc
+  ![image-20190909182634195](/image/log-writer.png)
 
-  ![img](/image/log-writer.png)
++ **log_flusher**：log_flusher不断的读取write_lsn，然后调用`fil_flush_file_redo`将日志落盘，同时更新flushed_to_disk_lsn。这样log_flusher和log_writer按照各自的速度同时运行，除了系统内核中的同步外（write_lsn的原子读写），没有同步操作。
 
-+ log_flusher：log_flusher不断的读取write_lsn，然后调用`fsync`将日志落盘，同时更新flushed_to_disk_lsn。这样log_flush和log_write按照各自的速度同时运行，除了系统内核中的同步外（write_lsn的原子读写），没有同步操作。
++ **log_flush_notifier**：之前提交的时候，当前线程需要确认LogBuffer已经fsync到哪个位置，如果没有，就将LogBuffer落盘，然后等待；
 
-+ log_flush_notifier：之前提交的时候，当前线程需要确认LogBuffer已经fsync到哪个位置，如果没有，就将LogBuffer落盘，然后等待；而现在用户线程提交的时候，会检查flushed_to_disk_lsn是否足够，如果不够，那么等待log_flusher迭代。这里的等待事件按照lsn的区间分成不同的块，并可以循环利用；这样flushed_to_disk_lsn推进一块，就可以通知一部分线程commitOK，提高整体的扩展性，如下图。
+  而现在用户线程提交的时候，会检查flushed_to_disk_lsn是否足够，如果不够，那么等待某个flush_events。这里的flush_event按照lsn的区间分成不同的块（默认**INNODB_LOG_EVENTS_DEFAULT**个），并可以循环利用；这样flushed_to_disk_lsn推进一块，就可以通知一部分线程commitOK，提高整体的扩展性，如下图。
 
   ![img](/image/waiting-commit.png)
-
-  另外，如果你只关心write，那么就是由另一个log_write_notifier来通知。
+  
+  另外，如果你只关心write，那么就是由另一个log_write_notifier来通知，相应的用户线程等待write_events事件。
+  
+  ![image-20190909203252074](/image/log_flush_notifier.png)
 
 > 由于等待事件然后被唤醒的延迟高，这里默认使用spin-loop进行自旋等待。但是为了避免提高系统的CPU代价，添加了**innodb_log_spin_cpu_abs_lwm**和**innodb_log_spin_cpu_pct_hwm**参数来控制CPU代价。
 
 ## *写出FlushList：dirtyPage flush*
 
-通过将脏页刷盘，可以将CHECKPOINT-LSN向前递进，从而回收redo日志。之前是有用户线程之间竞争，最后决定某个用户线程写入CHECKPOINT记录。8中，由一个专有线程log_checkpointer来负责。
+通过将脏页刷盘，可以将CHECKPOINT-LSN向前递进，从而回收redo日志。CHECKPOINT是由UserThread或者MasterThread来触发写。
 
-log_checkpointer根据多种条件，来决定写入下一个CHECKPOINT（看代码，什么条件）。
+8中，由一个专有线程log_checkpointer来负责CHECKPOINT操作，log_checkpointer根据多种条件，来决定写入下一个CHECKPOINT。
 
 # 性能比较
 
