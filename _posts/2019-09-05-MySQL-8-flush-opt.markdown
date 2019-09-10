@@ -137,11 +137,36 @@ log_writer线程写完LogBuffer后，会继续更新buf_ready_for_write_lsn。
 
 8中，由一个专有线程log_checkpointer来负责CHECKPOINT操作，log_checkpointer根据多种条件，来决定写入下一个CHECKPOINT。
 
-# 性能比较
+# 综述
 
-**innodb_flush_log_at_trx_commit**=1；sysbench oltp update_nokey测试8个表，每个有10M行。
+MySQL8中，日志的基本结构和原来一样；但是在整个处理流程上充分地异步处理了。其中，通过若干event将各个线程同步起来，有如下几个：
 
-![img](/image/redo-perf-old-vs-new-1s-trx1.png)
+按lsn分区的事件：
+
+- write_events：当innodb_flush_log_at_trx_commit=2时，通知相应的用户线程其等待的lsn已经write。
+- flush_events：当innodb_flush_log_at_trx_commit=1时，通知相应的用户线程其等待的lsn已经flush。
+
+通知对应线程的启动的事件：
+
++ writer_event
++ write_notifier_event
++ flusher_event
++ flush_notifier_event
++ closer_event
++ checkpointer_event
+
+大致流程如下图：
+
+![image-20190910152344490](/image/events.png)
+
+mtr提交时，首先通过prepare_write得到最终要写入的日志长度，分为5步：
+
+0. `log_buffer_reserve`：预留logbuffer的空间，如果空间不够，会调用log_write_up_to清理LogBuffer空间；log_write_up_to通过设置writer_event，异步触发log_writer写。
+1. `write_log`：将m_log的内容memcpy到LogBuffer中，然后更新**recent_written**的tail。
+2. `add_dirty_block_to_flush_list`：将该mtr对应的脏页添加到flushlist中
+3. `log_buffer_close`：更新**recent_closed**。
+
+log_writer等线程等待各自的event，然后开始进行处理。
 
 # 引用文献
 
