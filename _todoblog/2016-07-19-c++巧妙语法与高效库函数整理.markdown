@@ -10,7 +10,18 @@ tags:
     - Program
 ---
 
+* TOC
+{:toc}
+# **alignas**/alignof
+
+
+
+# atomic_thread_fence
+
+# memory_order_release
+
 #### cmp
+
 > 在stl中常用的比较函数，可以使用匿名函数,或者自定义的函数对象
 
 ``` cpp

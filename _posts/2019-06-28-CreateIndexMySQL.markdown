@@ -116,6 +116,8 @@ InnoDB Instrinsic Tables：InnoDB引擎内部的表，没有undo和redo，用户
 
 # 创建过程
 
+![image-20190814100917780](/image/online-create-index.png)
+
 入口函数是`mysql_inplace_alter_table`。分为以下几步：
 
 1. `mdl_context.upgrade_shared_lock`；创建一个Rowlog，并等待该表上的事务结束；此后开启的新事务的修改放在Rowlog中。

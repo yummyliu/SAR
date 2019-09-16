@@ -1,6 +1,6 @@
 ---
 layout: post
-title: InnoDB源码——RedoLog剖析
+title: InnoDB的Btree操作——乐观与悲观操作机制
 date: 2019-06-11 10:51
 header-img: "img/head.jpg"
 categories: jekyll update

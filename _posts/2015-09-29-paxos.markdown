@@ -1,7 +1,7 @@
 ---
 layout: post
 title: Basic Paxos & Multi  Paxos
-subtitle: Paxos 是唯一的分布式一致性算法； Basic Paxos 里面存在活锁的问题，并且Paxos假设的环境不包括拜占庭问题
+subtitle: Basic Paxos 里面存在活锁的问题，Paxos假设的环境不包括拜占庭问题
 date: 2015-09-29 22:23
 categories: jekyll update
 tags:
@@ -9,35 +9,49 @@ tags:
 typora-root-url: ../../yummyliu.github.io
 ---
 
-### 关于分布式一致性算法的一些言论
+# 背景
 
-> 拜占庭将军问题 : 在存在消息丢失的不可靠信道上试图通过消息传递的方式达到一致性是不可能的。因此对一致性的研究一般假设信道是可靠的，或不存在本问题。
+> **拜占庭将军问题** : 在存在消息丢失的不可靠信道上试图通过消息传递的方式达到一致性是不可能的。因此对一致性的研究一般假设信道是可靠的，或不存在本问题。
 
-### 分布式一致性算法考虑的原则
+**分布式一致性算法考虑的原则**
 
-1. safety : 在非拜占庭的情况下，不会返回错误的结果
-2. available: 在大多数server运行且可以和别的server以及client通信的情况下，系统保证可用
-3. 不依赖时间来保证一致性，时钟错误，信息延迟会导致可用性不好
-4. 一般来说，客户端请求的指令在大多数server回应了RPC调用之后可以完成这个指令，系统不要由于小部分server 来拖累
++ safety : 在非拜占庭的情况下，不会返回错误的结果
 
-## Basic Paxos
++ available: 在大多数server运行且可以和别的server以及client通信的情况下，系统保证可用
+
++ 不依赖时间来保证一致性，时钟错误，信息延迟会导致可用性不好
+
+一般来说，客户端请求的指令，在大多数server回应之后，可以完成这个指令；保证系统不被小部分server 拖累。
+
+# Basic Paxos
 
 ![Basic Paxos 的两阶段](/image/basicpaxos.jpg)
 
-Basic Paxos 中有三个角色，Proposer,Acceptor,Learner。Learner使用最后一致的值，使用的方式就是执行一下Proposer获得相应的值
-,Basic Paxos 中的每个节点都可以是三个角色;
+Basic Paxos 中的节点有三个角色：Proposer,Acceptor,Learner；系统达成一致需要两个阶段：
 
-##### Proposer发送两次请求：
+1. 广播Prepare请求，进行投票；
+2. 广播Accept请求，达成一致结果；
+
+## **Proposer**
+
+发送两次请求：
 
 1. Prepare(proposalnumber)
-    该阶段发送自己的 proposal number 一是**value是不是已经选好了，选好了就会得到相应地返回请求，其中有acceptedvalue**,二是**没有选好的话，自己的proposal num大的话就更新acceptor的pn，屏蔽小于其pn的请求**
-    NOTE: 向半数以上的Acceptor发送Prepare请求
+    该阶段向半数以上的Acceptor发送Prepare请求，发送自己的 proposal number 。
+    
+    一是**value是不是已经选好了，选好了就会得到相应地返回请求，其中有acceptedvalue**；
+    
+    二是**没有选好的话，自己的proposal num大的话就更新acceptor的pn，屏蔽小于其pn的请求**
+    
 2. Accept(proposalnumber,value)
     将获得的*choosed value*或者*自己的value*发送给服务器,请求服务器接受，前者还好说
     NOTE:**后者发送自己的value的时候，修改了半数的acceptor的praposal number,但是并没有锁定这些acceptor，仍然可以被更新的praposal抢占，这样发送自己原来的praposql number的时候，由于小于现在的proposal number，会被拒绝，重复下去，这里出现活锁，一种解决方式就是 随机延迟重新启动。**
+
 3. 接收acceptor关于accepted的返回，如果返回的结果中存在minproposalnumber > 当前自己的提案号，则说明自己没有被接受，回到第一步重发prepare请求，否则**value is choosen**
 
-##### Acceptor接受两次请求
+## **Acceptor**
+
+接受两次请求
 
 **Acceptor 记录着最小的Proposal number，acceptedProposalnumber,acceptedvalue**
 
@@ -46,13 +60,13 @@ Basic Paxos 中有三个角色，Proposer,Acceptor,Learner。Learner使用最后
 2. 回应accept(n,value),若n不必minproposalnumber小，那么更新 min proposalnumber,acceptednumber,acceptedvalue,始终返回当前的min Proposal number
 ![Basic Paxos 的详细过程](/image/2Basicpaxos.jpg)
 
-## Multi Paxos
+# Multi Paxos
 
 + Multi Paxos中采用了 Leader election 保证了只有一个Proposer,避免了活锁的问题
-+ Basic Paxos中只有Proposer知道 which value has been chosen,If other servers want to know ,must execute Paxos with their own propsal.
-+ multi paxos 目标是实现复制日志序列,实现的时候我们在Prepare和accept的时候，加上entry的Index即可。
++ Basic Paxos中只有Proposer知道 选择了哪个value，如果其他server想知道选择了哪个，那么就得按照paxos协议发起请求。
++ multi paxos 目标是实现复制日志序列；实现的时候我们在Prepare和accept的时候，加上日志记录的序号即可。
 
-> 场景是 现在有好多的server，每个server上都有一个log序列，由于Multi-paxos发送的Prepare中带有了Index，那么现在acceptor节点上的log序列接受了某个Proposer的Prepare的话，记录下来就呈现如下的形式:
+场景是 现在有好多的server，每个server上都有一个log序列，由于Multi-paxos发送的Prepare中带有了Index，那么现在acceptor节点上的log序列接受了某个Proposer的Prepare的话，记录下来就呈现如下的形式:
 
 ![log in acceptor](/image/log-in-acceptor.jpg)
 
@@ -125,6 +139,6 @@ serverId,address,数量的变化;特别是数量的变化
 Paxos同样也是使用log来存储config的一致，同时定义一个系统相关的变量a，config发生变化后，需要等待a个log entry之后，才能使用新的config
 Note: a 限制了系统的并发度,因为决定i+a的是否choosen，使用的是i处的config,然而i处的config还没决定好是否choosen
 
-[Paxos lecture][youtube]
+# 参考
 
-[youtube]: https://www.youtube.com/watch?v=JEpsBg0AO6o
+[Paxos lecture](https://www.youtube.com/watch?v=JEpsBg0AO6o)

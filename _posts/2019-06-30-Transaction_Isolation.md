@@ -1,7 +1,7 @@
 ---
 layout: post
-title: 对比PgSQL和MySQL学习事务的隔离级别
-date: 2018-05-30 18:06
+title: PostgreSQL和MySQL的事务隔离级别对比
+date: 2019-06-30 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
@@ -218,23 +218,35 @@ Query OK, 0 rows affected (0.00 sec)
 
 我们发现T1居然可以更新了一个没有见过的row，这是什么操作😹？原因是MySQL的readview只对非锁定读有效，对于事务中update/delete等操作都是基于最新commit的数据操作（这么看MySQL起的名——**读视图**也没错，但是行为有点奇怪）。
 
-因此，对于MySQL的RR级别，有如下结论：
+而在PostgreSQL中，更新数据页是基于snapshot进行，但是如果基于snapshot的更新与已经提交的更新冲突，那么就该事务就报错，进行回滚，
 
-1. 当只是select语句时，是没有幻读（Phantom Read）的；比如mysqldump with –single-transaction。
+```
+ERROR:  could not serialize access due to concurrent update
+```
 
-2. 当事务修改数据了，RR级别的表现是有所不同；对于没有修改的行，是RR；对于修改的行，是RC。因为，SQL标准中对此没有定义，那么也不能说违反了SQL语义。
+如下
 
-   > InnoDB provides REPEATABLE READ for read-only SELECT, but it behaves as if you use READ COMMITTED for all write queries
+![image-20190724095522856](/image/PostgreSQL-并发更新同一行.png)
 
-3. 当事务写了新数据时，该事务就使用已经提交的数据，而不是该事务的readview；所以，InnoDB的事务修改总是基于最新的提交的数据进行修改。
+因此，对于RR级别，有如下结论：
+
+1. 当select-only的事务时，PostgreSQL和MySQL是没有幻读（Phantom Read）的。
+
+2. 在非select-only的事务中，RR级别的表现是有所不同；
+
+   + MySQL/InnoDB对于没有修改的行，是RR；对于修改的行，是RC。因为，SQL标准中对此没有定义，那么也不能说违反了SQL语义。所以，InnoDB的事务修改总是基于最新的提交的数据进行修改。
+
+     > InnoDB provides REPEATABLE READ for read-only SELECT, but it behaves as if you use READ COMMITTED for all write queries
+
+   + PostgreSQL都是基于同一个快照更新，但是不同的快照对同一行数据进行更新有冲突了，按照first-commit-win的方式对后续事务回滚。
 
 ## S（Serializable）
 
-MySQL在S级别中，放弃使用MVCC的机制，采用Strict-2PL进行并发控制；而PostgreSQL还是采用MVCC的机制，通过引入SI-Read lock的方式，检查读写依赖，避免write-skew，实现SSI（序列化快照隔离，机制比较复杂见另一个文章）。
+MySQL在S级别中，放弃使用MVCC的机制，采用Strict-2PL进行并发控制；
+
+而PostgreSQL还是采用MVCC的机制，通过引入一个新的锁——SI-Read lock，通过该锁检查读写依赖，避免write-skew，从而实现SSI（序列化快照隔离）。该机制的实现有一个论文，比较复杂，另起一文单独讨论。
 
 # 参考文献
-
-[wiki](https://en.wikipedia.org/wiki/Isolation_(database_systems)#Dirty_reads)
 
 [ A Critique of ANSI SQL Isolation Levels](https://arxiv.org/pdf/cs/0701157.pdf)
 

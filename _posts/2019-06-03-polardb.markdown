@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 了解PolarFS与NVM
+title: 了解PolarFS
 date: 2019-06-03 16:17
 header-img: "img/head.jpg"
 categories: jekyll update
