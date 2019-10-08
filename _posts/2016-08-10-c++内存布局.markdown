@@ -300,3 +300,115 @@ shared_ptr：
 发生析构时，减小引用计数，查看是否为0，如果是，则释放res_ptr与ref_ptr。
 weak_ptr简单介绍：
 weak_ptr的引入，我认为是smart_ptr概念的一个补全。一个raw指针，其实有两个含义，一是管理资源的句柄（拥有对象），一是指向一个资源的指针（不拥有对象）。举个例子，一般我们创建一个对象，在使用完之后销毁，那这个指针是拥有那个对象的，指针的作用域就是这个对象的生命周期，这个指针就是第一类指针。我们在使用observer模式时，被监测对象经常会持有所有observer的指针，以便在有更新时去通知他们，但是他并不拥有那些对象，这类指针就是第二类指针。在引入smart_ptr之前，资源的创建与释放都是调用者来做决定，所以一个指针是哪一类，完全由程序员自己控制。但是smart_ptr引入之后，这个概念就凸显出来。试想，在observer例子中，我们不会容许一个对象因为他是某一个对象的观察者就无法被释放。weak_ptr就是第二类指针的实现，他不拥有资源，当需要时，他可以通过lock获得资源的短期使用权。
+
+# 排查内存泄漏的例子
+
+最近做了一个[LeetCode127](https://leetcode.com/problems/word-ladder/description/)，代码在本地运行正确，但是在LeetCode平台上却报出Runtime Error：
+
+```bash
+error: AddressSanitizer: heap-use-after-free on address ...
+```
+
+但是在本地运行正常的，结果也是正确，代码如下
+
+``` c++
+#include <iostream>
+#include <vector>
+#include <set>
+#include <queue>
+#include <utility>
+using namespace std;
+
+class Solution {
+public:
+    int ladderLength(string beginWord, string endWord, vector<string>& wordList) {
+		int endi=-1;
+		queue<pair<int,int>> m_queue;
+		for (int i = 0; i < wordList.size(); ++i) {
+			if (canTrans(wordList[i], beginWord)) {
+				m_queue.push({i,2});
+				isvisited.insert({i,2});
+			}
+			if (endWord == wordList[i]) {
+				endi = i;
+			}
+		}
+		if (endi==-1) {
+			return 0;
+		}
+
+		buildGraph(wordList);
+
+		while (!m_queue.empty()) {
+			auto& cur = m_queue.front();
+			m_queue.pop();
+
+			if (cur.first == endi) {
+				ans = cur.second;
+				break;
+			}
+
+			for (auto i : graph[cur.first]) {
+				if (isvisited.count({i,cur.second+1})) continue;
+
+				isvisited.insert({i,cur.second+1});
+				m_queue.push({i,cur.second+1});
+			}
+		}
+
+		return ans;
+    }
+
+	void buildGraph(const vector<string>& wordList) {
+		int N = wordList.size();
+		graph.resize(N);
+
+		for (int i = 0; i < N; ++i) {
+			for (int j = i+1; j < N; ++j) {
+				if (canTrans(wordList[i], wordList[j])) {
+					graph[i].push_back(j);
+					graph[j].push_back(i);
+				}
+			}
+		}
+	}
+
+	bool canTrans(const string& s1, const string& s2) {
+		int diffCounts = 0;
+		for (int i = 0; i < s1.size(); ++i) {
+			if (s1[i] != s2[i]) diffCounts++;
+		}
+
+		return diffCounts == 1;
+	}
+
+	int ans;
+	set<int> visited;
+	set<pair<int,int>> isvisited;
+
+	vector<vector<int>> graph;
+};
+
+//int main(int argc, char *argv[])
+//{
+//	Solution s;
+//
+//	vector<string> ss = {"si","go","se","cm","so","ph","mt","db","mb","sb","kr","ln","tm","le","av","sm","ar","ci","ca","br","ti","ba","to","ra","fa","yo","ow","sn","ya","cr","po","fe","ho","ma","re","or","rn","au","ur","rh","sr","tc","lt","lo","as","fr","nb","yb","if","pb","ge","th","pm","rb","sh","co","ga","li","ha","hz","no","bi","di","hi","qa","pi","os","uh","wm","an","me","mo","na","la","st","er","sc","ne","mn","mi","am","ex","pt","io","be","fm","ta","tb","ni","mr","pa","he","lr","sq","ye"};
+//
+//	std::cout << s.ladderLength("qa", "sq", ss) << std::endl;
+//
+//	return 0;
+//}
+```
+
+本地编译运行如下，结果正常。
+
+```
+>
+g++ -fsanitize=address -O1 -fno-omit-frame-pointer -std=c++11 -g 127.word-ladder.cpp
+
+> ./a.out
+5
+```
+
+那么，爆出的内存错误是哪里呢？
