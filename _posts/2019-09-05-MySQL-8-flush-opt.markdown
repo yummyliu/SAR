@@ -1,16 +1,17 @@
 ---
 layout: post
-title: MySQL-8.0的刷盘无锁优化
-date: 2019-06-05 20:45
+title: REDO(WAL)在MySQL8中无锁优化解析
+date: 2019-08-05 20:45
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
   - MySQL
+  - InnoDB
 typora-root-url: ../../yummyliu.github.io
 ---
 * TOC
 {:toc}
-
+> 转载请注明出处：http://liuyangming.tech or http://yummyliu.github.io
 
 
 
@@ -32,13 +33,13 @@ typora-root-url: ../../yummyliu.github.io
 
 > storage/innobase/include/ut0link_buf.h
 
-![image-20190905210458918](/image/link-buf.png)
+![image-20191016170806232](/image/link-buf.png)
 
 在8.0中，添加了一个新的数据结构：Link Buffer。
 
-这是一个固定大小的环形缓存，每个slot中存储了link对象。link可以看做是[from, to]表示的一个区间，对于一个link：[from, to]，通过from%m_capacity得到对应的slotindex，然后在该slot中存储了该区间的长度`to - from`。当前位置原子更新，整个数组循环重用；
+这是一个固定大小的环形缓存，每个slot中存储了link对象。link可以看做是[from, to]表示的一个区间，对于一个link：[from, to]，通过from%m_capacity得到对应的slotindex，然后在该slot中存储了该区间的长度（`to - from`）。每个slot位置原子更新，整个数组循环重用；
 
-另外，有相应的线程负责遍历并清理用过的slot，在empty slot（slot中的val，即length=0，就是一个空slot，详情参考`advance_tail_until`函数）处会暂停遍历，并更新m_tail。
+另外，相应的线程负责遍历并清理用过的slot，在empty slot（slot中的val，即length=0，就是一个空slot，详情参考`advance_tail_until`函数）处会暂停遍历，并更新m_tail。此时，从头部开始可以将若干个小link整合成一个大link，如上图浅蓝色的部分。
 
 在源码中，定义为一个模板，在log_sys应用中，有两个场景：
 
@@ -47,34 +48,30 @@ typora-root-url: ../../yummyliu.github.io
 
 ## *写入LogBuffer：recent_written*
 
-该对象是跟踪已经写入到LogBuffer中的记录；通过该对象的maxLSN，可以得知任何小于maxlsn的记录已经写入完毕了。如果进行故障恢复，最远只会恢复到这里；log_writer读取该结构上的maxLSN，将连续的记录刷盘，同时向前更新maxLSN（下节）。
+该对象是跟踪已经写入到LogBuffer中的记录，解决mlog写盘的mutex竞争；通过该对象的tail，可以得知任何小于tail的记录已经写入完毕了。如果进行故障恢复，最远只会恢复到这里(当然前提是这里已经落盘)；
 
-> 用户线程在写LogBuffer之前，预留一段空间，保证了日志记录的正确顺序。
->
+线程——log_writer读取该结构上的tail，向前更新（下节）。
+
+用户线程在写LogBuffer之前，先将sn向前推进，获得一个logbuffer的区间句柄（startsn,endsn,lockno），然后在获得的区间中进行写入。
+
 > ```c++
-> Log_handle log_buffer_reserve(log_t &log, size_t len) {
+>Log_handle log_buffer_reserve(log_t &log, size_t len) {
 > ...
->   /* Reserve space in sequence of data bytes: */
->   const sn_t start_sn = log.sn.fetch_add(len);
-> ...
-> }
+> /* Reserve space in sequence of data bytes: */
+> const sn_t start_sn = log.sn.fetch_add(len);
+>   ...
+>   }
 > ```
 
-如下例，这是一个LogBuffer，其中有三类lsn标识的界限：
+LogBuffer主要承载mlog写入和log写盘。
 
-- write_lsn表示已经发起过write的记录(是否sync取决于提交参数)。
-- buf_ready_for_write_lsn表示可以进行write的位置，这之后可以乱序的写入。
-- current_lsn，已经分配给某个userthread进行日志写入的最远位置。
+- write_lsn表示log已经写盘的位置(是否sync取决于提交参数，相应有个flushed_to_disk_lsn，暂不讨论)。
+- buf_ready_for_write_lsn(其实就是recent_written.tail())表示可以进行write的位置，该位置之前日志是连续的，之后会有空洞。
+- current_lsn，已经分配给某个mtr进行日志写入的最远位置。
 
-![img](/image/link_buf2.png)
+![image-20191016180050715](/image/recent-written.png)
 
-用户线程继续填充了部分slot，如下图，这样buf_ready_for_write_lsn就可以更新了：
-
-![img](/image/redo-next-write-to-log-buffer-2.png)
-
-log_writer线程写完LogBuffer后，会继续更新buf_ready_for_write_lsn。
-
-![img](/image/redo-next-write-to-log-buffer-3.png)
+当前mtr0已经结束，在log_writer下一次写盘时，会尝试推进tail。那么就会推进到mtr0结束处。将此处的mtrrecordgroup刷盘。由于recent_written是有限大小的，因此会循环使用，并且如果新的mtr没有得到link，那么就会等linkbuf有空间才会写。
 
 ## *写入FlushList：recent_closed*
 
@@ -82,26 +79,34 @@ log_writer线程写完LogBuffer后，会继续更新buf_ready_for_write_lsn。
 
 **前提1：保证检查点正确性**：当在某个LSN写入CHECKPOINT记录之后，表示最近修改LSN<该CHECKPOINT_LSN的内存脏页都已经落盘了。
 
-**前提2：保证数据页刷盘的顺序**：flush list的刷盘必须从最老的page开始，且保证数据页按顺序修改，这也有助于推进CHECKPOINT_LSN。
+**前提2：保证数据页刷盘的顺序**：始终从flush_list的最老元组开始刷盘，这样可以推进checkpoint_lsn（因为checkpoint_lsn和所有flush_list中的最老修改lsn相关）。
 
-那么，为了保证以上前提，还要提高效率；这里利用recent_closed的结构，跟踪向flushlist中并发添加脏页的执行过程，并给出连续脏页的最大LSN(下称为M)。那么任何比M小的脏页已经按LSN顺序添加完成，modifyLSN<=M+L（有限的宽松）的脏页可以提前添加。因此，基于recent_closed实现一个**relaxed order  flush lists**。
+那么，为了保证以上前提，还要提高效率；这里利用recent_closed的结构，实现一个*relaxed order  flush lists*，跟踪向flushlist中并发添加脏页的执行过程。
 
-每次mtr_commit将日志写入到LogBuffer之后，会将mtr.start_lsn到mtr.end_lsn之间的脏页放到对应的flushlist中；在新的设计中，当用户线程需要拷贝脏页时，如果recent_closed的M与start_lsn的差值大于L（T2），那么会等待；直到start_lsn - M < L时（T1），用户线程才会将脏页放在对应的flushlist中。
+每次mtr_commit将日志写入到LogBuffer之后，会将mtr.start_lsn到mtr.end_lsn之间的脏页放到对应的flushlist中；在新的设计中，当用户线程需要拷贝脏页时，首先会确认recent_closed有空间（`log_wait_for_space_in_log_recent_closed`）；直到start_lsn对应的slot可写后，用户线程才会将脏页放在对应的flushlist中。
 
-我们将flushList中的最早添加的脏页的lsn称为**last_lsn**；由于一个page可能会被修改多次，其中记录了oldest_modification和newest_modification，那么，5.7的flushlist中的每个page的**oldest_modification >= last_lsn**（证明如下）；而在8.0的flushlist中，flushlist没有按照lsn的顺序添加，如图所示，page的oldest_modification >= last_lsn-L；这就意味着，在新的flushlist中，最早放到flushlist中的page，不一定是lsn最小的。
+我们将flushList中的最早添加的脏页的lsn称为**last_lsn**；由于一个page可能会被修改多次，其中记录了oldest_modification和newest_modification（但是bufferpool中的状态始终是page最新的状态），那么，5.7的flushlist中的每个page的**oldest_modification >= last_lsn**；
 
-主要的思想就是：在**内存局部（L）**是乱序的，但是有前M个有序的保证，磁盘的数据写入还是顺序的，这能够保证**前提2**；并且可以用last_lsn-L（某个page最多提前L大小添加）作为候选的CHECKPOINT-LSN，这可以满足**前提1**。
+![image-20191016180343977](/image/recent-closed.png)
+
+而在8.0的flushlist中，flushlist没有按照lsn的顺序添加，page的oldest_modification >= last_lsn-recent_close.capacity（可能recent_closed的最后一个mtr的dirtypage已经addtoflushlist了，但是之前的mtr的dirtypage还未addtoflushlist，如上图，只有mtr2的日志拷贝到flushlist中了，但是mtr2对应的lsn是最大的）；这就意味着，在新的flushlist中，最早放到flushlist中的page的oldest_modification不是最小的，因此不能用这个oldest_modification作为checkpoint_lsn，而是要由oldest_modification-recent_closed->capacity作为checkpoint_lsn。
+
+> 注意
+>
+> 这里由于由某lsn直接减去一个固定大小的值，不能保证checkpoint_lsn肯定是record的边界，有可能checkpoint指向record的中间，这里恢复的时候需要找到checkpoint_lsn后第一个record。
+
+因此，主要的思想就是：在**内存局部（recent_closed->capacity）**是乱序的，但是整体上还是有序的，因此checkpoint_lsn可以向前推进，这能够保证**前提2**；并且可以用last_lsn-recent_closed->capacity作为候选的CHECKPOINT-LSN，这可以满足**前提1**。
 
 最后，在LinkBuf结构中，还有一个负责遍历的线程，这里就是log_closer。当mtr将start_lsn到end_lsn之间的脏页拷贝完之后，就会通知log_closer进行更新M。
 
-因此，总结MySQL-8中的mtr提交过程如下：
-
-1. commit时，通过log_sys.sn预留LogBuffer的空间
-2. 将mtr_log中的redo record复制到LogBuffer中，然后得到start_lsn和end_lsn；
-3. 迭代recent_write的连续最大LSN
-4. 确认recent_closed是否可以插入（L的限制）
-5. 拷贝脏页
-6. 迭代recent_closed的连续最大LSN
+> 因此，总结MySQL-8中的mtr提交过程如下：
+>
+> 1. commit时，通过log_sys.sn预留LogBuffer的空间
+> 2. 将mtr_log中的redo record复制到LogBuffer中，然后得到start_lsn和end_lsn；
+> 3. 迭代recent_write的连续最大LSN
+> 4. 确认recent_closed是否可以插入(log_wait_for_space_in_log_recent_closed)
+> 5. 拷贝脏页
+> 6. 迭代recent_closed的连续最大LSN
 
 # 专有线程异步操作
 
@@ -115,19 +120,18 @@ log_writer线程写完LogBuffer后，会继续更新buf_ready_for_write_lsn。
 
 + **log_writer**：原来是由UserThread驱动的，每次将整个LogBuffer写出；现在只要LogBuffer中有数据可以写，专门的log_writer线程不断地将日志记录write到pagecache中；为了避免覆盖不完整的block，每次写都是写一个完整的block；同时更新write_lsn。
 
-  ![image-20190909182634195](/image/log-writer.png)
+  ![image-20191016180843535](/image/log-writer.png)
 
 + **log_flusher**：log_flusher不断的读取write_lsn，然后调用`fil_flush_file_redo`将日志落盘，同时更新flushed_to_disk_lsn。这样log_flusher和log_writer按照各自的速度同时运行，除了系统内核中的同步外（write_lsn的原子读写），没有同步操作。
 
 + **log_flush_notifier**：之前提交的时候，当前线程需要确认LogBuffer已经fsync到哪个位置，如果没有，就将LogBuffer落盘，然后等待；
 
-  而现在用户线程提交的时候，会检查flushed_to_disk_lsn是否足够，如果不够，那么等待某个flush_events。这里的flush_event按照lsn的区间分成不同的块（默认**INNODB_LOG_EVENTS_DEFAULT**个），并可以循环利用；这样flushed_to_disk_lsn推进一块，就可以通知一部分线程commitOK，提高整体的扩展性，如下图。
+  ![image-20190909203252074](/image/log_flush_notifier.png)
 
-  ![img](/image/waiting-commit.png)
+  而现在用户线程提交的时候，会检查flushed_to_disk_lsn是否足够，如果不够，那么等待某个flush_events。如上图，这里的flush_event按照lsn的区间分成不同的块（默认**INNODB_LOG_EVENTS_DEFAULT**个），并可以循环利用；这样flushed_to_disk_lsn推进一块，就可以通知一部分线程commitOK，提高整体的扩展性，如下图。
   
   另外，如果你只关心write，那么就是由另一个log_write_notifier来通知，相应的用户线程等待write_events事件。
   
-  ![image-20190909203252074](/image/log_flush_notifier.png)
 
 > 由于等待事件然后被唤醒的延迟高，这里默认使用spin-loop进行自旋等待。但是为了避免提高系统的CPU代价，添加了**innodb_log_spin_cpu_abs_lwm**和**innodb_log_spin_cpu_pct_hwm**参数来控制CPU代价。
 
@@ -137,7 +141,9 @@ log_writer线程写完LogBuffer后，会继续更新buf_ready_for_write_lsn。
 
 8中，由一个专有线程log_checkpointer来负责CHECKPOINT操作，log_checkpointer根据多种条件，来决定写入下一个CHECKPOINT。
 
-# 综述
+checkpoint LSN除了和上述提到的last_lsn - recent_closed.capacity（buffer中的最老修改）相关外，还和 recent_closed.tail() （flushlist中保证连续的lsn位置）以及logbuffer的flushed_to_disk_lsn（要保证日志先于数据刷盘）。
+
+# 总结
 
 MySQL8中，日志的基本结构和原来一样；但是在整个处理流程上充分地异步处理了。其中，通过若干event将各个线程同步起来，有如下几个：
 
@@ -161,15 +167,18 @@ MySQL8中，日志的基本结构和原来一样；但是在整个处理流程�
 
 mtr提交时，首先通过prepare_write得到最终要写入的日志长度，分为5步：
 
-0. `log_buffer_reserve`：预留logbuffer的空间，如果空间不够，会调用log_write_up_to清理LogBuffer空间；log_write_up_to通过设置writer_event，异步触发log_writer写。
-1. `write_log`：将m_log的内容memcpy到LogBuffer中，然后更新**recent_written**的tail。
-2. `add_dirty_block_to_flush_list`：将该mtr对应的脏页添加到flushlist中
-3. `log_buffer_close`：更新**recent_closed**。
+0. `log_buffer_reserve`：等待recent_written的空间，预留logbuffer的空间，如果空间不够，会调用log_write_up_to清理LogBuffer空间；log_write_up_to通过设置writer_event，异步触发log_writer写。
+1. `write_log`：将m_log的内容memcpy到LogBuffer中，然后在**recent_written**加一个link。
+2. `log_wait_for_space_in_log_recent_closed`：等待recent_closed的空间
+3. `add_dirty_block_to_flush_list`：将该mtr对应的脏页添加到flushlist中
+4. `log_buffer_close`：在**recent_closed**中加一个link。
 
 log_writer等线程等待各自的event，然后开始进行处理。
 
-# 引用文献
+# 参考文献
 
 [MySQL 8.0: New Lock free, scalable WAL design](https://mysqlserverteam.com/mysql-8-0-new-lock-free-scalable-wal-design/)
+
+[code of mysql8](https://github.com/mysql/mysql-server)
 
 
