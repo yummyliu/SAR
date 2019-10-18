@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 
+title: raft
 date: 2019-09-24 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -270,3 +270,30 @@ Raft implements a replicated state machine. It organizes client requests into a 
 
 
 If a server fails but later recovers, Raft takes care of bringing its log up to date. Raft will continue to operate as long as at least a majority of the servers are alive and can talk to each other. 
+
+
+
+三个角色：
+
+
+
+Leader选举
+
++ election timeout: 距离上次leader发来信息超过该时间，超时后follower变成candidate，每个follower的超时时间的随机的[150ms, 300ms]
++ election term: 一个选举周期，candidater向其他节点发起投票请求；收到投票请求的节点，如果自己没有发起投票，那么就回复该投票请求，即为该节点投一票，并重置自己的election timeout。
++ Heartbeat timeout：leader会定期发送append entries请求，可视为心跳，给follower。
++ 
+
+Log复制
+
+1. client发送请求给leader
+2. leader将变更记在本地log中
+3. 下一次心跳中，leader将变更发送给follower
+4. leader收到大多数follower的ack，那么该变更标记为commited
+5. leader给client返回ack
+
+脑裂
+
+此时，由于大多数的前提，那么只有一个部分存在leader，这时发送到这个leader的才能顺利commit；而另一个网络中收到的请求，由于没有大多数投票，因此不能commit。
+
+当网络恢复时，另一个网路收到的leader的请求，并回滚自己的未提交的日志。
