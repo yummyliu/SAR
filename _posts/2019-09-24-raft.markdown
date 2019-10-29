@@ -134,11 +134,11 @@ Raft确保共识组运行中，以下五个特性始终满足：
 
 对于Follower和Candidate的失效，leader会不断的重试；即使follower在完成了rpc请求后，挂了，由于Raft的Rpc请求是幂等的，重启后，再次重复也没事。
 
-> 确定election timeout时间 需要保证 `broadcastTime << electionTimeout << MTBF`
+> Raft的Safety需要保证不和时间相关，即不会因为某个事件发生的过快或过慢影响整个共识算法的Safety。这里需要确定election timeout时间，即保证 `broadcastTime << electionTimeout << MTBF`
 >
-> + broadcastTime是一个server并发给其他server发送RPC，并得到响应的时间
-> + electionTimeout是何时发起新的选举
-> + MTBF是单个server失效的平均间隔时间
+> + broadcastTime是一个server并发给其他server发送RPC，并得到响应的时间，一般rpc要求接受者落盘，那么这个时间一般在0.5ms到20ms之间（取决于使用的存储技术）。
+> + electionTimeout是何时发起新的选举，一般就是10ms到500ms。
+> + MTBF是单个server失效的平均间隔时间（一般是以月为量度）
 
 # MIT-Lab2
 
