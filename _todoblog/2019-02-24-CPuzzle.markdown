@@ -69,3 +69,6 @@ typora-root-url: ../../yummyliu.github.io
 
 http://elinux.org/Memory_Debuggers
 
+
+
+Constexpr  define const
