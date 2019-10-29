@@ -20,6 +20,12 @@ tags:
 
 # memory_order_release
 
+
+
+# **static_assert**
+
+编译时的断言
+
 #### cmp
 
 > 在stl中常用的比较函数，可以使用匿名函数,或者自定义的函数对象

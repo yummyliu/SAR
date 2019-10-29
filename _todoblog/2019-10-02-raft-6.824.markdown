@@ -1,0 +1,34 @@
+---
+layout: post
+title: MIT6.824学习笔记——raft
+date: 2019-10-02 11:18
+header-img: "img/head.jpg"
+categories: jekyll update
+tags:
+typora-root-url: ../../yummyliu.github.io
+---
+* TOC
+{:toc}
+State Machine Replication
+
+[clients, replicas, kv layer, raft layer, logs]
+
+
+
+clients send rpcs (put get) to kv layer to leader of replicas
+
+leader and other replicas keep 
+
+
+
+interface：
+
+1. electing a new leader （意见统一性）
+2. ensuring idential logs after failures (操作同一性，日志同一性)
+
+rf.Start()
+
+
+
+term：类似于时间线的概念，不同的日志可能对应不同的leader，每个区间都有一个leader。选举一个新的leader，就是意味一个leader的新任期（term），那么这个任期内的操作就带上这个term标志，便于操作同一。
+

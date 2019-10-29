@@ -1,6 +1,6 @@
 ---
 layout: post
-title: C++内存布局
+title: C++内存管理
 date: 2016-08-10 15:58
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -165,7 +165,7 @@ new vs malloc
 
 delete和 free()一定要和new/malloc()对应使用。
 
-## 内存泄露处理
+# 内存泄露处理
 
 C++代码应该最头疼的一个问题，如下一个简单的例子。
 
@@ -186,7 +186,7 @@ void foo()
 
 首先我们分配内存后要判断，内存是否分配成功，失败就结束该程序；其次要注意**野指针/悬垂指针问题（Wild pointer/Dangling pointer）**：指针没有初始化，或者指针free后，没有置NULL。
 
-### RAII
+## RAII
 
 **"RAII: Resource Acquisition Is Initialization"**
 意思就是任何资源的获取，不管是不是在初始化阶段，都是被一个对象获得，
@@ -198,54 +198,7 @@ c++ 本身不提供垃圾回收的机制（尽管有一些相应的第三方库�
 
 同样和C语言中的内存管理相比，要优的多。源于c++的封装，比如：
 
-``` c
-#include <stdio.h>  // for puts, getchar, stdin
-#include <stdlib.h> // for malloc and free
 
-char *getstr(int minlen, int inc) // minlen - Minimum length, inc - Increment of length
-{
-  int index;
-  int ch;
-  char *str = malloc(minlen);
-
-  for (index = 0; (ch = getchar()) != EOF && ch != '\n'; index++)
-  {
-    if (index >= minlen - 1)
-    {
-      char *str1;
-      minlen += inc;
-      str1 = realloc(str, minlen);
-      str = str1;
-    }
-    str[index] = (char)ch;
-  }
-  str[index] = 0;  // mark end of string
-  return str;
-}
-
-int main()
-{
-  char* name;
-  puts("Please enter your full name: ");
-  name = getstr(10, 10);  // 10, 10 are arbitrary
-  printf("Hello %s\n", name);
-  free(name);
-  return 0;
-}
-```
-
-``` cpp
-#include <string>   // for std::string and std::getline
-#include <iostream> // for std::cin and std::cout
-
-int main() {
-  std::string name;
-  std::cout << "Please enter your full name: ";
-  std::getline(std::cin, name);
-  std::cout << "Hello " << name << '\n';
-  return 0;
-}
-```
 
 ### 智能指针
 
