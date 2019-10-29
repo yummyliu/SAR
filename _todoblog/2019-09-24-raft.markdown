@@ -5,295 +5,145 @@ date: 2019-09-24 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
+	- Raft
 typora-root-url: ../../yummyliu.github.io
 ---
-> * TOC
+* TOC
 {:toc}
+# raft论文总结
 
+> 我这里对一组需要达成一致的机器称为共识组，共识组内使用Paxos或者Raft等共识算法保证一致性。
 
+相对于Paxos算法的难以理解，Raft是一个相对容易理解的共识算法；其将算法分为多个模块（LeaderElection/LogReplication/Safety）,并减少了状态空间的复杂度，这样减少了整体的不确定程度。同时Raft也有自己的特点：
 
-6.824 2017 Lecture 5: Raft (1)
++ StrongLeader：logentries只能从leader向follower流动；
++ LeaderElection：在共识组中，按照随机时间触发Leader选举，这在原来的hearbeat中只添加了很少的额外工作。
++ MembershipChange：基于joint consensus过程，向共识组中添加新的成员；在过渡过程中，保证共识组仍能正常工作。
 
-why are we reading this paper?
-  distributed consensus is a hard problem that people have worked on for decades
-  Lab 2 and 3 are based on Raft
+## 可复制状态机
 
-this lecture
-  today: Raft elections and log handling (Lab 2A, 2B)
-  next: Raft persistence, client behavior, snapshots (Lab 2C, Lab 3)
+> **拜占庭将军问题** : 在存在消息丢失的不可靠信道上试图通过消息传递的方式达到一致性是不可能的。因此对一致性的研究一般假设信道是可靠的，或不存在本问题。
 
-overall topic: fault-tolerant services using replicated state machines (RSM)
-  [clients, replica servers]
-  example: configuration server, like MapReduce or GFS master
-  example: key/value storage server, put()/get() (lab3)
-  goal: same client-visible behavior as single non-replicated server
-    but available despite some number of failed servers
-  strategy:
-    each replica server executes same commands in same order
-    so they remain replicas (i.e., identical) as they execute
-    so if one fails, others can continue
-    i.e. on failure, client switches to another server
-  both GFS and VMware FT have this flavor
+对于系统设计中的单点问题，如果是一个无状态的服务，那么可以无脑的分成多个节点，前段加一个负载均衡。而要保证一个有状态的服务的可用性，一般就是通过复制做一个备点，比如数据库的主备。
 
-a critical question: how to avoid split brain?
-  suppose client can contact replica A, but not replica B
-  can client proceed with just replica A?
-  if B has really crashed, client *must* proceed without B,
-    otherwise the service can't tolerate faults!
-  if B is up but network prevents client from contacting it,
-    maybe client should *not* proceed without it,
-    since it might be alive and serving other clients -- risking split brain
+生产中可用的共识算法，有如下特性：
 
-example of why split brain cannot be allowed:
-  fault-tolerant key/value database
-  C1 and C2 are in different network partitions and talk to different servers
-  C1: put("k1", "v1")
-  C2: put("k1", "v2")
-  C1: get("k1") -> ???
-  correct answer is "v2", since that's what a non-replicated server would yield
-  but if two servers are independently serving C1 and C2 due to partition,
-    C1's get could yield "v1"
++ 在非拜占庭情况下，包括网络延迟、网络分割、丢包、重复发送、信息乱序，保证信息的安全（不会返回一个错误的结果）。
 
-problem: computers cannot distinguish crashed machines vs a partitioned network
-  both manifest as being unable to communicate with one or more machines
++ 在多数节点可用时，保证系统的可用性。
++ 不依赖时间来保证日志的一致性，因为如果时钟有错，或者信息延迟很长时间，那么会造成系统长时间不可用。
++ 多数节点完成了一个指令后，那么就应该对client进行响应；不应因为少数节点，影响整体性能。
 
-We want a state-machine replication scheme that meets three goals:
-  1. remains available despite any one (fail-stop) failure
-  2. handles partition w/o split brain
-  3. if too many failures: waits for repair, then resumes
+## Paxos的弊端与Raft对应的优势
 
-The big insight for coping w/ partition: majority vote
-  2f+1 servers to tolerate f failures, e.g. 3 servers can tolerate 1 failure
-  must get majority (f+1) of servers ti agree to make progress
-    failure of f servers leaves a majority of f+1, which can proceed
-  why does majority help avoid split brain?
-    at most one partition can have a majority
-  note: majority is out of all 2f+1 servers, not just out of live ones
-  the really useful thing about majorities is that any two must intersect
-    servers in the intersection will only vote one way or the other
-    and the intersection can convey information about previous decisions
+Paxos首先定义了一个BasicPaxos，对单个logentry进行共识决策；然后结合多个BasicPaxos，实现一个MultiPaxos，对多个logentry进行决策；其可用性和正确性都被证实过，但是有两个显著的弊端：
 
-Two partition-tolerant replication schemes were invented around 1990,
-  Paxos and View-Stamped Replication
-  in the last 10 years this technology has seen a lot of real-world use
-  the Raft paper is a good introduction to modern techniques
+1. 难以理解
+2. 没有leader的对等架构，实现起来比较复杂，导致最终实现区别比较大。
 
-*** topic: Raft overview
+针对Paxos的弊端，Raft设计出来了；主要解决的问题就是更容易被人理解；
 
-state machine replication with Raft -- Lab 3 as example:
-  [diagram: clients, 3 replicas, k/v layer, raft layer, logs]
-  server's Raft layers elect a leader
-  clients send RPCs to k/v layer in leader
-    Put, Get, Append
-  k/v layer forwards request to Raft layer, doesn't respond to client yet
-  leader's Raft layer sends each client command to all replicas
-    via AppendEntries RPCs
-    each follower appends to its local log (but doesn't commit yet)
-    and responds to the leader to acknowledge
-  entry becomes "committed" at the leader if a majority put it in their logs
-    guaranteed it won't be forgotten
-    majority -> will be seen by the next leader's vote requests for sure
-  servers apply operation to k/v state machine once leader says it's committed
-    they find out about this via the next AppendEntries RPC (via commitIndex)
-  leader responds to k/v layer after it has committed
-    k/v layer applies Put to DB, or fetches Get result
-  then leader replies to client w/ execution result
+首先将需要解决的问题进行分解，分解为：leaderelection、logreplication、safety、membershipchange。
 
-why the logs?
-  the service keeps the state machine state, e.g. key/value DB
-    why isn't that enough?
-  it's important to number the commands
-    to help replicas agree on a single execution order
-    to help the leader ensure followers have identical logs
-  replicas also use the log to store commands
-    until the leader commits them
-    so the leader can re-send if a follower misses some
-    for persistence and replay after a reboot (next time)
+然后，减少需要维护的状态，进行减少系统可能的不确定性；比如，日志中不能有空洞。
 
-there are two main parts to Raft's design:
-  electing a new leader
-  ensuring identical logs despite failures
+## Raft
 
-*** topic: leader election (Lab 2A)
+Raft首先在共识组中选出一个leader，然后由leader全权处理LOG的复制；leader首先从client处得到logentry，然后该logentry请求复制转发到其他server中；之后，leader再通知其他server进行apply。这样由leader来统一处理，简化了日志的复制管理。由此，Raft算法可分为以下几个部分：
 
-why a leader?
-  ensures all replicas execute the same commands, in the same order
++ Leader Election：当leader失效后，需要选举处一个新的leader。
++ Log Replication：leader收到新log entry时，需要及时复制给其他server，并确保其他log与自己本地log达成一致。
++ Safety：当某个server将某个log index处的log进行了apply后，那么在整个集群内，该log index处都应该apply同一条log。
 
-Raft numbers the sequence of leaders using "terms"
-  new leader -> new term
-  a term has at most one leader; might have no leader
-  each election is also associated with one particular term
-    and there can only be one successful election per term
-  the term numbering helps servers follow latest leader, not superseded leader
+在Raft共识组中，任何时间只有三种角色：Leader/Follower/Candidate。大部分时间为一个leader和多个follower；candidate用在新leader选举中。follower是一个被动节点，只是响应leader和candidate的请求；如果client连接到了follower上，也是会被转发到leader上处理。共识组中的信息交互通过rpc，主要有三种：
 
-when does Raft start a leader election?
-  AppendEntries are implied heartbeats; plus leader sends them periodically
-  if other server(s) don't hear from current leader for an "election timeout"
-    they assume the leader is down and start an election
-  [state transition diagram, Figure 4: follower, candidate, leader]
-  followers increment local currentTerm, become candidates, start election
-  note: this can lead to un-needed elections; that's slow but safe
-  note: old leader may still be alive and think it is the leader
++ RequestVote：Candidate发起投票请求；
++ AppendEntries：Leader复制log entry，以及发送hearbeat。
++ TransferSnapshot：
 
-what happens when a server becomes candidate?
-  three possibilities:
-    1) gets majority, converts to leader
-      locally observes and counts votes
-      note: not resilient to byzantine faults!
-    2) fails to get a majority, hears from another leader who did
-      via incoming AppendEntries RPC
-      defers to the new leader's authority, and becomes follower
-    3) fails to get a majority, but doesn't hear from a new leader
-      e.g., if in minority network partition
-      times out and starts another election (remains candidate)
-  note: in case (3), it's possible to keep incrementing the term
-    but cannot add log entries, since in minority and not the leader
-    once partition heals, an election ensues because of the higher term
-    but: either logs in majority partition are longer (so high-term
-      candidate gets rejected) or they are same length if nothing happened
-      in the majority partition (so high-term candidate can win, but no damage)
+### Leader选举
 
-how to ensure at most one leader in a term?
-  (Figure 2 RequestVote RPC and Rules for Servers)
-  leader must get "yes" votes from a majority of servers
-  each server can cast only one vote per term
-  at most one server can get majority of votes for a given term
-    -> at most one leader even if network partition
-    -> election can succeed even if some servers have failed
+![image-20191029151530653](/image/1029-raft-election.png)
 
-how does a new leader establish itself?
-  winner gets yes votes from majority
-  immediately sends AppendEntries RPC (heart-beats) to everybody
-    the new leader's heart-beats suppress any new election
+Raft以任期（term）的方式划分时间，每个任期开始的时候，进行一次选举；在每次选举中，可能有一个或多个candidate；term是一个单调递增的序列，在每个server中，存储了一个current term，并且会和其他server进行交换，如果发现自己的term比别人的小，那么就更新为大的term（如果自己的角色不是follower，那么就变成follower）。
 
-an election may not succeed for two reasons:
-  * less than a majority of servers are reachable
-  * simultaneous candidates split the vote, none gets majority
+**RequestVote**：距离上次leader发来信息超过election timeout，超时后follower变成candidate，递增自己的term，并发调用RequestVote，向其他server请求投票；收到RequestVote请求的server，在任一任期内，只能给一个candidate投票。
 
-what happens if an election doesn't succeed?
-  another timeout (no heartbeat), another election
-  higher term takes precedence, candidates for older terms quit
+如果candidate收到一个leader的AppendEntries请求，如果该请求的term值与自己的term值大，那么自己在该term内成为follower，否则拒绝该请求，继续选举。
 
-how to set the election timeout?
-  each server picks a random election timeout
-    helps avoid split votes
-  randomness breaks symmetry among the servers
-    one will choose lowest random delay
-    avoids everybody starting elections at the same time, voting for themselves
-  hopefully enough time to elect before next timeout expires
-  others will see new leader's AppendEntries heartbeats and
-    not become candidates
-  what value?
-    at least a few heartbeat intervals (network can drop or delay a heartbeat)
-    random part long enough to let one candidate succeed before next starts
-    short enough to allow a few re-tries before tester gets upset
-      tester requires election to complete in 5 seconds or less
+![image-20191029152732563](/image/1029-raft-term.png)
 
+另外，有可能在某个任期内，很多follower同时变成candidate，那么可能由于分票，导致选举失败；Raft采用随机设置election timeout的方式（每个follower的超时时间的随机的[150ms, 300ms]），减少多个follower同时选举的情况，来规避这个问题。
 
-*** topic: the Raft log (Lab 2B)
+> 这里除了采用随机超时的方式解决外，还考虑了给各个server一个优先级排序；这种情况存在一个问题：如果高优先级节点也挂了，那么低优先级需要等待一个超时后，才能自己变成candidate。
 
-we talked about how the leader replicates log entries
-  important distinction: replicated vs. committed entries
-    committed entries are guaranteed to never go away
-    replicated, but uncommitted entries may be overwritten!
-  helps to think of an explicit "commit frontier" at each participant
+### Log复制
 
-will the servers' logs always be exact replicas of each other?
-  no: some replicas may lag
-  no: we'll see that they can temporarily have different entries
-  the good news:
-    they'll eventually converge
-    the commit mechanism ensures servers only execute stable entries
+Log中每个Entry包含一个logindex和一个termid，用来保证每个logindex的内容都是唯一的；并且有如下保证：
 
-extra criterion: leader cannot simply replicate and commit old term's entries
-  [Figure 8 example]
-  S1 fails to replicate term 2 entry to majority, then fails
-  S5 becomes leader in term 3, adds entry, but fails to replicate it
-  S1 comes back, becomes leader again
-    works on replicating old entry from term 2 to force followers to adopt its log
-    are we allowed to commit once the term 2 entry is on a majority of servers?
-  Turns out the answer is no! Consider what would happen if we did:
-    term 2 entry replicated to S3
-    S1 commits it, since it's on a majority of servers
-    S1 then fails again
-    S5 gets elected for term 4, since it has a term 3 entry at the end of the log
-    everybody with a term 2 entry at the end of the log votes for S5
-  S5 becomes leader, and now forces *its* log (with the term 3 entry) on others
-    term 2 entry at index 2 will get overwritten by term 3 entry
-    but it's supposed to be committed!
-    therefore, contradicts Leader Completeness property
-  solution: wait until S1 has also replicated and committed a term 4 entry
-    ensures that S5 can no longer be elected if S1 fails
-    thus it's now okay to commit term 2 entry as well
++ 两个不同log中的logentry有相同的logindex和term，那么其中的内容是相同的；由于leader在每个index处，只创建一个logentry，并且follower不会更改logentry的位置，那么确保该项成立。
++ 两个不同log中的logentry有相同的logindex和term，那么之前的logentry都是相同的；leader在AppendEntries请求中，会带上new logentry前一个logentry的logindex和term，如果follower在本地日志中没有找到该项logentry，就拒绝这个new logentry。因此，知道follower响应了AppendEntries请求， 那么leader就知道follower已经同步到的该位置。
 
-when is it legal for Raft to overwrite log entries? (cf. Figure 7 question)
-  they must be uncommitted
-  may truncate and overwrite a much longer log
-    Figure 7 (f) is a case in point
-  e.g., a leader adds many entries to its log, but fails to replicate them
-    perhaps it's in a network partition
-  other leaders in later terms add entries at the same indices (Fig 7 (a)-(e))
-    and commit at least some of them
-    now cannot change this log index any more
-  outdated server receives AppendEntries, overwrites uncommitted log entries
-    even if the log is much longer than the current leader's!
-  this is okay, because the leader only responds to clients after entries commit
-    so leader who produced the overwritten entries in (f) cannot have done so
+![image-20191029174944957](/image/1029-raft-logreplication.png)
 
-
-*** addendum: lab 2 Raft interface
-
-  rf.Start(command) (index, term, isleader)
-    Lab 3 k/v server's Put()/Get() RPC handlers call Start()
-    start Raft agreement on a new log entry
-    Start() returns immediately -- RPC handler must then wait for commit
-    might not succeed if server loses leadership before committing command
-    isleader: false if this server isn't the Raft leader, client should try another
-    term: currentTerm, to help caller detect if leader is demoted
-    index: log entry to watch to see if the command was committed
-  ApplyMsg, with Index and Command
-    Raft sends a message on the "apply channel" for each
-    committed log entry. the service then knows to execute the
-    command, and the leader uses the ApplyMsg
-    to know when/what to reply to a waiting client RPC.
-
-
-
-
-
-
-
-Raft implements a replicated state machine. It organizes client requests into a sequence, called the log, and ensures that all the replicas agree on the contents of the log. 
-
-
-
-
-
-If a server fails but later recovers, Raft takes care of bringing its log up to date. Raft will continue to operate as long as at least a majority of the servers are alive and can talk to each other. 
-
-
-
-三个角色：
-
-
-
-Leader选举
-
-+ election timeout: 距离上次leader发来信息超过该时间，超时后follower变成candidate，每个follower的超时时间的随机的[150ms, 300ms]
-+ election term: 一个选举周期，candidater向其他节点发起投票请求；收到投票请求的节点，如果自己没有发起投票，那么就回复该投票请求，即为该节点投一票，并重置自己的election timeout。
-+ Heartbeat timeout：leader会定期发送append entries请求，可视为心跳，给follower。
-+ 
-
-Log复制
-
-1. client发送请求给leader
+1. client请求leader 写也一个新的logentry；
 2. leader将变更记在本地log中
-3. 下一次心跳中，leader将变更发送给follower
-4. leader收到大多数follower的ack，那么该变更标记为commited
-5. leader给client返回ack
+3. leader通过AppendEntries将变更发送给follower；
+4. follower收到logentry将其写到本地log中，该logentry状态为uncommited；
+5. leader收到大多数follower的ack，那么该变更标记为commited；对于没有收到ack的follower继续重试。
+6. leader将commited的logentry应用到state machine中，leader给client返回成功；在leader的AppendEntries请求中会包含最大的commited的logindex，这样follower都知道当前可提交的logentry。
 
-脑裂
+当新leader初始化时，对于每个follower初始化一个**nextIndex**（等于leader当前的index），然后通过多次AppendEntries，将nextIndex向前推进到正确的位置中。后续leader发送new entry，follower当收到的new logentry和follower本地的相同index处的logentry不同时，用new logentry覆盖（这里可能会覆盖已经commit的日志，那么存在问题，下一章针对该问题进行讨论如何避免，其实这就是保证Leader Completeness）。
 
-此时，由于大多数的前提，那么只有一个部分存在leader，这时发送到这个leader的才能顺利commit；而另一个网络中收到的请求，由于没有大多数投票，因此不能commit。
+![image-20191029183030601](/image/1029-raft-leader-init-nextindex.png)
 
-当网络恢复时，另一个网路收到的leader的请求，并回滚自己的未提交的日志。
+综上，发现只要有大多数节点活着，大部分情况下，一次rpc就能提交。
+
+>  脑裂
+>
+> 此时，由于大多数的前提，那么只有一个部分存在leader，这时发送到这个leader的才能顺利commit；而另一个网络中收到的请求，由于没有大多数投票，因此不能commit。
+>
+> 当网络恢复时，另一个网路收到的leader的请求，并回滚自己的未提交的日志。
+
+### Safety
+
+Raft确保共识组运行中，以下五个特性始终满足：
+
+1. Election Safety：每个term中最多只有一个leader；在leader 选举中保证了。
+2. Leader Append-Only：Leader对于自己的日志只会追加，不修改和删除；在Log复制中保证了。
+3. Log Matching：如果两个日志包含一个logindex和term都相同的entry，那么该Entry之前的日志都相同；在Log复制中保证了。
+4. Leader Completeness：如果一个log entry在某个term中已经提交了，那么之后的term换了leader，该commited的entry仍然在日志中。
+5. State Machine Satety：如果状态机已经应用了某条日志，那么在该logindex处，不能apply其他entry。
+
+在Raft的vote过程中，只有包含所有commited的entry的candidate才会赢得选举；candidate在发起RequestVote请求中，会包含自己的log信息；follower收到请求后，会判断自己的log是否比candidate的log更新，follower只会响应比自己新的candidate的请求；那么，只有上一个term的多数派中的其中一个follower，才有可能成为新的leader，因此，新的leader永远包含所有commited的数据，而之后只是接着向后写，不会更改自己的log。
+
+> 如何比较日志更新？
+>
+> ```python
+> if my_termid > can_termid:
+>   return "I am later"
+> elif my_termid == can_termid and my_logindex > can_logindex:
+>   return "I am later"
+> else:
+>   return "he is laster"
+> ```
+
+一个新的leader中，可能有一些之前没有标记commited的entry；新leader仍然按照旧的termid，将这些entry复制到follower中，继续之前任期的提交操作（在一些其他共识算法中，这些entry会换成自己的termid，重新复制）。问题确认？？
+
+由于只有包含最新的logentry的candidate才会赢得选举，所以新的leader中，一定有之前leader最新提交的entry；因此，一定能保证Leader Completeness；进而可以保证State Machine Safety。
+
+对于Follower和Candidate的失效，leader会不断的重试；即使follower在完成了rpc请求后，挂了，由于Raft的Rpc请求是幂等的，重启后，再次重复也没事。
+
+> 确定election timeout时间 需要保证 `broadcastTime << electionTimeout << MTBF`
+>
+> + broadcastTime是一个server并发给其他server发送RPC，并得到响应的时间
+> + electionTimeout是何时发起新的选举
+> + MTBF是单个server失效的平均间隔时间
+
+# MIT-Lab2
+
+## 2A:LeaderElection&Heartbeat
+
+## 2B:LogReplication
+
+## 2C:Persistance&Recovery
