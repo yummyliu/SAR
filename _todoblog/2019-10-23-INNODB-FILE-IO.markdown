@@ -28,13 +28,20 @@ os_file_create(
 
 
 
-| 被保人 | 保险                     | 描述                                                   |
-| ------ | ------------------------ | ------------------------------------------------------ |
-| 刘海清 | 相互宝                   | 得了符合条件的大病，一把给10万块                       |
-| 刘海清 | 医疗险                   | 得了大病，按照一定比例，对**医保外的花费**进行**报销** |
-| 刘海清 | 平安重疾险（正在走流程） | 得了符合条件的大病，一把给10万块                       |
-|        |                          |                                                        |
-| 郭淑霞 | 相互宝                   | 得了符合条件的大病，一把给10万块                       |
-| 郭淑霞 | 医疗险                   | 得了大病，按照一定比例，对**医保外的花费**进行**报销** |
-| 郭淑霞 | 重疾险                   | 80岁之前，得了符合条件的大病，一把给30万块             |
 
+
+
+
+原来以为O_DIRECT就直接落盘了，现在发现自己理解错了，这个参数只是绕过了page cache而已；想要写的时候直接落盘，是和参数 O_SYNC 和 O_DSYNC有关（这两个参数的write，可以看做write+fsync），我又看了些文档里对这两个参数的区分解释；分别对应了 file integrity和data integrity；
+
+有个解释：To understand the difference between the two types of completion, consider two pieces of file metadata: the file last modification timestamp (st_mtime) and the file length. All write operations will update the last file modification timestamp, but only writes that add data to the end of the file will change the file length. The last modification timestamp is not needed to ensure that a read completes successfully, but the file length is. Thus, O_DSYNC would only guarantee to flush updates to the file length metadata (whereas O_SYNC would also always flush the last modification timestamp metadata).
+
+
+
+
+
+# 参考
+
+[zhenghe](https://zhenghe.gitbook.io/open-courses/ucb-cs162/topic-ensuring-data-reaches-disk)
+
+[linux open](https://linux.die.net/man/2/open)
