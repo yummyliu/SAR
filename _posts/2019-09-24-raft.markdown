@@ -175,27 +175,27 @@ Log中每个Entry包含一个logindex和一个termid，用来保证每个loginde
 
 那么，配置变更的流程总结如下：
 
-![image-20191030203617618](/image/1029-membership.png)
+![image-20191030224836898](/image/1029-membership.png)
 
 1. 当leader收到了配置变更的请求后，将C_old和C_new结合，生成一个**特殊的logentry——C_old_new**，将其复制到其他所有新老server中；
 
-2. 当follower收到C_old_new记录后，就可以使用C_new的配置了，即得知了新配置的信息（注意这个C_old_new在follower的生效不会等待commit，而是收到后立马生效），对于在C_new中的节点，可以对C_new中的RPC进行投票，对于在C_old中的节点，还是对C_old中的RPC进行投票；而对于即在C_new中，也在C_old中的节点的票可以共用。
+2. 当前Leader请求提交C_old_new；
+
+3. 当follower收到C_old_new记录后，就可以使用C_old_new的配置了，以后该server的任何决策都基于这个配置，比如说当前leader挂了，这个follower成为新leader，那么其会按照C_old_new的方式决策（注意这个C_old_new在follower的生效不会等待commit，而是收到后立马生效）
 
    > C_old为{1,2,3}，C_new为{2,3,4,5,6}；leader发起一个投票，如果2/3号节点投票了，那么C_old.majority++，C_new.majority++；
 
-   > **NOTE**：此时如果leader挂掉了，由于C_old_new记录并没有commit，那么新的leader可能回退使用C_old配置中。
+4. 当前leader收到C_old中的majority和C_new中的majority后，C_old_new就可以提交了，之后就**进入了joint consensus状态。**
 
-3. 当leader收到C_old中的majority对C_old_new记录的投票后，此时apply该记录后，就**进入了joint consensus状态。**
+5. 在joint consensus中，仍然可以接受客户端请求；只是共识方式，需要old和new都同意。此时，相当于数据在两个配置中进行双写，那么就可以考虑摆脱C_old了。
 
-4. 在joint consensus中，仍然可以接受客户端请求；只是共识方式，需要old和new都同意。
+6. 之后，leader自己产生一个C_new的记录，请求在C_new中commit；注意这之后，当前的Leader就只需要C_new的majority同意即可。
 
-5. 之后，leader自己产生一个C_new的记录，请求在C_new中commit；注意这之后，当前的Leader就只需要C_new的majority同意即可。
-
-6. 此时，收到C_new记录的follower，就开始按照C_new配置进行后续操作了，就不认识不在C_new中的节点了。
+7. 此时，收到C_new记录的follower，就开始按照C_new配置进行后续操作了，就不认识不在C_new中的节点了。
 
    > **NOTE**：此时如果当前Leader挂掉，因为C_new记录没有提交，所以新Leader只能是C_old_new状态。
 
-7. 最后，C_new提交，那么集群就完成了配置变更；这时不在C_new中的follower可以直接关闭了。
+8. 最后，C_new提交，那么集群就完成了配置变更；这时不在C_new中的follower可以直接关闭了。
 
    > NOTE，最后C_new提交的时候，可能leader不在C_new配置中；leader在C_new提交的时候判断自己是否在C_new中，如果不在，自己降级为follower。此时相当于C_new配置的起点，所有server都是follower，然后发起一次选举，选出新的leader 。
 
