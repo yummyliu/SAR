@@ -1,20 +1,23 @@
 ---
 layout: post
-title: raft算法总结与MIT6824的Raft实现
+title: Raft算法总结与MIT6824的Raft实现
 date: 2018-09-24 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
   - Raft
+  - 公开课
 typora-root-url: ../../yummyliu.github.io
 ---
 * TOC
 {:toc}
+分布式环境中，对于有状态的服务的高可用性保证，常常采用加备机的方式处理；主备的方式，需要处理failover的问题；并且备机只是不断的同步数据；在决策中，没有主动权；在主挂机时，也不会主动切换。相对地，共识算法是在一群机器中，确保大家行为一致，而不是一个节点处理所有问题。
+
+我这里对一组需要达成一致的机器称为共识组，共识组内使用Paxos或者Raft等共识算法保证一致性。本文主要介绍Raft算法。
+
 # raft算法
 
-> 我这里对一组需要达成一致的机器称为共识组，共识组内使用Paxos或者Raft等共识算法保证一致性。
-
-相对于Paxos算法的难以理解，Raft是一个相对容易理解的共识算法；其将算法分为多个模块（LeaderElection/LogReplication/Safety）,并减少了状态空间的复杂度，这样减少了整体的不确定程度。同时Raft也有自己的特点：
+相对于Paxos算法的难以理解，Raft是一个相对容易理解的共识算法；其将算法分为多个模块，并减少了状态空间的复杂度，这样减少了整体的不确定程度，使其更容易理解与实现。Raft有如下特点：
 
 + StrongLeader：logentries只能从leader向follower流动；
 + LeaderElection：在共识组中，按照随机时间触发Leader选举，这在原来的hearbeat中只添加了很少的额外工作。
@@ -24,11 +27,11 @@ typora-root-url: ../../yummyliu.github.io
 
 > **拜占庭将军问题** : 在存在消息丢失的不可靠信道上试图通过消息传递的方式达到一致性是不可能的。因此对一致性的研究一般假设信道是可靠的，或不存在本问题。
 
-对于系统设计中的单点问题，如果是一个无状态的服务，那么可以无脑的分成多个节点，前段加一个负载均衡。而要保证一个有状态的服务的可用性，一般就是通过复制做一个备点，比如数据库的主备。
+对于系统设计中的单点问题，如果是一个无状态的服务，那么可以无脑的分成多个节点，前端加一个负载均衡。而一个有状态的服务可以认为是一个状态机，要保证的状态机的可用性，除了主备的方式，就是采用共识算法，将状态机进行复制，并保证各个节点的信息始终一致。
 
-生产中可用的共识算法，有如下特性：
+生产中可用的共识算法，需要有如下特性：
 
-+ 在非拜占庭情况下，包括网络延迟、网络分割、丢包、重复发送、信息乱序，保证信息的安全（不会返回一个错误的结果）。
++ 在非拜占庭情况下（包括网络延迟、网络分割、丢包、重复发送、信息乱序），保证信息的安全，即不会返回一个错误的结果。
 
 + 在多数节点可用时，保证系统的可用性。
 + 不依赖时间来保证日志的一致性，因为如果时钟有错，或者信息延迟很长时间，那么会造成系统长时间不可用。
@@ -41,19 +44,18 @@ Paxos首先定义了一个BasicPaxos，对单个logentry进行共识决策；然
 1. 难以理解
 2. 没有leader的对等架构，实现起来比较复杂，导致最终实现区别比较大。
 
-针对Paxos的弊端，Raft设计出来了；主要解决的问题就是更容易被人理解；
+针对Paxos的弊端，Raft设计出来了；主要解决的问题就是更容易被人理解，进而更加容易使用；
 
-首先将需要解决的问题进行分解，分解为：leaderelection、logreplication、safety、membershipchange。
+首先Raft将需要解决的问题进行分解，分解为：leaderelection、logreplication、safety、membershipchange。然后，减少需要维护的状态，进而减少系统可能的不确定性，比如，日志中不能有空洞。
 
-然后，减少需要维护的状态，进行减少系统可能的不确定性；比如，日志中不能有空洞。
+## Raft算法
 
-## Raft
-
-Raft首先在共识组中选出一个leader，然后由leader全权处理LOG的复制；leader首先从client处得到logentry，然后该logentry请求复制转发到其他server中；之后，leader再通知其他server进行apply。这样由leader来统一处理，简化了日志的复制管理。由此，Raft算法可分为以下几个部分：
+Raft首先在共识组中选出一个leader，然后由leader全权处理LOG的复制；leader首先从client处得到logentry，然后将该logentry请求复制转发到其他server中；在该logentry标记commited后，leader再通知其他server进行apply。这样由leader来统一处理，简化了日志的复制管理。由此，Raft算法可分为以下几个部分：
 
 + Leader Election：当leader失效后，需要选举处一个新的leader。
 + Log Replication：leader收到新log entry时，需要及时复制给其他server，并确保其他log与自己本地log达成一致。
 + Safety：当某个server将某个log index处的log进行了apply后，那么在整个集群内，该log index处都应该apply同一条log。
++ membership change：增加或删除共识组内的节点。
 
 在Raft共识组中，任何时间只有三种角色：Leader/Follower/Candidate。大部分时间为一个leader和多个follower；candidate用在新leader选举中。follower是一个被动节点，只是响应leader和candidate的请求；如果client连接到了follower上，也是会被转发到leader上处理。共识组中的信息交互通过rpc，主要有三种：
 
