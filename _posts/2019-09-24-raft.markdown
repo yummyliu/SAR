@@ -1,6 +1,6 @@
 ---
 layout: post
-title: raft算法总结与实现
+title: raft算法总结与MIT6824的Raft实现
 date: 2018-09-24 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -10,7 +10,7 @@ typora-root-url: ../../yummyliu.github.io
 ---
 * TOC
 {:toc}
-# raft论文总结
+# raft算法
 
 > 我这里对一组需要达成一致的机器称为共识组，共识组内使用Paxos或者Raft等共识算法保证一致性。
 
@@ -140,6 +140,52 @@ Raft确保共识组运行中，以下五个特性始终满足：
 > + electionTimeout是何时发起新的选举，一般就是10ms到500ms。
 > + MTBF是单个server失效的平均间隔时间（一般是以月为量度）
 
+### joint consensus
+
+在集群配置变更的过程中，无法保证所有节点同时变更，因此会出现不同节点对majority的定义不同，如下图：
+
+![image-20191030095402098](/image/1029-raft-membershipchange.png)
+
+因此，在变动过程中，由于同一时刻存在两种配置，会对majority的认识不一致；那么为了保证配置变更时的集群安全，Raft采用两阶段的方式，如下图。
+
+![image-20191030114244543](/image/1029-raft-conf-2pc.png)
+
+相比于其他两阶段的方式，Raft的两阶段不会阻塞客户请求，其添加了一个过渡期（称为joint consensus），在过渡期中，C_old和C_new同时参与决策，有以下三个特点：
+
++ 过渡期收到的log entry，会按照C_old和C_new，复制到所有的server上。
++ 不管是采用新配置还是老配置的server，都可能成为leader。
++ 一致性的达成（选举或者logentry提交）需要得到C_new的majority和C_old的majority，而**不是只得到一个majority**。
+
+那么，配置变更的流程总结如下：
+
+1. 当leader收到了配置变更的请求后，将C_old和C_new结合，生成一个**特殊的logentry——C_old_new**，将其复制到其他server中；
+
+2. 当follower收到C_old_new记录后，就可以使用C_new的配置了（注意这个C_old_new在follower的生效不会等待commit，而是收到后立马生效；同样地，该记录本身的提交，也是要按照其自己定义的配置达成共识）；但是，此时共识组中可以投票的还是C_old中的server（因为，leader是按照C_old进行决策的）。
+
+   > 此时如果leader挂掉了，由于C_old_new记录并没有commit，那么新的leader可能在C_old中，也可能在C_old_new中；总之，不可能是在C_new中。
+
+3. 当leader按照过渡期的判断（上一段的一致性达成），将C_old_new标记提交后，就进入了joint consensus状态。
+
+4. 之后，leader产生一个C_new的记录，在joint consensus请求提交。
+
+5. 最后，C_new提交，那么集群就完成了配置变更
+
+注意，最后C_new提交的时候，可能leader不在C_new配置中；leader在C_new提交的时候判断，自己是否在C_new中，如果不在，自己降级为follower。
+
+对于被删除的节点A，由于自己不在集群中了，超时没有收到heartbeat，会自己发起RequestVote请求，这样会将当前的leader变成follower，然后在C_new中，选出一个新leader，但是新leader还是不会给A发送hearbeat，那么这个A还会继续骚扰新leader，周次往复；为了避免这个问题，如果节点的election timeout尚未超时，那么本节点认为leader存在，不会理会这个RequestVote请求。
+
+另外，新加入的节点可能需要很久才能追上数据，Raft在配置变更之前，会等待这些新节点先把数据追上，在追数据的过程中，这些节点不作为majority的投票者。
+
+> C_new长什么样？如果添加两个节点，C_new是{4,5}吗？然后C_new的majority=2？
+>
+> 还是C_new={1,2,3,4,5}，然后majority=3；
+>
+> 或者有可能新的配置是C_new={2,3,4,5,6}，将1删除了，这样就是1不在C_new中。
+
+> 日志压缩，可参考论文，这里因为属于优化逻辑，暂不讨论
+
+## 客户端API
+
 # MIT-Lab2
 
 ## 2A:LeaderElection&Heartbeat
@@ -147,3 +193,11 @@ Raft确保共识组运行中，以下五个特性始终满足：
 ## 2B:LogReplication
 
 ## 2C:Persistance&Recovery
+
+
+
+# 参考文献
+
+[raft extend]()
+
+[joint consensus](http://www.voidcn.com/article/p-werulbjj-bqu.html)
