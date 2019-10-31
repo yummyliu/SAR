@@ -1,7 +1,7 @@
 ---
 layout: post
-title: Raft算法与MIT6824-LAB2
-date: 2019-09-24 18:06
+title: Raft算法解读与MIT6824-LAB2
+date: 2019-05-01 18:06
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
@@ -165,9 +165,13 @@ Log中每个Entry包含一个logindex和一个termid，用来保证每个loginde
 
 在集群配置变更的过程中，无法保证所有节点同时变更；因此，在变动过程中，由于同一时刻存在两种配置，会对majority的认识不一致（如上图）；那么为了保证配置变更时的集群安全，Raft采用两阶段的方式，如下图。
 
-![image-20191030114244543](/image/1029-raft-conf-2pc.png)
+![image-20191031150609711](/image/1029-raft-conf-2pc.png)
 
-相比于其他两阶段的方式，Raft的两阶段不会阻塞客户请求，其添加了一个过渡期（称为joint consensus，见上图红色部分），joint consensus有以下三个特点：
+相比于其他两阶段的方式，Raft的两阶段不会阻塞客户请求，其添加了一个过渡期（称为**joint consensus**，见上图红色部分），过渡期是RaftLog是**[C_old_new,C_new)**的日志段，这段日志可以理解为在C_old和C_new两个共识组中进行双写，因此，就算在joint consensus中Leader挂了，然后回滚到C_old配置，数据也不会丢失；
+
+> 注意上图的虚线分别只对应两个日志记录，在虚线内不会有其他记录提交，也不会存在虚线内到底按照什么配置决策的问题。
+
+joint consensus有以下三个特点：
 
 + 过渡期收到的log entry，会按照C_old和C_new，复制到所有的server上。
 + 不管是采用新配置还是老配置的server，都可能成为leader。
