@@ -15,7 +15,7 @@ typora-root-url: ../../yummyliu.github.io
 
 我这里对一组需要达成一致的机器称为共识组，共识组内使用Paxos或者Raft等共识算法保证一致性。本文主要介绍Raft算法。
 
-# raft算法
+# raft-extended论文精读
 
 相对于Paxos算法的难以理解，Raft是一个相对容易理解的共识算法；其将算法分为多个模块，并减少了状态空间的复杂度，这样减少了整体的不确定程度，使其更容易理解与实现。Raft有如下特点：
 
@@ -159,7 +159,7 @@ Log中每个Entry包含一个logindex和一个termid，用来保证每个loginde
 > + electionTimeout是何时发起新的选举，一般就是10ms到500ms。
 > + MTBF是单个server失效的平均间隔时间（一般是以月为量度）
 
-### joint consensus
+### Joint Consensus
 
 ![image-20191030095402098](/image/1029-raft-membershipchange.png)
 
@@ -191,29 +191,47 @@ Log中每个Entry包含一个logindex和一个termid，用来保证每个loginde
 
 6. 之后，leader自己产生一个C_new的记录，请求在C_new中commit；注意这之后，当前的Leader就只需要C_new的majority同意即可。
 
-7. 此时，收到C_new记录的follower，就开始按照C_new配置进行后续操作了，就不认识不在C_new中的节点了。
+7. 此时，收到C_new记录的follower，就开始按照C_new配置进行后续操作了，就不认识不在C_old中的节点了。
 
-   > **NOTE**：此时如果当前Leader挂掉，因为C_new记录没有提交，所以新Leader只能是C_old_new状态。
+   > **NOTE**：此时如果当前Leader挂掉，因为C_new记录没有提交，按照Leader Completeness原则，选出的新Leader只能是C_old_new状态。
 
 8. 最后，C_new提交，那么集群就完成了配置变更；这时不在C_new中的follower可以直接关闭了。
 
-   > NOTE，最后C_new提交的时候，可能leader不在C_new配置中；leader在C_new提交的时候判断自己是否在C_new中，如果不在，自己降级为follower。此时相当于C_new配置的起点，所有server都是follower，然后发起一次选举，选出新的leader 。
+   > **NOTE**：最后C_new提交的时候，可能leader不在C_new配置中；leader在C_new提交的时候判断自己是否在C_new中，如果不在，自己降级为follower。此时相当于C_new配置的起点，所有server都是follower，然后发起一次选举，选出新的leader 。
 
-对于不在C_new中的，被删除的节点A，由于自己不在集群中了，但是处于C_old_new状态，超时没有收到heartbeat，会自己向C_old和C_new发起RequestVote请求，这样会将当前的leader变成follower，然后在C_new中，选出一个新leader，但是新leader还是不会给A发送hearbeat，那么这个A还会继续骚扰新leader，周次往复；为了避免这个问题，如果节点的election timeout尚未超时，那么本节点认为leader存在，不会理会这个RequestVote请求。
+对于不在C_new中的，被删除的节点A，由于自己不在集群中了，但是处于C_old_new状态，超时没有收到heartbeat，会自己向C_old和C_new发起RequestVote请求，这样会将C_new的当前leader变成follower，然后在C_new中，选出一个新leader，但是新leader还是不会给A发送hearbeat，那么这个A还会继续骚扰新leader，周次往复；为了避免这个问题，如果节点的election timeout尚未超时，那么本节点认为leader存在，不会理会这个RequestVote请求。
 
 另外，新加入的节点可能需要很久才能追上数据，Raft在配置变更之前，会等待这些新节点先把数据追上，在追数据的过程中，这些节点不作为majority的投票者。
 
-> C_new长什么样？如果添加两个节点，C_new是{4,5}吗？然后C_new的majority=2？
->
-> 还是C_new={1,2,3,4,5}，然后majority=3；
->
-> 或者有可能新的配置是C_new={2,3,4,5,6}，将1删除了，这样就是1不在C_new中。
+### Log 瘦身
 
-## 日志压缩
+在实际环境中，日志不可能永远保留着；在数据库中，我们在日志中会定义一个检查点（Checkpoint），检查点之前的日志可以删除；在Raft中，定义了一个Snapshot，其描述了当前状态机的状态，对于该Snapshot状态之前的日志可以删除。**在共识组中的所有server都可以创建自己的Snapshot。**
+
+> 如果只允许Leader才能创建Snapshot，那么Leader的实现逻辑就会变得很复杂，即在传输Snapshot的过程中，还要保证Client的响应正常；并且，创建Snapshot的信息在每个server都有，那么每个Follower产生自己的Snapshot是很容易的，没有必要限制只在Leader才可以。
+
+![image-20191031095118806](/image/1029-snapshot.png)
+
+对于请求snapshot之前的记录的follower，leader直接通过`InstallSnapshot`调用，将Snapshot发送给Follower。
+
+Follower可以不知道Leader是谁的情况下，而获取Snapshot，这和Raft的Strong Leader原则有点出入。但是Snapshot中的数据都是已经达成一致的数据，因此不会存在冲突的问题。而获取Snapshot之后，Follower还是只从Leader处拉数据。
+
+另外，SnapShot的产生是一个代价较大的操作；为了不影响正常流程，我们应该考虑做Snapshot的间隔（以时间为计量，或者以日志大小为计量），并且可以采用操作系统的Copy-on-Write策略，在内存中创建一个Snapshot。
 
 ## 客户端API
 
+Client在连接共识组的时候，首先会随机找一个server；如果是Leader那么OK，不是的话，就会返回上次`AppendEntries`的Leader。那么Client就会连接这个Leader，而这个Leader如果也挂了；那么Client就会超时重试上述流程；
+
+当Leader在提交某个entry后到返回Client提交成功之前挂了，那么客户端重试时，会重复执行；解决方式就是加一个唯一ID，在执行前检查该请求是否被处理过了。
+
+在Leader刚启动的时候，自己并不知道目前日志提交到什么位置了；只有在自己的term内，提交了一个日志后，那么才知道这个最后提交点；那么，在Leader刚启动的时候会写一个**no-op**的logentry。
+
+> lease，Leader确认自己的租约
+>
+> Leader对于收到的Read-Only请求，在回复前，回向集群的majority发送hearbeat，确认现在我的lease还有效，即没有新主产生。
+
 # MIT-Lab2
+
+//TODO
 
 ## 2A:LeaderElection&Heartbeat
 
