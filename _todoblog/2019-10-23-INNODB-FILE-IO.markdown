@@ -1,17 +1,17 @@
 ---
 layout: post
-title: PostgreSQL的Buffer只能
+title: 关于PgSQL和MySQL数据缓冲池的探讨
 date: 2019-10-23 17:30
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
+  - Linux
+  - PostgreSQL
+  - MySQL
 typora-root-url: ../../yummyliu.github.io
 ---
-> * TOC
+* TOC
 {:toc}
-
-# 关于buffersize的配置
-
 以下是两个数据库在文档上关于数据缓存区的推荐配置的不同点
 
 + MySQL/InnoDB:
@@ -38,60 +38,17 @@ Optimize writes by bypassing kernel cache with O_DIRECT when using
 
 wal_sync_method
 
+细致的理解这个问题首先从Linux的文件读写操作开始。
+
 # Linux File IO
 
 ![[Data flow diagram]](/image/1030-jm-data-flow.png)
 
-## Systerm IO
+## 文件读写API
 
-| Operation | Function(s)                                       |
-| --------- | ------------------------------------------------- |
-| Open      | `open()`, `creat()`                               |
-| Write     | `write()`, `aio_write()`, `pwrite()`, `pwritev()` |
-| Sync      | `fsync()`, `sync()`,`fdatasync()`                 |
-| Close     | `close()`                                         |
+假设有下面一个简单的程序：
 
-write：只保证数据从应用地址空间拷贝到内核地址空间，即kernel space buffer，通常叫page cache。
-
-只有fsync才保证将数据和元数据都实实在在地落盘了（fdatasync只同步数据部分）。
-
-注意，当open的时候如果加上了O_SYNC参数，那么write调用就等价于write+fsync；
-
-当open加上O_DIRECT参数时，write的时候会绕过kernel buffer，但是需要要求写的时候要对齐写，比如对齐512或者4k；
-
-因此，只有open的时候O_DIRECT|O_SYNC，那么写的时候才是真的物理写。
-
-## Stream IO
-
-| Operation | Function(s)                                                  |
-| --------- | ------------------------------------------------------------ |
-| Open      | `fopen()`, `fdopen()`, `freopen()`                           |
-| Write     | `fwrite()`, `fputc()`, `fputs()`, `putc()`, `putchar()`, `puts()` |
-| Sync      | `fflush()`, followed by `fsync()` or `sync()`                |
-| Close     | `fclose()`                                                   |
-
-## Memory mapped
-
-| Operation | Function(s)                                                  |
-| --------- | ------------------------------------------------------------ |
-| Open      | `open()`, `creat()`                                          |
-| Map       | `mmap()`                                                     |
-| Write     | `memcpy()`, `memmove()`, `read()`, or any other routine that writes to application memory |
-| Sync      | `msync()`                                                    |
-| Unmap     | `munmap()`                                                   |
-| Close     | `close()`                                                    |
-
-
-
-原来以为O_DIRECT就直接落盘了，现在发现自己理解错了，这个参数只是绕过了page cache而已；想要写的时候直接落盘，是和参数 O_SYNC 和 O_DSYNC有关（这两个参数的write，可以看做write+fsync），我又看了些文档里对这两个参数的区分解释；分别对应了 file integrity和data integrity；
-
-> To understand the difference between the two types of completion, consider two pieces of file metadata: the file last modification timestamp (st_mtime) and the file length. All write operations will update the last file modification timestamp, but only writes that add data to the end of the file will change the file length. The last modification timestamp is not needed to ensure that a read completes successfully, but the file length is. Thus, O_DSYNC would only guarantee to flush updates to the file length metadata (whereas O_SYNC would also always flush the last modification timestamp metadata).
-
-
-
-## 概述
-
-```c++
+```c
 #include <fstream>
 #include <cstring>
 #include <iostream>
@@ -127,6 +84,63 @@ int main () {
 	return 0;
 }
 ```
+
+在Linux下编程，我们可以有很多种方式操作文件，[这里]()对各个接口进行了梳理，分为三类：
+
++ FILE系统调用：Systerm IO
++ IO流：C library
++ 内外存映射：mmap
+
+### Systerm IO
+
+| Operation | Function(s)                                       |
+| --------- | ------------------------------------------------- |
+| Open      | `open()`, `creat()`                               |
+| Write     | `write()`, `aio_write()`, `pwrite()`, `pwritev()` |
+| Sync      | `fsync()`, `sync()`,`fdatasync()`                 |
+| Close     | `close()`                                         |
+
+write：只保证数据从应用地址空间拷贝到内核地址空间，即kernel space buffer，通常叫page cache。
+
+只有fsync才保证将数据和元数据都实实在在地落盘了（fdatasync只同步数据部分）。
+
+注意，当open的时候如果加上了O_SYNC参数，那么write调用就等价于write+fsync；
+
+当open加上O_DIRECT参数时，write的时候会绕过kernel buffer，但是需要要求写的时候要对齐写，比如对齐512或者4k；
+
+因此，只有open的时候O_DIRECT|O_SYNC，那么写的时候才是真的物理写。
+
+### Stream IO
+
+| Operation | Function(s)                                                  |
+| --------- | ------------------------------------------------------------ |
+| Open      | `fopen()`, `fdopen()`, `freopen()`                           |
+| Write     | `fwrite()`, `fputc()`, `fputs()`, `putc()`, `putchar()`, `puts()` |
+| Sync      | `fflush()`, followed by `fsync()` or `sync()`                |
+| Close     | `fclose()`                                                   |
+
+### Memory mapped
+
+| Operation | Function(s)                                                  |
+| --------- | ------------------------------------------------------------ |
+| Open      | `open()`, `creat()`                                          |
+| Map       | `mmap()`                                                     |
+| Write     | `memcpy()`, `memmove()`, `read()`, or any other routine that writes to application memory |
+| Sync      | `msync()`                                                    |
+| Unmap     | `munmap()`                                                   |
+| Close     | `close()`                                                    |
+
+
+
+原来以为O_DIRECT就直接落盘了，现在发现自己理解错了，这个参数只是绕过了page cache而已；想要写的时候直接落盘，是和参数 O_SYNC 和 O_DSYNC有关（这两个参数的write，可以看做write+fsync），我又看了些文档里对这两个参数的区分解释；分别对应了 file integrity和data integrity；
+
+> To understand the difference between the two types of completion, consider two pieces of file metadata: the file last modification timestamp (st_mtime) and the file length. All write operations will update the last file modification timestamp, but only writes that add data to the end of the file will change the file length. The last modification timestamp is not needed to ensure that a read completes successfully, but the file length is. Thus, O_DSYNC would only guarantee to flush updates to the file length metadata (whereas O_SYNC would also always flush the last modification timestamp metadata).
+
+
+
+## 概述
+
+
 
 
 
