@@ -26,7 +26,9 @@ typora-root-url: ../../yummyliu.github.io
   >
   > If you have a dedicated database server with 1GB or more of RAM, a reasonable starting value for `shared_buffers` is 25% of the memory in your system. There are some workloads where even larger settings for `shared_buffers` are effective, but because PostgreSQL also relies on the operating system cache, it is unlikely that an allocation of more than 40% of RAM to `shared_buffers` will work better than a smaller amount.
 
-总结就是，PostgreSQL推荐设置是25%~40%；MySQL推荐设置是80%；那么是什么造成这两个的不同呢？本文按照个人理解，从Linux的文件IO说起。
+总结就是，PostgreSQL推荐设置是25%~40%；MySQL推荐设置是80%；那么是什么造成这两个的不同呢？
+
+借这个出发点，本文梳理了一下Linux的文件读写，最后讨论下这个问题。
 
 # Linux File IO
 
@@ -129,6 +131,10 @@ typora-root-url: ../../yummyliu.github.io
 > read if we bypassed the kernel cache.
 
 可以看出PostgreSQL的多进程设计对Kernel Buffer是有依赖的，因此在线上监控的时候，Kernel Buffer是否一直充满，也是一个很有必要的监控项；当Kernel Buffer由于某些操作被刷出，会引起PostgreSQL的性能波动。
+
+> PostgreSQL似乎就没打算用direct IO?可以期待下Zheap的引擎。
+>
+> ![image-20191101142643173](/image/1030-pg-directio.png)
 
 而MySQL是多线程架构，bufferPool就是进程堆内空间，而且可以有多个bufferpool，那么可以尽量多将内存留给自己用，这样就会将更多的热点数据放在内存中处理，得到很好的性能。
 
