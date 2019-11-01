@@ -26,9 +26,11 @@ typora-root-url: ../../yummyliu.github.io
   >
   > If you have a dedicated database server with 1GB or more of RAM, a reasonable starting value for `shared_buffers` is 25% of the memory in your system. There are some workloads where even larger settings for `shared_buffers` are effective, but because PostgreSQL also relies on the operating system cache, it is unlikely that an allocation of more than 40% of RAM to `shared_buffers` will work better than a smaller amount.
 
-总结就是，PostgreSQL推荐设置是25%~40%；MySQL推荐设置是80%；那么是什么造成这两个的不同呢？
+总结就是，PostgreSQL推荐设置是25%~40%的内存；MySQL推荐设置是80%；那么是什么造成这两个的不同呢？
 
-借这个出发点，本文梳理了一下Linux的文件读写，最后讨论下这个问题。
+借这个问题加上最近一个朋友的启发，找到了能把自己说服的一个原因：**两个数据库的不同并发机制（进程vs线程）对应的Linux的文件读写上的差异，进而导致对内存的使用方式不同**。
+
+本文梳理了一下Linux的文件读写，最后讨论下这个问题。
 
 # Linux File IO
 
@@ -116,13 +118,13 @@ typora-root-url: ../../yummyliu.github.io
 
 # 讨论PgSQL和MySQL缓冲区配置
 
-那么回到一开始的问题，为什么两者设置的不同呢？（以下只是个人分析，考虑不周，请指正）。
+啰嗦了这么多API，主要就是借此机会温故知新一下；那么回到一开始的问题，为什么两者设置的不同呢？
 
-数据库要保证数据的写入完全在自己的掌控之中，不管是写入的时间还是写入的位置。BufferPool在DB中，可以作为读cache和写buffer，减少物理读的次数，也减少物理写的次数。但是，最终BufferPool中的数据还是要落盘的，那么落盘时的操作就是调用上述的API，并且可以通过参数的配置决定写入的方式；
+数据库要保证数据的写入，不管是写入的时间还是写入的位置，完全在自己的掌控之中。BufferPool在DB中，可以作为读cache和写buffer，减少物理读的次数，也减少物理写的次数。但是，最终BufferPool中的数据还是要落盘的，那么落盘时的操作就是调用上述的API。
 
-两者的区别在于是否要留一大部分Kernel Buffer；在MySQL/InnoDB中，我们可以通过参数`innodb_flush_method`，决定data和log是否使用O_DIRECT（绕过Kernel Buffer）和O_SYNC；而在PostgreSQL中，我们只有通过`wal_sync_method`和`fsync`选择是否O_SYNC，没有选择O_DIRECT的入口。
+因此，造成配置的差异原因可能就是两者使用API的方式不同，其区别在于是否要留一大部分Kernel Buffer；在MySQL/InnoDB中，我们可以通过参数`innodb_flush_method`，决定data和log是否使用O_DIRECT（绕过Kernel Buffer）和O_SYNC；而在PostgreSQL中，我们只有通过`wal_sync_method`和`fsync`选择是否O_SYNC，没有对O_DIRECT进行选择的入口。
 
-啰嗦了这么多，我认为造成这种差异的原因就是多进程架构和多线程架构的区别。PostgreSQL是多进程的架构，那么进程间能共享的除了shared_memory外，就是Kernel Buffer了；但是shared_memory不能配置的太大，那样的话每个PostgreSQL进程的页表就会很庞大，进而带来TLB的miss等问题（虽然可以通过huge_page来启用大页，进而减小页表的大小，huge_page不是所有系统都支持的）；因此，shared_memory的推荐配置就是25%到40%，而不是所有的内存，因为Kernel Buffer对于PostgreSQL也很重要，在PostgreSQL 的xlog.c中，可以看到这样一句话：
+因此，PostgreSQL似乎就没得选，就是要用Kernel Buffer。而在PostgreSQL 的xlog.c中，可以看到这样一句话：
 
 > Optimize writes by bypassing kernel cache with O_DIRECT when using
 > O_SYNC/O_FSYNC and O_DSYNC.  But only if archiving and streaming are
@@ -130,13 +132,15 @@ typora-root-url: ../../yummyliu.github.io
 > the WAL soon after writing it, which is guaranteed to cause a physical
 > read if we bypassed the kernel cache.
 
-可以看出PostgreSQL的多进程设计对Kernel Buffer是有依赖的，因此在线上监控的时候，Kernel Buffer是否一直充满，也是一个很有必要的监控项；当Kernel Buffer由于某些操作被刷出，会引起PostgreSQL的性能波动。
+众所周知，PostgreSQL是多进程的架构，那么进程间能共享的内存除了shared_memory外，就是Kernel Buffer了；但是shared_memory不能配置的太大，那样的话每个PostgreSQL进程的页表就会很庞大，进而带来TLB的miss等问题（虽然可以通过huge_page来启用大页，进而减小页表的大小，但huge_page不是所有系统都支持的）；因此，shared_memory的推荐配置就是25%到40%，而不是大量的内存，因为Kernel Buffer对于PostgreSQL也很重要；从运维经验上同样是有教训的，之前线上出现过kernel buffer清空导致的PostgreSQL性能波动；如果这个波动发生在高峰期，那么就故障无疑了。
 
-> PostgreSQL似乎就没打算用direct IO?可以期待下Zheap的引擎。
+可以看出PostgreSQL的多进程设计对Kernel Buffer是有依赖的，因此在线上监控的时候，Kernel Buffer是否一直充满，也是一个很有必要的监控项；
+
+> 找了下资料，发现PostgreSQL目前的存储引擎似乎就没打算用direct IO?那么，可以期待下Zheap的引擎哈
 >
 > ![image-20191101142643173](/image/1030-pg-directio.png)
 
-而MySQL是多线程架构，bufferPool就是进程堆内空间，而且可以有多个bufferpool，那么可以尽量多将内存留给自己用，这样就会将更多的热点数据放在内存中处理，得到很好的性能。
+另外，MySQL是多线程架构，bufferPool就是进程堆内空间，而且可以有多个bufferpool，那么可以尽量多将内存留给自己用，这样就会将更多的热点数据放在内存中处理，得到很好的性能，这就很直观了。
 
 # 参考
 
