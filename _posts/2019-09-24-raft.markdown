@@ -197,7 +197,7 @@ joint consensus有以下三个特点：
 
 7. 此时，收到C_new记录的follower，就开始按照C_new配置进行后续操作了，就不认识不在C_old中的节点了。
 
-   > **NOTE**：此时如果当前Leader挂掉，因为C_new记录没有提交，按照Leader Completeness原则，选出的新Leader只能是C_old_new状态。
+   > **NOTE**：此时如果当前Leader挂掉，如果C_new已经复制给新配置中的多数节点，那么选出的新Leader可能是C_new状态(完成配置变更)；否则，还是C_old_new状态。
 
 8. 最后，C_new提交，那么集群就完成了配置变更；这时不在C_new中的follower可以直接关闭了。
 

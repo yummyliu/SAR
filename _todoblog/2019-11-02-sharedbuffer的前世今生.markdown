@@ -173,3 +173,10 @@ limits significantly, reducing the above problem. But global
 configuration is rather problematic because it'll affect other
 applications; also PostgreSQL itself doesn't always generally want this
 behavior, e.g. for temporary files it's undesirable.
+
+
+
+
+
+[checkpoint sort](https://git.postgresql.org/gitweb/?p=postgresql.git;a=commitdiff;h=9cd00c457e6a1ebb984167ac556a9961812a683c)  sort by tablespace, relfilenode, fork and block number.  often result in a lot of writes that can be
+coalesced into one flush.
