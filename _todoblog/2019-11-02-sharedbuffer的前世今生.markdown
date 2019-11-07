@@ -180,3 +180,48 @@ behavior, e.g. for temporary files it's undesirable.
 
 [checkpoint sort](https://git.postgresql.org/gitweb/?p=postgresql.git;a=commitdiff;h=9cd00c457e6a1ebb984167ac556a9961812a683c)  sort by tablespace, relfilenode, fork and block number.  often result in a lot of writes that can be
 coalesced into one flush.
+
+
+
+
+
+all writes since the
+last fsync have hit disk" but we assume it means "all writes since the last
+SUCCESSFUL fsync have hit disk".
+
+
+
+
+
+```c
+
+    int ret = fsync(file);
+
+    if (ret == 0) {
+      return (ret);
+    }
+
+    switch (errno) {
+      case ENOLCK:
+
+        ++failures;
+        ut_a(failures < 1000);
+
+        if (!(failures % 100)) {
+          ib::warn(ER_IB_MSG_773) << "fsync(): "
+                                  << "No locks available; retrying";
+        }
+
+        /* 0.2 sec */
+        os_thread_sleep(200000);
+        break;
+
+      case EIO:
+
+        ib::fatal() << "fsync() returned EIO, aborting.";
+        break;
+
+
+```
+
+clear-error-and-continue
