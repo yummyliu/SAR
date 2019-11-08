@@ -10,6 +10,8 @@ typora-root-url: ../../yummyliu.github.io
 > * TOC
 {:toc}
 
+首先是最近在想一个问题PostgreSQL为什么 25%，然后MySQL的是80%？
+
 # Double buffer
 
 data_sync_retry
