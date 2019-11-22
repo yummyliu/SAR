@@ -1,14 +1,14 @@
 ---
 layout: post
 title: InnoDB的数据组织
-date: 2019-07-21 09:47
+date: 2019-06-21 09:47
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
   - InnoDB
 typora-root-url: ../../yummyliu.github.io
 ---
-> * TOC
+* TOC
 {:toc}
 
 # InnoDB的数据组织介绍
