@@ -58,6 +58,8 @@ MySQL即主要提供了Relational Query Procesor的功能，InnoDB就是上图�
 + Double Write Buffer
 
 > 除了space0是共享的以外，我们还可以通过create tablespace创建[General Tablespace](https://dev.mysql.com/doc/refman/5.7/en/general-tablespaces.html)，同样是全局共享的。
+>
+> InnoDB Instrinsic Tables：InnoDB引擎内部的表，没有undo和redo，用户不可创建，只供引擎内部使用。
 
 ### 宏观上物理与逻辑的对应
 
@@ -95,6 +97,12 @@ MySQL即主要提供了Relational Query Procesor的功能，InnoDB就是上图�
 文件头部信息包含了前向和后向的Page的偏移，以及该页最后一次修改的LSN。
 
 索引头部信息包含了PageDirectory数组的大小，而PageDirectory则是从Page尾部开始分配。PageDirectory中维护了该页**部分**元组的偏移，在每个元组中通过n_owned字段，表示该记录前向有几个字段没在PageDirectory中。
+
+>dict_index_t->**n_uniq**：在dict_index_t->n_fields中，从前向后，足够用来判断键唯一的列数。
+
+> **n_owned**
+>
+> 在InnoDB中，表是按照B+Tree的方式存储。每个页中，都有一个PageDirectory(如下图)。其中保存了该页内的record的偏移量。由于不是每个record在PageDirectory中都有一个slot（这称为sparse slots），因此每个record中就有了一个n_owned变量，保存了该recored所own的record数，类似于前向元组数。
 
 ### 读写最小单元——Record
 

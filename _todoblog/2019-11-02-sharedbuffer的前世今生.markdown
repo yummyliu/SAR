@@ -227,3 +227,5 @@ SUCCESSFUL fsync have hit disk".
 ```
 
 clear-error-and-continue
+
+大家好，简单介绍一下自己；这是我的名字，我呢，接触PostgreSQL蛮久了，因为从开始学数据库实现原理时，就是以PostgreSQL为模板进行学习。但是真正使用PostgreSQL就是毕业这两年时间，然后也有幸在升哥的指导下，与另一位优秀的同学一起翻译了一个书。今天呢，我分享一个最近思考的问题，思考这个问题的起因是源于一次线上故障，然后有同事问我说：为什么PostgreSQL的shared_buffer只用那么少呢？

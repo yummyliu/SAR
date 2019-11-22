@@ -11,10 +11,6 @@ typora-root-url: ../../yummyliu.github.io
 
 * TOC
 {:toc}
-
-
-# 简述
-
 在MySQL 5.7中，按照如下语法可以创建三种索引：btree、fulltext、spatial。
 
 ```sql
@@ -34,57 +30,17 @@ CREATE [UNIQUE | FULLTEXT | SPATIAL] INDEX index_name
 | [`MEMORY`](storage-engines.html#memory-storage-engine)/`HEAP` | `HASH`, `BTREE`                    |
 | [`NDB`](mysql-cluster.html)                                  | `HASH`, `BTREE` (see note in text) |
 
-我们以InnoDB为例，InnoDB不支持Hash。另外，当你创建的是fulltext和spatial索引时，index_type就不能指定了。因为fulltext的实现一般是倒排表，也根据存储引擎有关；spatial一般是R-tree。
+我们以InnoDB为例，InnoDB不支持Hash。另外，当你创建的是fulltext和spatial索引时，index_type就不能指定了。因为fulltext的实现一般是倒排表，也根据存储引擎有关；spatial一般是R-tree；这是使用上的背景。那么，MySQL的索引，这里指的是二级索引，是怎么创建的？
 
-————————————————————————————————————
-
-## 整体数据组织
-
-![img](/image/InnoDB数据组织.png)
-
-创建索引涉及了InnoDB中的内存和外存的数据组织，比如dictionary cache，block/page/frame等分别是什么意思：
-
-![image-20190701113428176](/image/image-20190701113428176.png)
-
-dictionary cache是全局共享对象的cache，比如：
-
-1. tablespace defintion
-2. schema definition
-3. table definition
-4. stored program definition
-5. character set definition
-6. collation definition
-
-在InnoDB中，frame代表内存的虚拟地址空间的一个16k单元，主要用在缓冲区管理中；page代表物理内存的一个16k单元，其中是需要写回到磁盘的数据；而Block代表一个Control Block（`buf_block_t`），对于每个frame对应一个ControlBlock结构进行控制信息管理，但这些信息不写回内存。
-
-![innodb files](/image/innodb-tablespace.png)
-
-在外存中，按照表空间（space）进行组织；当启动了`innodb_file_per_table`参数后，每个数据表对应一个文件（参看系统表：INFORMATION_SCHEMA.INNODB_SYS_DATAFILES）。但是全局共享的对象，需要放在共享的表空间space0（全局变量`：innodb_data_file_path，默认为ibdata1）中：
-
-+ data dictionary（InnoDB表的元信息）
-+ change buffer
-+ double write buffer
-+ undo log
-
-每个space有若干个file或者diskpartition；其中spaceid=0为系统表空间，其中有一些全局共享的结构：
-
-+ 公共结构体：ibuf、trx、dict等
-+ doublewrite buffer
-+ 数据目录
-
-每个file分为若干个segment；其中有LeafNodeSegment、NonLeafNodeSegment、rollbacksegment，见[General Tablespace](https://dev.mysql.com/doc/refman/5.7/en/general-tablespaces.html)。
-
-每个segment中有若干个固定大小的page
-
-+ 对于uncompressed的表空间，page是16Kb；
-
-+ 对于compressed的表空间，page是1~16Kb。
-
-> IBUF_TREE
+> Create Index的崩溃恢复
 >
-> Insert Buffer是二级索引变更的缓存；之前只有insert操作，后来也支持了delete/update/purge操作，成为ChangeBuffer；但是命名上没有改变，在内存中还是叫InsertBuffer；在外存中，放在ibuf文件中。
+> https://dev.mysql.com/doc/refman/5.7/en/innodb-online-ddl-operations.html
+>
+> If the server exits while creating a secondary index, upon recovery, MySQL drops any partially created indexes. You must re-run the [`ALTER TABLE`](https://dev.mysql.com/doc/refman/5.6/en/alter-table.html) or [`CREATE INDEX`](https://dev.mysql.com/doc/refman/5.6/en/create-index.html) statement.
 
-————————————————————————————————————
+MySQL创建二级索引的过程中，如果失败了只能重做。这期间的变更不会写redo日志记录。那么，这期间对磁盘上的文件，做了哪些操作呢？
+
+# 创建二级索引
 
 版本<5.5，创建一个索引相当于重建一个表（**CopyTable**）。
 
@@ -94,42 +50,25 @@ dictionary cache是全局共享对象的cache，比如：
 2. 进行合并排序
 3. 将行插入到索引中
 
-版本>=5.6.7，加入了Online Create Index的特性，创建二级索引的时候可读可写（还是会短暂block一下，但是已经影响很小了）；对于创建索引过程中对表进行的修改，放在RowLog（不是redolog）中；
+版本>=5.6.7，加入了Online Create Index的特性，创建二级索引的时候可读可写（还是会短暂block一下，但是已经影响很小了）；对于创建索引过程中对表进行的修改，放在RowLog（不是redolog）中；详细的创建过程如下图所示：
 
-————————————————————————————————————
+![image-20191118143812556](/image/online-create-index.png)
 
-InnoDB Instrinsic Tables：InnoDB引擎内部的表，没有undo和redo，用户不可创建，只供引擎内部使用。
-
-+ Index Page的物理结构
-
-![image-20190718113614074](/image/INDEX_Page_Overview.png)
-
-+ Index Page的逻辑结构
-
-  ![image-20190530163445011](/image/innodb-page-directory.png)
-
-> dict_index_t->n_uniq：在dict_index_t->n_fields中，从前向后，足够用来判断键唯一的列数。
->
-> **n_owned**
->
-> 在InnoDB中，表是按照B+Tree的方式存储。每个页中，都有一个PageDirectory(如下图)。其中保存了该页内的record的偏移量。由于不是每个record在PageDirectory中都有一个slot（这称为sparse slots），因此每个record中就有了一个n_owned变量，保存了该recored所own的record数，类似于前向元组数。
-
-# 创建过程
-
-![image-20190814100917780](/image/online-create-index.png)
+对于MySQL来说，创建二级索引属于一种alter table操作。因此入口函数仍是`mysql_alter_table`，在该函数中，通过调用`create_table_impl`，**创建一个临时的frm文件**（属于SQL层，并不是InnoDB层的文件）。
 
 入口函数是`mysql_inplace_alter_table`。分为以下几步：
 
 1. `mdl_context.upgrade_shared_lock`；创建一个Rowlog，并等待该表上的事务结束；此后开启的新事务的修改放在Rowlog中。
 2. `ha_prepare_inplace_alter_table`；写元数据，并建立root节点
-   - row_merge_create_index：插入系统表关于该索引的元信息。
-   - btr_create：创建root节点。
+   - row_merge_create_index：**插入系统表**关于该索引的元信息（**ibdata1**）。
+   - btr_create：创建root节点（**ibd**文件)。
 3. `downgrade_lock`：如果存储引擎返回不需要xlock或者slock，那么可以降级为shared metadata lock。
-4. `ha_inplace_alter_table`；构建索引
+4. `ha_inplace_alter_table`；构建索引（**ibd**）
    1. 遍历一级索引，对索引列进行归并排序
    2. 将排序好的数据，填充到索引中。
    3. 应用RowLog
-5. 收尾工作：ha_commit_inplace_alter_table等。
+5. `ha_commit_inplace_alter_table`：索引创建成功，提交事务，收尾工作。
+6. `mysql_rename_table`：将临时的**frm**重命名回去
 
 ## 准备系统信息与结构
 
@@ -139,7 +78,9 @@ InnoDB Instrinsic Tables：InnoDB引擎内部的表，没有undo和redo，用户
 
 在dict0crea.h的dict_create_index_step中，定义了初始化index的4步操作：
 
-1. **INDEX_BUILD_INDEX_DEF**：dict_build_index_def_step，构造一个索引的定义元组（后续将插入到系统表**INFORMATION_SCHEMA.INNODB_SYS_INDEXES**中，具体内容在`dict_create_sys_indexes_tuple`函数中）。
+1. **INDEX_BUILD_INDEX_DEF**：dict_build_index_def_step；
+
+   构造一个索引的定义元组（后续将插入到系统表`INFORMATION_SCHEMA.INNODB_SYS_INDEXES`中，具体内容在`dict_create_sys_indexes_tuple`函数中）。
 
    + ```
             INDEX_ID: 40
@@ -147,12 +88,16 @@ InnoDB Instrinsic Tables：InnoDB引擎内部的表，没有undo和redo，用户
             TABLE_ID: 34
                 TYPE: 0
             N_FIELDS: 1
-             PAGE_NO: 4
+             PAGE_NO: FIL_NULL
                SPACE: 23
      MERGE_THRESHOLD: 50
      ```
 
-2. **INDEX_BUILD_FIELD_DEF**：dict_build_field_def_step，基于要创建的索引，构造一个系统表:`INFORMATION_SCHEMA.INNODB_SYS_FIELDS`的元组。取决于索引列有几个，该步骤执行多少次。
+   > 注意 此时，page_no还未确定，先设置为FIL_NULL。
+
+2. **INDEX_BUILD_FIELD_DEF**：dict_build_field_def_step；
+
+   基于要创建的索引，构造一个系统表:`INFORMATION_SCHEMA.INNODB_SYS_FIELDS`的元组。取决于索引列有几个，该步骤执行多少次。
 
    ```sql
    INDEX_ID: 117
@@ -170,20 +115,22 @@ InnoDB Instrinsic Tables：InnoDB引擎内部的表，没有undo和redo，用户
    > 				insert the row directly */
    > ```
 
-3. **INDEX_ADD_TO_CACHE**：dict_index_add_to_cache_w_vcol，将索引添加到**<u>dictionarycache</u>**中
+3. **INDEX_ADD_TO_CACHE**：dict_index_add_to_cache_w_vcol；
 
-4. **INDEX_CREATE_INDEX_TREE**：dict_create_index_tree_step，创建索引
+   将第一步中的索引信息，添加到**dictionary cache**中，注意这里的page_no还是FIL_NULL。
+
+4. **INDEX_CREATE_INDEX_TREE**：dict_create_index_tree_step;
+
+   在ibd文件中创建索引。
 
    1. 检查表空间与文件是否存在
    2. 初始化btree的cursor
    3. 创建root节点：btr_create
-   4. 更新系统表sys_indexes的page_no字段
-
-
+   4. 更新系统表sys_indexes的page_no字段，（此时才更新page_no）
 
 ### 创建Btree根节点
 
-> <u>btr_create</u>
+*btr_create*
 
 先不考虑`type&DICT_IBUF==True`的情况：
 
@@ -392,25 +339,4 @@ rowlog中的类型有两种，如上：
 + `ROW_OP_DELETE`最终对应着`btr_cur_optimistic_delete`
 + `ROW_OP_INSERT`最终对应着`btr_cur_optimistic_insert`
 
-# 崩溃恢复
-
-> https://dev.mysql.com/doc/refman/5.7/en/innodb-online-ddl-operations.html
->
-> If the server exits while creating a secondary index, upon recovery, MySQL drops any partially created indexes. You must re-run the [`ALTER TABLE`](https://dev.mysql.com/doc/refman/5.6/en/alter-table.html) or [`CREATE INDEX`](https://dev.mysql.com/doc/refman/5.6/en/create-index.html) statement.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# 删除二级索引
