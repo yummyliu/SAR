@@ -43,7 +43,7 @@ typora-root-url: ../../yummyliu.github.io
 1. PostgreSQL的double buffer问题
 2. PostgreSQL的write back机制
 
-# PostgreSQL的double buffer问题
+# PostgreSQL的double buffer
 
 在了解PostgreSQL的double buffer问题之前，先了解一下我们常用的服务器操作系统——Linux的文件读写缓存。
 
@@ -67,7 +67,7 @@ IO就是内存和外存之间的数据传输。在数据库场景中，我们认
 
 在Linux下编程，我们可以有很多种方式操作文件，下面对各个接口进行了梳理：
 
-### System call
++ **System call**
 
 | Operation | Function(s)                                       |
 | --------- | ------------------------------------------------- |
@@ -84,7 +84,7 @@ IO就是内存和外存之间的数据传输。在数据库场景中，我们认
 >
 > 当open加上O_DIRECT参数时，**write的时候只会绕过kernel buffer，不会sync**，但是需要要求写的时候要对齐写，比如对齐512或者4k；
 
-### Library
++ **Library**
 
 | Operation | Function(s)                                                  |
 | --------- | ------------------------------------------------------------ |
@@ -95,7 +95,7 @@ IO就是内存和外存之间的数据传输。在数据库场景中，我们认
 
 这部分是C library的IO流式读写，对底层系统调用进行了封装；如果采用这种方式操作文件，那么fwrite的时候，可能数据还是留在用户态，这优化了频繁陷入内核态的上下文切换的代价。
 
-### mmap
++ **mmap**
 
 | Operation | Function(s)                       |
 | --------- | --------------------------------- |
@@ -110,7 +110,7 @@ mmap将外存的文件块映射到内存中，可以利用OS的页面管理（�
 
 > **注意**mmap同样会占用进程页表，进而可能有TLB miss的代价。
 
-### Zero-copy
++ **Zero-copy**
 
 | Operation  | Function(s)  |
 | ---------- | ------------ |
@@ -124,7 +124,7 @@ mmap将外存的文件块映射到内存中，可以利用OS的页面管理（�
 
 ![image-20191101105456535](/image/1030-sendfile.png)
 
-### Linux AIO
++ **Linux AIO**
 
 AIO需要文件按照**O_DIRECT**的方式打开，AIO的接口有两种：
 
@@ -225,11 +225,29 @@ AIO需要文件按照**O_DIRECT**的方式打开，AIO的接口有两种：
 
 ## fsync的语义
 
-现在块设备的类型比之前多的多了，数据页进行落盘的正确性也不是百分之百保证的。那么，肯定是会产生块IO错误，只不过出现的很少。那么在fsync失败后，如何进行处理呢。这里画了一个时序图，阐述一些这块的逻辑：
+现在块设备的类型比之前多的多了，但是数据页的落盘还是存在落盘失败的可能。那么，肯定是会产生块IO错误，只不过出现的很少。那么在PostgreSQL的fsync失败后，如何进行处理呢。这里画了CHECKPOINT前后一个时序图，阐述一些这块的逻辑：
 
 ![image-20191126204141874](/image/1030-db07.png)
 
-PostgreSQL
+黑色箭头表示上次CHECKPOINT的fsync成功了，PostgreSQL开始进行下一次spread CHECKPOINT。首先，进行了多次write，最后调用fsync，但是返回失败。那么PostgreSQL选择重试，重试返回成功。
+
+那么此时PostgreSQL认为**"all write since last success fsync has success"**，即，蓝色write和红色write都成功落盘了（两次fsync之间，可能会调用write）。
+
+但是这个语义理解数不准备的，因为POSIX接口对于fsync返回失败后的处理方式没有定义。那么，在不同的操作系统以及同一操作系统的不同版本上可能都有出入；正确的理解应该是**“all write since last fsync has success”**，即，重试的fsync返回成功只能保证红色的write落盘成功，至于之前的write是否成功是未知的，因此磁盘中可能因此出现不一致的数据块。
+
+这个问题在小版本中修复了，如下：
+
++ PostgreSQL 11 (11.2)
+
++ PostgreSQL 10 (10.7)
+
++ PostgreSQL 9.6 (9.6.12)
+
++ PostgreSQL 9.5 (9.5.16)
+
++ PostgreSQL 9.4 (9.4.21)
+
+我们在使用PostgreSQL的过程中，应该及时升级小版本，避免采坑。另外，修复此问题的同时引入了一个新的错误处理的参数`data_sync_retry`。如果你能确保你的OS和存储设备不存在以上问题，那么通过`data_sync_retry`跳过强制crash，否则就要报PANIC级别错误，然后crash recovery。
 
 # 参考
 
