@@ -54,21 +54,36 @@ MySQL创建二级索引的过程中，如果失败了只能重做。这期间的
 
 ![image-20191118143812556](/image/online-create-index.png)
 
-对于MySQL来说，创建二级索引属于一种alter table操作。因此入口函数仍是`mysql_alter_table`，在该函数中，通过调用`create_table_impl`，**创建一个临时的frm文件**（属于SQL层，并不是InnoDB层的文件）。
+对于MySQL来说，创建二级索引属于一种alter table操作，涉及到磁盘文件和内存缓存的修改。
 
-入口函数是`mysql_inplace_alter_table`。分为以下几步：
+磁盘文件：
+
++ InnoDB的ibd，MySQL的frm；
++ InnoDB的系统表空间的系统表
+
+内存缓存：
+
++ SQL层的table definition cache （frm的缓存）
++ InnoDB层的dictionary cache（系统表的缓存）
+
+入口函数是`mysql_alter_table`，在该函数中，通过调用`create_table_impl`，**创建一个临时的frm文件**（属于SQL层，并不是InnoDB层的文件）。
+
+然后是`mysql_inplace_alter_table`。分为以下几步：
 
 1. `mdl_context.upgrade_shared_lock`；创建一个Rowlog，并等待该表上的事务结束；此后开启的新事务的修改放在Rowlog中。
 2. `ha_prepare_inplace_alter_table`；写元数据，并建立root节点
    - row_merge_create_index：**插入系统表**关于该索引的元信息（**ibdata1**）。
+   - 
    - btr_create：创建root节点（**ibd**文件)。
 3. `downgrade_lock`：如果存储引擎返回不需要xlock或者slock，那么可以降级为shared metadata lock。
 4. `ha_inplace_alter_table`；构建索引（**ibd**）
    1. 遍历一级索引，对索引列进行归并排序
    2. 将排序好的数据，填充到索引中。
    3. 应用RowLog
-5. `ha_commit_inplace_alter_table`：索引创建成功，提交事务，收尾工作。
-6. `mysql_rename_table`：将临时的**frm**重命名回去
+5. `ha_commit_inplace_alter_table`：
+   + 索引创建成功，提交事务，收尾工作。
+   + 更新InnoDB的**dictionary cache**
+6. `mysql_rename_table`：将临时的**frm**重命名回去；
 
 ## 准备系统信息与结构
 
@@ -340,3 +355,5 @@ rowlog中的类型有两种，如上：
 + `ROW_OP_INSERT`最终对应着`btr_cur_optimistic_insert`
 
 # 删除二级索引
+
+TODO
