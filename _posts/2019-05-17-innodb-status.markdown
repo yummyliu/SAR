@@ -1,10 +1,11 @@
 ---
 layout: post
-title: 了解MySQL/InnoDB的各种系统信息与参数
-date: 2019-10-17 18:38
+title: 了解show engine innodb status
+date: 2019-5-17 18:38
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
+  - InnoDB
 typora-root-url: ../../yummyliu.github.io
 ---
 > * TOC
@@ -242,9 +243,3 @@ Number of rows inserted 143, updated 3000041, deleted 0, read 24865563
 ```
 
 从行的维度来统计InnoDB中的查询操作。但是要注意行的大小不同，因此这里每个读写的代价可能不一样；比如读一个10Mb的blog类型和一个10byte的常规类型的行。
-
-# 系统视图
-
-TODO
-
-[show innodb status walk through](https://www.percona.com/blog/2006/07/17/show-innodb-status-walk-through/)

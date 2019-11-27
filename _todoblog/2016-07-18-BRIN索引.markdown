@@ -200,16 +200,3 @@ blknum : 是一个索引条目的起始heappage编号。
 attnum: 是指一个条目中存放的是第几个字段的信息。
 allnulls: 是告诉我们在一个条目涵盖的128个heap page对应的索引字段上是否全部为NULL值。  
 hasnulls : 告诉我们在一个条目涵盖的128个heap page对应的索引字段上是否含有NULL值。
-
-重要参考：  
-[brinindex][brinindex]  
-[pageinspect][pageinspect]  
-[汪洋前辈文章1][wangyang]  
-[汪洋前辈文章2][pg1]  
-[汪洋前辈文章3][pg2]  
-
-[brinindex]: http://michael.otacoo.com/postgresql-2/postgres-9-5-feature-highlight-brin-indexes/
-[pageinspect]: https://www.postgresql.org/docs/current/static/pageinspect.html
-[wangyang]: http://mp.weixin.qq.com/s?__biz=MjM5MjMxMTMyOA==&amp;mid=2649183151&amp;idx=1&amp;sn=8756b538677295f473c21e18f05ae720&amp;scene=1&amp;srcid=0715s5Ab6NgZxzSkSWnceJo8&amp;from=groupmessage&amp;isappinstalled=0#wechat_redirect
-[pg1]: https://mp.weixin.qq.com/s?__biz=MjM5OTkxOTc0Mw==&amp;mid=2650225305&amp;idx=1&amp;sn=89ad43351dc9c3acc3961177b0146fe1&amp;scene=0&amp;key=77421cf58af4a653f3a8464de8cc786c99259ab6a93d971db1b72eaac75a708235fd0fa49d0ef9c64ce96666169cb0d8&amp;ascene=0&amp;uin=Mjk4NTkzNTU%3D&amp;devicetype=iMac+MacBookPro11%2C1+OSX+OSX+10.11.3+build(15D21)&amp;version=11020201&amp;pass_ticket=DzRo%2FFPOSiMLxnUTC3BeQgbxkHqAtWoaXijC9KIuRgs%3D
-[pg2]: https://mp.weixin.qq.com/s?__biz=MjM5OTkxOTc0Mw==&amp;mid=2650225308&amp;idx=1&amp;sn=325f360c76e1ac2f7941c241ae9eb64e&amp;scene=0&amp;key=77421cf58af4a653d12b7815b8f84c98e13183713cd62a83e8f5300ea6923f27b71b094f4eeefafab4278af9a26fa636&amp;ascene=0&amp;uin=Mjk4NTkzNTU%3D&amp;devicetype=iMac+MacBookPro11%2C1+OSX+OSX+10.11.3+build(15D21)&amp;version=11020201&amp;pass_ticket=DzRo%2FFPOSiMLxnUTC3BeQgbxkHqAtWoaXijC9KIuRgs%3D
