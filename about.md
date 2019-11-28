@@ -11,7 +11,7 @@ permalink: /about/
                     <div class="col-lg-12">
                         <div class="row">
                             <div class="col-sm-offset-3 col-sm-6 col-md-offset-3 col-md-6 col-lg-offset-3 col-lg-6">
-                                <img class="img-circle img-responsive"
+                                <img class="img-responsive"
                                      src="{{site.data.personal.gravatar}}">
                             </div>
                         </div>
