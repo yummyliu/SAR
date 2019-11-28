@@ -4,8 +4,8 @@ title: TimescalaDB Or InfluxDB
 subtitle: pgwatch3中加一个timescaladb的数据源的工作
 date: 2018-05-31 15:43
 header-img: "img/head.jpg"
-categories: 
-   - DataBase
+categories:
+   - PostgreSQL
 ---
 
 * TOC
@@ -25,15 +25,15 @@ categories:
 
 首先是对比一下influxdb和timescaladb的区别：
 
-## create 
+## create
 
 ##### influxdb create
 
 ```sql
-CREATE DATABASE <database_name> 
-[WITH [DURATION <duration>] 
-[REPLICATION <n>] 
-[SHARD DURATION <duration>] 
+CREATE DATABASE <database_name>
+[WITH [DURATION <duration>]
+[REPLICATION <n>]
+[SHARD DURATION <duration>]
 [NAME <retention-policy-name>]]
 
 
@@ -46,7 +46,7 @@ CREATE DATABASE %s WITH DURATION %dd REPLICATION 1 SHARD DURATION 3d NAME pgwatc
 
 + `SHARD DURATION`：定义了一个shard组中包含多长时间范围数据；默认是和DURATION相同；（就是按照range方式分区，分区的列是time）
 
-+ 没有create MEASUREMENTS ; 直接insert 
++ 没有create MEASUREMENTS ; 直接insert
 
   ```sql
   $ influx
@@ -79,7 +79,7 @@ CREATE TABLE conditions (
  temperature DOUBLE PRECISION  NULL
 );
 
-create_hypertable() 
+create_hypertable()
 ```
 
 在使用timescaladb的时候，一般考虑两个问题：
@@ -87,7 +87,7 @@ create_hypertable()
 1. 我应该按照多大的时间区间分区？
 
    + Time intervals：当前版本的timescaladb不支持自适应的时间间隔分区（正在开发中）。因此用户需要在创建hypertable的时候，设置`chunk_time_interval`（默认是1个月）。通过`set_chunk_time_interval`来改变；
-   + 选择time interval的核心思想就是：时间上最近的那个chunk能够放到内存中，大概占个25%的内存就行；这也和你的数据产生速度相关。如果每天写2G的数据，但是有64GB的内存，把time intervals设置成一周比较好（2\*7=14Gb < 64\* 1/4） 
+   + 选择time interval的核心思想就是：时间上最近的那个chunk能够放到内存中，大概占个25%的内存就行；这也和你的数据产生速度相关。如果每天写2G的数据，但是有64GB的内存，把time intervals设置成一周比较好（2\*7=14Gb < 64\* 1/4）
    + 这个设置就相当于influxdb的`SHARD DURATION`
 
 2. 我该不该用空间分区，应该按照空间分几个区？
