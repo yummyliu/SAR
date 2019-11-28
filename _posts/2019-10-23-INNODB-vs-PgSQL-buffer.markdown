@@ -3,8 +3,7 @@ layout: post
 title: PgSQL和MySQL的bufferpool探讨
 date: 2019-10-23 17:30
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
   - Linux
   - PostgreSQL
   - MySQL

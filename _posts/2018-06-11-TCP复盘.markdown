@@ -3,8 +3,7 @@ layout: post
 title: 回顾TCP
 date: 2018-06-11 16:30
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
   - Network
 typora-root-url: ../../yummmyliu.github.io
 ---

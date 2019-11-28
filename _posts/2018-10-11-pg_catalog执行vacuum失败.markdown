@@ -3,8 +3,7 @@ layout: post
 title: PostgreSQL系统共享表执行VACUUM异常
 date: 2018-10-11 11:35
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
   - PostgreSQL
 typora-root-url: ../../yummyliu.github.io
 ---

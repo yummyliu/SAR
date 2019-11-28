@@ -4,8 +4,7 @@ title: 认识PostgreSQL的MVCC
 subtitle: PostgreSQL中，对DML语句使用快照隔离，对DDL语句使用2PL，本文中主要介绍PostgreSQL的快照隔离，即MVCC；
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
     - PostgreSQL
 typora-root-url: ../../yummyliu.github.io
 ---

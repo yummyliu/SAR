@@ -4,8 +4,7 @@ title: PostgreSQL 原理浅浅析
 subtitle: 结合PostgreSQL，梳理一下数据库实现中的概念
 date: 2018-07-14 13:46
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
     - PostgreSQL
 typora-root-url: ../../yummyliu.github.io
 ---

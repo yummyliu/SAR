@@ -4,14 +4,13 @@ title: Pgbouncer源码——TakeOver
 subtitle: 结合Pgbouncer，深入Linux中进程之间的数据交互
 date: 2018-06-13 08:07
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
   - PostgreSQL
   - Pgbouncer
 ---
 
 > * TOC
-> {:toc}
+{:toc}
 
 ## 背景
 

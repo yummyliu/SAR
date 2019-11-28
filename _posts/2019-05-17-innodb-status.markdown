@@ -3,8 +3,7 @@ layout: post
 title: 了解show engine innodb status
 date: 2019-5-17 18:38
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
   - InnoDB
 typora-root-url: ../../yummyliu.github.io
 ---

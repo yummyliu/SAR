@@ -3,8 +3,7 @@ layout: post
 title: PostgreSQL和MySQL的事务隔离级别对比
 date: 2019-06-30 18:06
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
     - PostgreSQL
     - MySQL
 typora-root-url: ../../yummyliu.github.io

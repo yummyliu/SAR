@@ -3,8 +3,7 @@ layout: post
 title: Pgbouncer添加HAProxyProtocol特性
 date: 2019-03-06 16:28
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
   - NetWork
   - Pgbouncer
 ---

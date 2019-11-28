@@ -3,8 +3,7 @@ layout: post
 title: 从四个方面了解InnoDB
 date: 2019-07-09 17:06
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
   - InnoDB
   - MySQL
 typora-root-url: ../../yummyliu.github.io

@@ -3,13 +3,12 @@ layout: post
 title: 初识PostgreSQL的分区表
 date: 2018-05-29 15:13
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
     - PostgreSQL
 ---
 
 > * TOC
-> {:toc}
+{:toc}
 
 # Table Partition 
 

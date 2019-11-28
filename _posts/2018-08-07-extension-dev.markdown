@@ -2,8 +2,7 @@
 layout: post
 title: PostgreSQL Extension 开发日志
 date: 2018-08-07 14:09
-categories: jekyll update
-tags:
+categories: 
   - PostgreSQL
   - C++
 ---

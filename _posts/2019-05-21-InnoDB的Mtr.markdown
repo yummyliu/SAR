@@ -3,8 +3,7 @@ layout: post
 title: InnoDB源码解析——MTR与Btree操作
 date: 2019-05-21 16:35
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
   - InnoDB
 typora-root-url: ../../yummyliu.github.io
 ---

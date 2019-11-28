@@ -3,8 +3,7 @@ layout: post
 title: MySQL源码——Online Create Index
 date: 2019-06-28 18:10
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
   - MySQL
 typora-root-url: ../../yummyliu.github.io
 ---

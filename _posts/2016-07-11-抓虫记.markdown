@@ -4,7 +4,7 @@ title: CstoreFDW 调试记录
 subtitle: 第一次参与开源社区代码的实践，其中遇到了一个功能性的bug 调试耗时略长，感觉收获不少，简单记录下
 date: 2016-07-10 09:45
 header-img: "img/head.jpg"
-tags:
+categories: 
     - CitusDB
 ---
 

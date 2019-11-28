@@ -3,8 +3,7 @@ layout: post
 title: 图解PostgreSQL的Tuple
 date: 2019-02-15 12:54
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
   - PostgreSQL
 typora-root-url: ../../yummyliu.github.io
 ---

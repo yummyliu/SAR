@@ -3,9 +3,8 @@ layout: post
 title: KMP回顾
 date: 2019-02-04 07:55
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
-  - 温故而知新
+categories: 
+  - algo
 typora-root-url: ../../yummyliu.github.io
 ---
 * TOC

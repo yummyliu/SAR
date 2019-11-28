@@ -2,8 +2,7 @@
 layout: post
 title: Linux的IO初识
 date: 2016-03-23 16:11
-categories: jekyll update
-tags:
+categories: 
     - Linux
 ---
 

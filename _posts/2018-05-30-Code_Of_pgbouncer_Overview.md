@@ -3,8 +3,7 @@ layout: post
 title: Pgbouncer源码——Overview
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
     - Pgbouncer
 ---
 

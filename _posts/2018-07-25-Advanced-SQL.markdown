@@ -3,8 +3,7 @@ layout: post
 title: 走近SQL
 date: 2018-07-25 13:23
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
   - SQL
 typora-root-url: ../../yummyliu.github.io
 ---

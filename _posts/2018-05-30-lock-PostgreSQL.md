@@ -4,8 +4,7 @@ title: 认识PostgreSQL的Lock
 subtitle: PostgreSQL的DML操作使用锁，DDL操作的并发使用2PL协议
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
     - PostgreSQL
 typora-root-url: ../../yummyliu.github.io
 ---

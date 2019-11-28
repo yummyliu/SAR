@@ -4,14 +4,13 @@ title: Pgbouncer源码——ObjectManager
 subtitle: Pgbouncer内部对象的状态转换与管理
 date: 2018-06-12 13:35
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
   - PostgreSQL
   - Pgbouncer
 ---
 
 > * TOC
-> {:toc}
+{:toc}
 
 
 >  本模块实现在不同的list之间，操作pgbouncer的objects
@@ -237,4 +236,4 @@ objects模块，提供了若干函数，对pgbouncer的objects进行增删改查
   void for_each_server(PgPool *pool, void (*func)(PgSocket *sk));
   ```
 
-  ​
+  

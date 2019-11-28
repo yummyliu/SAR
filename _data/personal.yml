@@ -6,45 +6,6 @@
   email: "sdwhlym@gmail.com"
   book: "PostgreSQL指南：内幕探索"
   gravatar: "/image/weixinhao.jpg"
-  bio: "C/C++ PostgreSQL/MySQL etc."
-  #activate the social buttons you like by removing the comment
-  social:
-    # google:
-    #     url: "https://plus.google.com/107588997443390135711"
-    #     text: "阳明"
-    #     btnClass: "btn-google"
-    #     logo: "fa-google"
-    # facebook:
-    #  url: "http://facebook.com/yourid"
-    #  text: "/yourid"
-    #  btnClass: "btn-facebook"
-    #  logo: "fa-facebook"
-    #twitter:
-    #  url: "http://twitter.com/yourid"
-    #  text: "Yummy"
-    #  btnClass: "btn-twitter"
-    #  logo: "fa-twitter"
-    linkedin:
-      url: "https://www.linkedin.com/in/阳明-刘-a0720ab7"
-      text: "刘阳明"
-      btnClass: "btn-linkedin"
-      logo: "fa-linkedin"
-    github:
-      url: "http://github.com/yummyliu"
-      text: "yummyliu"
-      btnClass: "btn-github"
-      logo: "fa-github"
-      #stackoverflow:
-      #  url: "http://stackoverflow.com/users/4116391/young"
-      #  text: "young"
-      #  btnClass: "btn-stackoverflow"
-      #  logo: "fa-stack-overflow"
-    weibo:
-      url: "http://weibo.com/yummmyliu"
-      text: "劉蒲湾"
-      btnClass: "btn-stackoverflow"
-      logo: "fa-weibo"
-
 # Featured Tags
 featured-tags: true                     # whether or not using Feature-Tags
 featured-condition-size: 0              # A tag will be featured if the size of it is more than this condition value

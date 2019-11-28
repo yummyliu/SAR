@@ -3,8 +3,7 @@ layout: post
 title: PostgreSQL的IO调优
 date: 2018-12-24 18:06
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
     - PostgreSQL
     - Linux
 typora-root-url: ../../yummyliu.github.io

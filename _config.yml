@@ -1,40 +1,48 @@
 # Site settings
 title: template0
+description: "open up the wasteland of brain"
+author: Liu Yangming
 subtitle: table yangming;
 email: sdwhlym@126.com
-description: "open up the wasteland of brain"
 logo_location: "/image/sar.png"
 
+github: https://github.com/yummyliu
+about: beware the barrenness of a busy life
+disqus_shortname: yummyliu
+google_analytics: UA-80816254-1
+
+enableTags: true
+tagarray: []
+
+social:
+    - icon: fa-weibo
+      link: "https://weibo.com/yummmyliu"
+    - icon: fa-linkedin
+      link: "https://www.linkedin.com/in/%E9%98%B3%E6%98%8E-%E5%88%98-a0720ab7/"
+    - icon: fa-github
+      link: "https://github.com/yummyliu"
+
+urls:
+    - text: About Me
+      url: /about/
+
+url: "https://liuyangming.tech"
+baseurl: ""
+paginate: 20
+per_page: 20
+paginate_path: "/page/:num/"
+markdown: kramdown
+gems:
+  - jekyll-paginate
+  - jekyll-gist
+
+compress_html:
+  clippings: all
+  comments: ["<!-- ", " -->"]
+  endings: all
+  ignore:
+    envs: ['development']
 #baseurl: "" # the subpath of your site, e.g. /blog/
 url: "" # the base hostname & protocol for your site
 permalink:        /:month-:year/:title:output_ext
-
-# Build settings
-markdown: kramdown
-kramdown:
-  input: GFM
-
-highlighter: rouge
-
-#Other Global Configuration
-exclude: ['README.md']
-
-excerpt_separator: <!--more-->
-
-#show the jumbotron header on index page
-show_blog_header: false
-
-# Disqus settings
-#disqus_username: yummyliu
-disqus: yes
-disqus_id: yummyliu-github-io-1
-org_site: liuyangming.tech
-# Analytics settings
-# Baidu Analytics
-ba_track_id: 59b5c72c98ed6bb90d190b2bf7cd2cbb
-
-ga_track_id: 'UA-80816254-1'            # Format: UA-xxxxxx-xx-80816254-1
-#ga_track_id: 'UA-122987085-1'            # Format: UA-xxxxxx-xx-80816254-1
-ga_domain: liuyangming.tech
-
 

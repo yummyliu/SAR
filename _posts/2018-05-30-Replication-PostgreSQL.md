@@ -4,8 +4,7 @@ title: PostgreSQL的逻辑复制原理与坑
 subtitle: 
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
     - PostgreSQL
 ---
 

@@ -3,8 +3,7 @@ layout: post
 title: Basic Paxos & Multi  Paxos
 subtitle: Basic Paxos 里面存在活锁的问题，Paxos假设的环境不包括拜占庭问题
 date: 2015-09-29 22:23
-categories: jekyll update
-tags:
+categories: 
     - Program
 typora-root-url: ../../yummyliu.github.io
 ---

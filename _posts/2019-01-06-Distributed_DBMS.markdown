@@ -4,8 +4,7 @@ layout: post
 title: 分布式事务杂谈
 date: 2018-11-06 11:25
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
   - DBMS
 typora-root-url: ../../yummyliu.github.io
 ---

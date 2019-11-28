@@ -3,8 +3,7 @@ layout: post
 title: 关于PostgreSQL膨胀的三言两语
 date: 2018-02-05 18:07
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
     - PostgreSQL
 ---
 

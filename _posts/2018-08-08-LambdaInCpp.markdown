@@ -3,8 +3,7 @@ layout: post
 title: C++的Lambda浅析
 date: 2017-08-08 16:22
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
   - C++
 ---
 

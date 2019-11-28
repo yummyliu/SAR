@@ -3,10 +3,9 @@ layout: post
 title: Raft算法解读与MIT6824-LAB2
 date: 2019-05-01 18:06
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
   - Raft
-  - 公开课
+  - MOOC
 typora-root-url: ../../yummyliu.github.io
 ---
 * TOC
