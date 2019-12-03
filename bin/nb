@@ -20,9 +20,8 @@ echo "---" > $blogfile
 echo "layout: post" >> $blogfile
 echo "title: $blogblogfile" >> $blogfile
 echo "date: $mydate $mytime" >> $blogfile
-echo "header-img: \"img/head.jpg\"" >> $blogfile
-echo "categories: jekyll update" >> $blogfile
-echo "tags:" >> $blogfile
+echo "categories:" >> $blogfile
+echo "  -" >> $blogfile
 echo "typora-root-url: ../../yummyliu.github.io" >> $blogfile
 shift 1
 for i in $*; do
