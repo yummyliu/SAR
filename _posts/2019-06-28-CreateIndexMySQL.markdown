@@ -1,6 +1,6 @@
 ---
 layout: post
-title: MySQL源码——Online Create Index
+title: MySQL-5.7源码——Online Create Index
 date: 2019-06-28 18:10
 header-img: "img/head.jpg"
 categories: 
@@ -20,7 +20,7 @@ CREATE [UNIQUE | FULLTEXT | SPATIAL] INDEX index_name
     [algorithm_option | lock_option] ...
 ```
 
-在index_type中有btree和hash可选；但是根据存储引擎的不同，有所区别。
+但是根据存储引擎的不同，有所区别；如下表：
 
 | Storage Engine                                               | Permissible Index Types            |
 | ------------------------------------------------------------ | ---------------------------------- |
@@ -29,66 +29,79 @@ CREATE [UNIQUE | FULLTEXT | SPATIAL] INDEX index_name
 | [`MEMORY`](storage-engines.html#memory-storage-engine)/`HEAP` | `HASH`, `BTREE`                    |
 | [`NDB`](mysql-cluster.html)                                  | `HASH`, `BTREE` (see note in text) |
 
-我们以InnoDB为例，InnoDB不支持Hash。另外，当你创建的是fulltext和spatial索引时，index_type就不能指定了。因为fulltext的实现一般是倒排表，也根据存储引擎有关；spatial一般是R-tree；这是使用上的背景。那么，MySQL的索引，这里指的是二级索引，是怎么创建的？
+InnoDB中只支持Btree一种索引类型（index_type字段只有一种选择），InnoDB不支持Hash。另外，当你创建的是fulltext和spatial索引时，index_type就不能指定了（这两种索引有自己的存储格式，fulltext的实现一般是倒排表，也根据存储引擎有关；spatial一般是R-tree；）
 
-> Create Index的崩溃恢复
+这里CREATE INDEX指的是二级索引，那么二级索引在5.7具体是怎么创建的？本文对整个问题进行了详细的剖析。
+
+> MySQL创建二级索引的过程中，如果失败了只能重做。这期间的变更不会写redo日志记录。
 >
 > https://dev.mysql.com/doc/refman/5.7/en/innodb-online-ddl-operations.html
 >
 > If the server exits while creating a secondary index, upon recovery, MySQL drops any partially created indexes. You must re-run the [`ALTER TABLE`](https://dev.mysql.com/doc/refman/5.6/en/alter-table.html) or [`CREATE INDEX`](https://dev.mysql.com/doc/refman/5.6/en/create-index.html) statement.
 
-MySQL创建二级索引的过程中，如果失败了只能重做。这期间的变更不会写redo日志记录。那么，这期间对磁盘上的文件，做了哪些操作呢？
+# Online Create Index
 
-# 创建二级索引
-
-版本<5.5，创建一个索引相当于重建一个表（**CopyTable**）。
-
-版本>=5.5，加入了FastIndexCreate特性，但只对二级索引有效（**Inplace**）；索引中只有发起createindex时刻的数据，create index时只能读不能写。过程有主要有如下三步：
+在MySQL版本<5.5，创建一个索引相当于重建一个表（**CopyTable**）。当版本>=5.5时，加入了FastIndexCreate特性，但只对二级索引有效（**Inplace**）；索引中只有发起createindex时刻的数据，create index时只能读不能写。过程有主要有如下三步：
 
 1. 扫描表，建立内存buffer和临时文件
 2. 进行合并排序
 3. 将行插入到索引中
 
-版本>=5.6.7，加入了Online Create Index的特性，创建二级索引的时候可读可写（还是会短暂block一下，但是已经影响很小了）；对于创建索引过程中对表进行的修改，放在RowLog（不是redolog）中；详细的创建过程如下图所示：
-
-![image-20191118143812556](/image/online-create-index.png)
+在版本>=5.6.7时，加入了**Online Create Index**的特性，创建二级索引的时候可读可写（还是会短暂block一下，但是已经影响很小了）。本文针对Online Create Index进行详细阐述。
 
 对于MySQL来说，创建二级索引属于一种alter table操作，涉及到磁盘文件和内存缓存的修改。
 
 磁盘文件：
 
 + InnoDB的ibd，MySQL的frm；
-+ InnoDB的系统表空间的系统表
++ InnoDB的系统表空间的系统表；
 
 内存缓存：
 
 + SQL层的table definition cache （frm的缓存）
 + InnoDB层的dictionary cache（系统表的缓存）
 
-入口函数是`mysql_alter_table`，在该函数中，通过调用`create_table_impl`，**创建一个临时的frm文件**（属于SQL层，并不是InnoDB层的文件）。
+入口函数是`mysql_alter_table`，大致的过程如图所示：
 
-然后是`mysql_inplace_alter_table`。分为以下几步：
+![image-20191118143812556](/image/online-create-index.png)
 
-1. `mdl_context.upgrade_shared_lock`；创建一个Rowlog，并等待该表上的事务结束；此后开启的新事务的修改放在Rowlog中。
-2. `ha_prepare_inplace_alter_table`；写元数据，并建立root节点
-   - row_merge_create_index：**插入系统表**关于该索引的元信息（**ibdata1**）。
-   - 
-   - btr_create：创建root节点（**ibd**文件)。
-3. `downgrade_lock`：如果存储引擎返回不需要xlock或者slock，那么可以降级为shared metadata lock。
-4. `ha_inplace_alter_table`；构建索引（**ibd**）
-   1. 遍历一级索引，对索引列进行归并排序
-   2. 将排序好的数据，填充到索引中。
-   3. 应用RowLog
-5. `ha_commit_inplace_alter_table`：
-   + 索引创建成功，提交事务，收尾工作。
-   + 更新InnoDB的**dictionary cache**
-6. `mysql_rename_table`：将临时的**frm**重命名回去；
+在该函数中，首先通过调用`create_table_impl`，**创建一个临时的frm文件**。然后通过`ha_innobase::check_if_supported_inplace_alter`检查该表对应的存储引擎是否支持inplace的alter table（create index 属于alter table的一种）；InnoDB返回`HA_ALTER_INPLACE_NO_LOCK_AFTER_PREPARE`，表示支持在prepare阶段之后不加锁，然后进入了`mysql_inplace_alter_table`。分为以下几步：
 
-## 准备系统信息与结构
+1. `mdl_context.upgrade_shared_lock`；根据InnoDB的返回信息，将MDL的共享**锁升级**为互斥的。
+
+2. `tdc_remove_table（TDC_RT_REMOVE_NOT_OWN_KEEP_SHARE）`：清理该表的TABLE_SHARE对应的TABLE，但是并不置旧TABLE_SHARE。
+
+3. `lock_tables`：加表级锁。
+
+4. `ha_innobase::prepare_inplace_alter_table`；**准备系统结构**：插入SYS_INDEXES，并建立btree根节点；分配RowLog（`dict_index_t->online_log`）空间；获取一个read view，后期基于该read view读取数据。
+
+5. `downgrade_lock`：根据InnoDB的返回信息，将互斥**锁降级**为MDL_SHARED_UPGRADABLE。
+
+6. `ha_innobase::inplace_alter_table`；**构建索引数据**：遍历一级索引，对索引列进行归并排序；将排序好的数据，填充到索引中，这期间的数据暂存在Rowlog；构建索引数据过程中，页的修改不写redolog，期间通过FlushObserver来进行脏页刷盘；最后应用RowLog，然后写一条MLOG_INDEX_LOAD。
+
+   > 写MLOG_INDEX_LOAD这条日志主要用在backup中，如果backup的过程中进行了不写redolog的DDL，那么这个backup数据可能就有问题，因此在恢复的时候就可以通过读取redolog得知了。
+
+7. `wait_while_table_is_used(HA_EXTRA_PREPARE_FOR_RENAME)`：再次给表的**MDL加X锁**，然后清理并刷新该表的TABLE_SHARE。
+
+8. `ha_innobase::commit_inplace_alter_table`：设置data dictionary中关于这个index的标记，并标记为commited。最后提交事务，释放锁资源。
+
+9. `mysql_rename_table`：将临时的**frm**重命名回去；
+
+总结来说，上述步骤除了在sql层的操作外，在InnoDB层，这里主要有三步：
+
+1. Prepare Index Meta
+2. Append Index Data
+3. Commit Index Meta
+
+下面针对这三步详细介绍一下：
+
+## 1. Prepare Index Meta
 
 *ha_prepare_inplace_alter_table*
 
 ### 添加系统元信息
+
+`row_merge_create_index_graph`：在系统表空间中，插入关于该索引的元信息（ibdata1）。
 
 在dict0crea.h的dict_create_index_step中，定义了初始化index的4步操作：
 
@@ -161,7 +174,19 @@ MySQL创建二级索引的过程中，如果失败了只能重做。这期间的
 
 如果type为IBUF_TREE，那么在单独空间中，额外申请一个ibuf的segment。并且只有在`fsp_header_init`（**段空间初始化**）且**spaceid=0**的时候才会将设置IBUF_TREE。
 
-## 加载索引数据
+### 其他准备
+
+- `row_log_allocate`：，此后开启的新事务的修改放在RowLog中。
+- `trx_assign_read_view`：获取一个read view，后期基于该read view读取数据。
+
+## 2. Append Index Data
+
+`row_merge_build_indexes`：遍历一级索引，对索引列进行归并排序；将排序好的数据，填充到索引中。
+
++ `flush_observer->flush()`
++ `row_merge_write_redo`
++ `row_log_apply`
++ `flush_observer->flush()`
 
 *ha_inplace_alter_table->row_merge_build_indexes*；加载索引数据时，需要在mergefile上进行外部归并排序，因为要进行多次每个阶段的输出在一个临时文件tmpfile中；在排序之前先申请一个内存缓存区block（mergefilebuffer）；
 
@@ -353,6 +378,9 @@ rowlog中的类型有两种，如上：
 + `ROW_OP_DELETE`最终对应着`btr_cur_optimistic_delete`
 + `ROW_OP_INSERT`最终对应着`btr_cur_optimistic_insert`
 
-# 删除二级索引
+## 3. Commit Index Meta
 
-TODO
++ commit_try_norebuild：尝试在data dictionary中提交create index的修改。
++ innobase_copy_frm_flags_from_table_share：根据frm的缓存（table_share）更新data dictionary中的信息。
++ commit_cache_norebuild：正式在data dictionary中提交修改
++ trx_commit_for_mysql：事务提交，释放锁资源。
