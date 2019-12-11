@@ -359,6 +359,18 @@ row_merge_write(
 3. row_rec_to_index_entry_low，将record转换为一个logical tuple（dtuple_t）
 4. BtrBulk::insert，通过BtrBulk工具类，将dtuple插入到新索引中。
 
+![image-20191211164018770](/../Desktop/bulkbtr.png)
+
+如上流程简图，Btree的批量插入是自底向上的过程；每分裂一个新页，就将之前的页进行pagecommit；然后维护了每个level的最后一个page，在最后`BtrBulk::finish`的时候将所有level的last page进行commit。
+
+注意，最后一个页的内容其实就是root节点的内容，那么在最后会将last page复制到root page中，那么通过innodb_space可以看到表空间中有一个和rootpage内容相同的page，如下图：
+
+![image-20191211164815759](/../Desktop/btrbulk-rootpage.png)
+
+图中的39页就是批量插入的last page，其中数据和root page相同，如下：
+
+![image-20191211164943393](/../Desktop/btrbulk-rootpage-1.png)
+
 ### 应用RowLog
 
 *row_log_apply->row_log_apply_ops->row_log_apply_op->row_log_apply_op_low*
