@@ -1,10 +1,51 @@
 ---
 layout: post
-title: 
+title: LevelDB
 date: 2019-12-10 11:21
 categories:
-  -
+  - LSM
+  - Database
 typora-root-url: ../../yummyliu.github.io
 ---
-> * TOC
-> {:toc}
+* TOC
+{:toc}
+# Storage Structure
+
+![image-20191213172335893](/image/1212-storage.png)
+
+## B+tree
+
+![image-20191213181337768](/image/1212-BBB.png)
+
+Table size is N，which means Leafnodes has N records；we assume that 
+
+the depth of B+-tree does not count leaflevel; so 
+
+<=> $N = B^{depth+1}$
+
+<=> $N/B = B^{depth}$
+
+<=>$depth = log_{B}N/B$
+
+Btree中，读取一条leafnode中的记录，需要读取路径上所有节点，因此RA=depth；写一条leafnode中的record，需要将整个写出去，那么WA=B（B数的阶）。
+
+## LSM
+
+![image-20191213183201768](/image/1212-level.png)
+
+
+
+Sized-tiered Compaction Strategy
+
+Level-based compaction strategy
+
+
+
+
+
+
+
+![image-20191213172406015](/image/1212-btr-lsm.png)
+
+# LevelDB
+
