@@ -51,9 +51,9 @@ Generally, when we say Btree, we mean B+-tree. Assuming that table size is N, wh
 
 <=>$depth = log_{B}N/B$
 
-It is smaller than BST, so that we can minimize that disk I/O counts.
+It is wider and shorter/shallower than BST so that we can minimize disk I/O.
 
-Furthermore, when read a record of Btree, it needs to read all node in the path. So, read amplication of Btree equals to depth. And write a record in leafnode, it needs to write out the whole page, so write amplificatioin of Btree is B. However, doing an insert into btree with bufferpool can return without IO, but bufferpool maybe miss that need an extra IO to load page.
+Furthermore, when read a record of Btree, it needs to read all node in the path. So, read amplication of Btree equals to depth. And write a record in leafnode, it needs to write out the whole page, so write amplificatioin of Btree is B. However, with a WAL, doing an insert into btree with bufferpool can return without IO, but an actual load will be triggered when bufferpool misses.
 
 Btree is used in all tranditional DBMS, like InnoDB, PostgreSQL. Now, there are many special storage engine, like LevelDB/RocksDB. It use a different structure——LSM-tree, which claims that has better write performance than Btree and with no so bad read performance. Let's check it out.
 
@@ -71,11 +71,11 @@ LSM-tree is compose of two or more tree-like components, which distribute from s
 
 ![image-20191216110957361](/image/1212-level.png)
 
-Since LSM-tree is a concept not a concrete implement, there are many different implement, like levelDB, RocksDB,Cassandra. In this article, I will walk through the LevelDB implement to explain LSM-tree.
+Since LSM-tree is a concept not a concrete implementation, there are many different implement, like levelDB, RocksDB,Cassandra. In this article, I will walk through the LevelDB implementation to explain LSM-tree.
 
 ![image-20191216103816910](/image/1212-leveldb.png)
 
-When **write** a `(k,v)` into LevelDB, firstly, insert a log record; Then, insert into MemTable which is a sorted structure in memory, and write requesy is done. So, we can see that **write in LevelDB is effective than Btree**. 
+When **write** a `(k,v)` into LevelDB, firstly, insert a log record; Then, insert into MemTable which is a sorted structure in memory, and write request is done. So, we can see that **write in LevelDB is more efficient than Btree**. 
 
 But `(k,v)` data is not write into disk, it remain for compaction process to merge it into SSTable in disk. Compaction process compose of two main process, sorting and garbage collection, and has two different trigger strategy.
 
@@ -89,9 +89,9 @@ But in LevelDB, it is an combination of tiered and level. Furthermore, LevelDB a
 
 Like vacuum process in PostgreSQL, It needs to know that compaction rate is a problem, too fast bring write amplification, too slow bring read amplification and space amplification.
 
-Since data can exist in any level in levelDB, when do a `get(k)`, we first search MemTable, then Immutable MemTable, and level-0, level-1 and so on.  So **read in LSM-tree is not as best as Btree**. But we can use cache and (Bloom) filter to decrease I/Os in read.
+Since data can exist in any level in levelDB, when do a `get(k)`, we first search MemTable, then Immutable MemTable, and level-0, level-1 and so on.  So **read in LSM-tree is not as good as Btree**. But we can use cache and (Bloom) filter to decrease I/Os in read.
 
-The same as Btree, we assume database table has  N records, means that the last level has N records。it assume that we have $d$ levels, the first level has B record and every compaction has growth factor——k, so that depth of LSM-tree is $log_{k}^{N/B}$.
+The same as Btree, we assume database table has  N records, means that the last level has N records. it assume that we have $d$ levels, the first level has B record and every compaction has growth factor——k, so that depth of LSM-tree is $log_{k}^{N/B}$.
 
 <=>$B*k^d = N$
 
@@ -118,7 +118,7 @@ As far as I know, optimization of LSM-tree concentrate on two points:
   + FPGA for sorting calculate.
   + Wisckey: separate key and value, key use for sorting, value use for garbage collection.
 
-This a rough summary of Btree and LSM-tree, hope it can help you. there are some interesting links:
+This a rough summary of Btree and LSM-tree, hope it can help you. there are some interesting links, if you interest:
 
 [lsm1](https://www.slideshare.net/ssuser7e134a/log-structured-merge-tree)
 
