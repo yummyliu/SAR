@@ -11,9 +11,9 @@ typora-root-url: ../../yummyliu.github.io
 {:toc}
 TransactionManager/LockManager/LogManager/AccessMethod are the four importance component in transactional storage engine. AccessMethod means the data organization, such as Btree/LSM-tree. 
 
-Btree's appearance is based on HDD disk；nowadays, there are more and more difference storage medium, so that the research of new access method is going on. In this article, I want to summarize my knowledge on this question——Database AccessMethod. (My English is so poor, sorry for that😂)
+Btree's appearance is based on HDD；nowadays, there are more and more difference storage medium, so that the research of new access method is going on. In this article, I want to summarize my knowledge on this question——Database AccessMethod. (My English is so poor, sorry for that😂)
 
-This article include three section, firstly, I introduce the RUM conjecture of access method. Secondly, I review the classic access method——Btree. At last, I share my study on the new(no that new, it is came up in 1996) and popular access method——LSM-tree. 
+This article include three sections, firstly, I introduce the RUM conjecture of access method. Secondly, I review the classic access method——Btree. At last, I share my study on the new(no that new, came up in 1996) and popular access method——LSM-tree. 
 
 # RUM conjecture
 
@@ -23,7 +23,7 @@ This article include three section, firstly, I introduce the RUM conjecture of a
 
 ![img](/image/1212-rum.png)
 
-Like the CAP theory for distribution consensus, RUM conjecture is the triangle for access method. it mean that we can not have a perfect access method which satisfy Read Optimized/Update Optimized/MemoryOptimized. We can try our best to only satify two of the three with sacrificed the other one.
+Like the CAP theorem for distribution system, RUM conjecture is the triangle for access method. it mean that we can not have a perfect access method which satisfy Read Optimized/Update Optimized/MemoryOptimized. We can try our best to only satify two of the three with sacrificed the other one.
 
 So, when we design a DB storage structure, there are three amplification we need to think(below picture).
 
