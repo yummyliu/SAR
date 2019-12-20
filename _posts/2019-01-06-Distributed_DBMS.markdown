@@ -14,7 +14,7 @@ typora-root-url: ../../yummyliu.github.io
 
 当单机系统的发展遭遇摩尔定律的限制时，将数据（磁盘或者内存）或计算任务（CPU）进行拆分就是**分布式存储**或**分布式计算**系统。对于无状态的任务，可以简单的将单机并行，变成多机并行；但是如果将数据进行了拆分，那么就需要考虑数据的可用性、容错性和一致性。本文针对数据的分布式存储场景，梳理一下当前自己所了解的大概，如下是简单梳理了一个的脑图。
 
-![image-20191218195019164](/image/1217-distribute-lock.png)
+![image-20191218202457023](/image/1217-distribute-data.png)
 
 如果将分布式的逻辑下方到存储层，个人认为需要考虑三个问题：
 
@@ -47,9 +47,33 @@ typora-root-url: ../../yummyliu.github.io
 
 ##### 分布式时钟
 
-首先，需要能够确定事务的先后顺序（transaction ordering），在《Time, Clocks, and the Ordering of Events in a Distributed System》论文中，详细阐述了逻辑时钟的实现协议，这里不做详细阐述。
+无法确定分布式环境中的不同服务的事件先后顺序，是造成分布式环境问题的根源所在。在单机中，可直接以本机时间作为标识，而分布式环境中，通过消息传递进行事件交互；
+
+那么，首先需要能够确定事务的先后顺序（transaction ordering），在《Time, Clocks, and the Ordering of Events in a Distributed System》论文中，详细阐述了通过节点间的消息传递，实现逻辑时钟的实现协议，这里暂不做详细阐述。
+
+##### 分布式锁
+
+第二个问题就是分布式环境中，各个服务时间的操作同步；单机中可以通过**mutex**或**semaphore**进行同步，类似的在分布式环境中也有类似概念，但是复杂点——distributed rwlock，这里为了和事务锁进行区分，称其为rwlock。
+
+![image-20191220160125996](/image/1217-dist-lock.png)
+
+由于锁超时的机制存在（且必须存在锁超时的机制，否则一个挂掉的owner会一直不释放锁），我们不能保证持有锁并执行自己任务所花的时间一定小于锁超时的时间，那么有可能在owner不知情的情况下，lockmanager将锁释放的情况；这样就会产生异常，比如lost update。因此，不能对执行时间有任何假设，从而expiration time就很难确定。
+
+![Unsafe access to a resource protected by a distributed lock](/image/1217-unsafe-lock.png)
+
+解决这个问题一个很巧妙的方式就是lock manager在每次分配锁时，会分配一个**单调递增**的fence token，这样存储层会判断fence token的大小，拒绝小于存储记录的fence token的更新请求。
+
+![Using fencing tokens to make resource access safe](/image/1217-fencing-tokens.png)
+
+这样，就解决了expiration time带来的问题，但是如何生成全局递增的fence token呢？感觉很简单哈？
+
+![image-20191220152131591](/image/1217-incre-counter.png)
+
+简单的方式就是直接利用一个单点数据库来生成，可以给这个单点加一个standby保证可用性，但是需要在两者的强一致和性能之前权衡；另外的方案就是基于下一节提到的共识（consensus）算法来解决这个问题。
 
 ##### 分布式一致性
+
+在各个节点的数据的一致性，通过consensus算法保证，常用的有raft，paxos。raft的详细介绍，参见本站的另一篇blog。这里简单介绍一下CAP理论。
 
 ###### CAP theorem
 
@@ -138,3 +162,8 @@ typora-root-url: ../../yummyliu.github.io
 > + 中心点集中检测，如果有一个全局锁服务，可以在该服务中，做死锁检测。
 >
 > + 每个节点单独检测，需要同步其他节点的事务依赖序列。
+
+Links:
+
+https://martin.kleppmann.com/2016/02/08/how-to-do-distributed-locking.html
+
