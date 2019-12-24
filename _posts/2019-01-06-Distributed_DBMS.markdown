@@ -124,7 +124,9 @@ typora-root-url: ../../yummyliu.github.io
 
 那么，一个分布式事务可以看做是多个本地事务的按照某个协议的协同操作；同样，也存在如上几种状态，也要满足ACID特性；讨论的比较多的是，如何保证在多个节点之间操作的原子性。
 
-##### 2PC
+##### 原子提交协议
+
+###### 2PC
 
 保证分布式事务的原子性，通常采用2PC协议。MySQL中也叫XA协议，这是X/Open提出的通用的分布式事务处理协议。
 
@@ -140,11 +142,11 @@ typora-root-url: ../../yummyliu.github.io
 >
 > 在MySQL内部的SQL层与存储层同样也是采用2PC的方式进行事务提交。
 
-##### 3PC
+###### 3PC
 
 2PC的RM在返回Yes之后，处于阻塞的状态；如果此时TM挂了，那么系统就阻塞住了；Skeen和Stonebreaker 在1981年，提出了3PC的解决方案。相比于2PC，3PC是非阻塞的分布式事务原子提交协议，其将commit阶段分为两步，并引入了RM的超时处理，如下图（from Wikipedia）：
 
-![image-20191221132354026](/image/1217-3pc.png)
+![image-20191224214606499](/image/1217-3pc.png)
 
 相比于2PC，3PC的节点可以对事务进行超时处理，避免了系统阻塞。另外，在2PC在commit阶段，如果TM和RM都挂了，并且该某个RM已经对事务进行了提交（**可以这么看，RM对事务commit状态的确认发生在了TM之前**）；那么，系统recover后，TM中事务是Prepared，而某个RM中却是commited，这造成了数据状态的不一致。
 
@@ -152,7 +154,7 @@ typora-root-url: ../../yummyliu.github.io
 
 > 3PC其实对于网络分区以及异步通信的场景的recovery还是存在问题，有人又提出了E3PC的方案，有兴趣可以了解下。
 >
-> 另外还有一些其他的分布式事务的实现方式：TCC-柔性事务，SAGA，Percolator等，这些看起来需要专门的章节进行阐述，暂不讨论。
+> 另外，还有一种Paxos Commit，就是基于共识算法进行关于commit/aborted的决策；这样RM就作为consensus cluster的client进行请求即可，但是前提是RM都已经处于Prepared的状态了（达到Prepared状态就需要一轮通信，所以这也并不是很高效）。
 
 ##### 并发控制
 
