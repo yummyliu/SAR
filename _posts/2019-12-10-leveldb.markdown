@@ -3,7 +3,7 @@ layout: post
 title: From Btree To LSM-tree
 date: 2019-12-10 11:21
 categories:
-  - LSM-tree
+  - datastruct
   - Database
 typora-root-url: ../../yummyliu.github.io
 ---

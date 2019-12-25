@@ -4,8 +4,7 @@ title: (译)PostgreSQL vs MySQL
 subtitle: When considering which database to use for your business, don’t make the mistake of thinking that all open source RDBMS are the same!
 date: 2016-08-03 20:54
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
   - Database
   - PostgreSQL
   - MySQL

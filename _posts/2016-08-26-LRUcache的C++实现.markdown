@@ -3,9 +3,8 @@ layout: post
 title: LRUcache的C++实现
 date: 2016-08-26 16:00
 header-img: "img/head.jpg"
-categories: jekyll update
-ctags:
-    - Program
+categories: 
+    - datastruct
 ---
 
 

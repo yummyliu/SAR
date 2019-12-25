@@ -4,8 +4,7 @@ title: C/C++ Puzzles
 subtitle: 大部分列出的是c++11 与 c99的, 整理写程序过程中，看到的优秀代码
 date: 2016-05-15 23:21
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
     - C++
     - Program
 ---

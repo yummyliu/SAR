@@ -1,11 +1,8 @@
 ---
 layout: post
 title: 认识postgresql的BGW
-subtitle: 现在需要在现有postgresql进程的基础上，另加上一个服务进程，来做元数据信息同步，首先来整理一下 pg的现有的进程结构，以及相互之间的关系
 date: 2016-07-11 21:07
-header-img: "img/head.jpg"
-header-img: "img/head.jpg"
-tags:
+categories: 
     - PostgreSQL
     - Program
 typora-root-url: ../../yummyliu.github.io

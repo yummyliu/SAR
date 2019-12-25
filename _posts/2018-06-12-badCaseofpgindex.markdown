@@ -1,11 +1,9 @@
 ---
 layout: post
 title: PostgreSQL添加索引并非100%好事？(译)
-subtitle: 大部分的人不知道SELECT的性能也会被一个新的索引影响，大部分人只是认为新索引没有用到是个浪费；这里展示一个添加索引会让性能变坏的case
 date: 2018-06-12 10:30
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
   - PostgreSQL
 ---
 
@@ -43,26 +41,7 @@ postgres-# SELECT * FROM skewed
 postgres-# WHERE interesting AND category = 42
 postgres-# ORDER BY sort
 postgres-# LIMIT 20;
-                                                                  QUERY PLAN
-----------------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=2530.97..2531.02 rows=20 width=9) (actual time=3.585..3.594 rows=20 loops=1)
-   Buffers: shared hit=1000 read=6
-   ->  Sort  (cost=2530.97..2533.27 rows=920 width=9) (actual time=3.580..3.583 rows=20 loops=1)
-         Sort Key: sort
-         Sort Method: top-N heapsort  Memory: 25kB
-         Buffers: shared hit=1000 read=6
-         ->  Bitmap Heap Scan on skewed  (cost=19.91..2506.49 rows=920 width=9) (actual time=0.887..3.320 rows=950 loops=1)
-               Recheck Cond: (category = 42)
-               Filter: interesting
-               Rows Removed by Filter: 50
-               Heap Blocks: exact=1000
-               Buffers: shared hit=1000 read=6
-               ->  Bitmap Index Scan on skewed_category_idx  (cost=0.00..19.68 rows=968 width=0) (actual time=0.464..0.464 rows=1000 loops=1)
-                     Index Cond: (category = 42)
-                     Buffers: shared read=6
- Planning time: 0.401 ms
- Execution time: 3.694 ms
-(17 rows)
+
 ```
 
 PostgreSQL基于index，找到category=42的1000行，然后sort找到TOP 20，耗时3.6ms；

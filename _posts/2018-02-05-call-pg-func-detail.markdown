@@ -1,10 +1,9 @@
 ---
 layout: post
-title: 避免PostgreSQL的不必要的函数调用
+title: PostgreSQL函数调用小细节
 date: 2018-02-05 18:08
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
     - PostgreSQL
 ---
 

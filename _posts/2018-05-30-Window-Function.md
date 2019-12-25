@@ -1,16 +1,15 @@
 ---
 layout: post
-title: 窗口函数
+title: PostgreSQL窗口函数
 subtitle: 
 date: 2018-02-05 18:06
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
     - PostgreSQL
 ---
 
-> * TOC
-> {:toc}
+* TOC
+{:toc}
 
 #  Window function
 

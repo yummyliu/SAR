@@ -3,12 +3,11 @@ layout: post
 title: PostgreSQL的主从切换操作记录
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
     - PostgreSQL
 ---
 
-> * TOC
+* TOC
 {:toc}
 
 ## 主从切换
@@ -111,10 +110,3 @@ tags:
     t
    (1 row)
    ```
-
-## Pg_rewind
-
-在PostgreSQL9.x中，提供了pg_rewind工具，可以对server进行倒带。在pg_rewind中，**source**就是新的primary，**target**就是要attach到source上的库。
-
-[Pg_rewind](https://thebuild.com/blog/2018/08/09/three-steps-to-pg_rewind-happiness/)
-

@@ -1,10 +1,9 @@
 ---
 layout: post
-title: PostgreSQL的HA——Patroni部署
+title: Patroni部署
 date: 2018-08-13 11:04
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories:
   - PostgreSQL
 typora-root-url: ../../yummyliu.github.io
 ---
