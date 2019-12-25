@@ -1,6 +1,6 @@
 ---
 layout: post
-title: pgbench压测工具介绍
+title: pgbench介绍
 date: 2018-02-05 18:07
 header-img: "img/head.jpg"
 categories: 

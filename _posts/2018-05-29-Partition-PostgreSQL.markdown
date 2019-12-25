@@ -7,7 +7,7 @@ categories:
     - PostgreSQL
 ---
 
-> * TOC
+* TOC
 {:toc}
 
 # Table Partition 
