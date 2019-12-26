@@ -9,16 +9,14 @@ typora-root-url: ../../yummyliu.github.io
 ---
 * TOC
 {:toc}
-# 隐式线程锁
-
 线程锁的对象是程序运行过程中bufferPool中的page，或其他cache中的对象；有两种类型：mutex和rw_lock。
 
-## mutex
++ mutex：基于系统提供的原子操作，用在内存共享结构的串行访问上，比如：
 
-基于系统提供的原子操作，用在内存共享结构的串行访问上，主要有如下一些mutex。
+![image-20191226141404664](/image/1226-share-innodb.png)
 
-+ Dictionary mutex（Dictionary header)
-+ Transaction undo mutex，Transaction system header的并发访问，在修改indexpage前，在Transaction system的header中写入一个undo log entry。
++ Dictionary Cache
++ Transaction System的并发访问；比如，在修改indexpage前，在Transaction system的header中写入一个undo log entry。
 + Rollback segment mutex，Rollback segment header的并发访问，当需要在回滚段中添加一个新的undopage时，需要申请这个mutex。
 + lock_sys_wait_mutex：lock timeout data
 + lock_sys_mutex：lock_sys_t
@@ -27,64 +25,44 @@ typora-root-url: ../../yummyliu.github.io
 + query_thr_mutex：保护查询线程的更改
 + trx_mutex：trx_t
 
-等等
++ rw_lock：rw_lock是InnoDB实现的自旋锁，有两种模式S/X（5.7引入一个新模式SX）。三个模式的兼容关系如下：
 
-## rw_lock
+  ```c
+  /*
+   LOCK COMPATIBILITY MATRIX
+      S SX  X
+   S  +  +  -
+   SX +  -  -
+   X  -  -  -
+   */
+  ```
 
-rw_lockInnoDB实现的自旋锁；多个readthread可以持有一个s模式的rw_lock。但是，x模式的rw_lock只能被一个writethread持有；
+  这个新加的SX锁，从功能上可以由一个S锁加一个X锁代替。但是这样需要额外的原子操作，因此将两个整个为一个SX锁。当持有SX锁时，申请X锁需要'x-lock;sx-unlock;'。当持有X锁时，X锁可也降级为SX锁，而不需要'sx-lock；x-unlock'。
 
-> `lock_word`
->
-> 为了避免writethread被多个readthread饿死，writethread可以通过排队的方式阻塞新的readthread，每排队一个writethread将lockword减X_LOCK_DECR（新的SX锁等待时，减X_LOCK_HALF_DECR）。在wl6363中，标明了加了SX锁后lock_word不同取值的意思；其中lock_word=0表示加了xlock；lock_word= 0x20000000没有加锁；
+  > `lock_word`
+  >
+  > 为了避免writethread被多个readthread饿死，writethread可以通过排队的方式阻塞新的readthread，每排队一个writethread将lockword减X_LOCK_DECR（新的SX锁等待时，减X_LOCK_HALF_DECR）。在wl6363中，标明了加了SX锁后lock_word不同取值的意思；其中lock_word=0表示加了xlock；lock_word= 0x20000000没有加锁；
 
-在5.7中，rw_lock共有四种类型，（在5.7新加了一个[SX](https://dev.mysql.com/worklog/task/?id=6363)类型）。
-
-```c
-enum rw_lock_type_t {
-	RW_S_LATCH = 1,
-	RW_X_LATCH = 2,
-	RW_SX_LATCH = 4,
-	RW_NO_LATCH = 8
-};
-/*
- LOCK COMPATIBILITY MATRIX
-    S SX  X
- S  +  +  -
- SX +  -  -
- X  -  -  -
- */
-```
-
-这个新加的SX锁，从功能上可以由一个S锁加一个X锁代替。但是这样需要额外的原子操作，因此将两个整个为一个SX锁。当持有SX锁时，申请X锁需要'x-lock;sx-unlock;'。当持有X锁时，X锁可也降级为SX锁，而不需要'sx-lock；x-unlock'。
-
-rw_lock可以用在需要并发读写的结构上，比如Btree索引，文件空间管理等，如下。
-
-- Secondary index tree latch ，Secondary index non-leaf 和 leaf的读写
-- Clustered index tree latch，Clustered index non-leaf 和 leaf的读写
-- Purge system latch，Undo log pages的读写，
-- Filespace management latch，file page的读写
-
-而最常见的还是用在Btree操作中，本文详细介绍Btree与rw_lock的互动。
+  rw_lock可以用在需要并发读写的结构上，比如Btree索引，文件空间管理等。而最常见的还是用在Btree操作中，本文就详细介绍Btree与rw_lock的互动。
 
 # Btree与rw_lock
 
-在MySQL中主要就是针对Btree的并发访问，其中有两个锁对象
+在InnoDB中，Btree有两类锁对象
 
-+ dict_cache(dict_index_t)，index元数据
++ `dict_index_t`，索引在内存的元数据；
++ `block`，数据页在内存的对象；
 
-+ Page(buf_pool->page)，节点数据；buffer_pool中的page是通过hash表组织的；加锁的时候首先通过(spaceid,pageno)的hash值，找到buffer pool中的page；然后对该内存的page对象加锁，如下代码
+在Btree扫描过程中，首先在`dict_index_t`上加相应模式的rwlock；然后初始化一个cursor，对btr进行搜索，最终cursor停在我们要求的位置；取决于加锁类型、扫描方式等条件，最终cursor**可能**会将扫描路径上的某些block加锁。
 
-  ```c
-  	hash_lock = buf_page_hash_lock_get(buf_pool, page_id);
-  loop:
-  	block = guess;
-  
-  	rw_lock_s_lock(hash_lock);
-  ```
+之后对于不同操作基于返回的cursor分别操作：
 
-在Btree扫描过程中，首先在index元数据上加相应模式的rwlock；然后逐层向下遍历，为了避免死锁，当需要获取下一层的锁时，需要先将持有的本层的锁释放；如此找到目标层的node，然后对目标page加锁，进行相应操作。
++ 查询操作，基于该cursor，会根据一致性锁定读还是非锁定读，决定创建一个readview还是加意向锁；如果是一致性读的话，MySQL层通过可物化的cursor进行get_next，就是`row_search_mvcc`。
 
-在对Btree操作时，有如下的基本操作模式。
++ 修改操作，在扫描过程中该加的锁已经加好；在返回的cursor处进行操作即可。
+
+## 加锁入口
+
+在对Btree的搜索入口为`btr_cur_search_to_nth_level`，其参数`latch_mode`分为两部分，低字节为如下的基本操作模式：
 
 ```c
 /** Latching modes for btr_cur_search_to_nth_level(). */
@@ -110,63 +88,57 @@ enum btr_latch_mode {
 };
 ```
 
-这些操作模式作为btr_cur_search_to_nth_level的参数latch_mode（无符号32位整型）的低字节；而高字节放一些标记位，用来判断rwlock的类型，加锁后，返回一个目标层（不一定是叶子层）page的cursor；
-
-对于查询操作，之后MySQL层通过cursor的get_next不断调用`row_search_mvcc`读取一行，然后将cursor保存起来，下次再读取时，再restore出来使用。
-
-这里只讨论Btree的操作，InnoDB的Btree的任何读写操作，首先需要定位Btree的位置（`btr_cur_search_to_nth_level`），返回一个目标leafpage的cursor；
-
-> 基于该cursor，会根据一致性锁定读还是非锁定读，决定创建一个readview还是加意向锁；
-
-查询操作主要用到slock，不会改动Btree；而insert/delete/update，会对Btree
-
-产生修改，这里锁的使用就值得讨论了。
-
-## 加锁入口
-
-入口是`btr_cur_search_to_nth_level`，如下是该函数的大体逻辑：
+而高字节放一些标记位，用来判断rwlock的类型；如下是该函数的大体逻辑：
 
 ![image-20190830121803173](/image/btr_cur_search_to_nth_level.png)
 
 ### **1. 初始化扫描指令**；
 
-函数一开始，识别高位的标记得到如下信息，之后后将高位信息抹除(`BTR_LATCH_MODE_WITHOUT_FLAGS`)。
+函数一开始，识别高位的标记得到如下信息，之后通过(`BTR_LATCH_MODE_WITHOUT_FLAGS`)，将高位信息抹除。
 
-+ btr_op：需要ibuf缓存的操作（`btr_op_t`，btr0cur.c:1117）
++ ibuf操作：btr_op（`btr_op_t`，btr0cur.c:1117）
 
-+ estimate：是否是在查询优化阶段调用的`btr_cur_search_to_nth_level`。
++ 统计信息：estimate，在查询优化阶段调用的，比如在`ha_innopart::records_in_range`中用来估计index一个范围内的元组数。
 
-+ lock_intention：要对Btree进行的修改意图（`btr_intention_t`）。
++ 变更意图：lock_intention，便于判断加锁模式（`btr_intention_t`）。
 
-+ modify_external：在BTR_MODIFY_LEAF模式中，是否需要修改外部存储的数据。
++ 是否需要修改外部存储的数据：，modify_external，用在BTR_MODIFY_LEAF模式中。
 
 ### 2. 查找AHI信息
 
-`btr_search_guess_on_hash`，首先尝试基于AHI查询，成功就返回。
+![image-20191226172027826](/image/ahi-search.png)
+
+Adaptive Hash Index作为Btree寻路的缓存，提高Btree寻路的开销；在按层查找Btree之前，荣国`btr_search_guess_on_hash`先检索内存page的hash。
+
+首先，将逻辑元组信息编码为一个hash值，通过该hash值找到AHI中的物理record（rec）；为了提高AHI的并发，AHI按indexid+spaceid进行了分区。
+
+然后，rec的地址在buf_chunk_map中找到实例的frame，从而找到Control Block，即，buf_block_t。
+
+最后，在block内存对cursor进行定位，那么cursor最终就找到了目标记录。
+
+如果AHI上有锁，需要将AHI上的锁释放(`has_search_latch`)。AHI没有找目标record，就需要进行实际的Btree查找。
+
+> 关于Adaptive Hash Index的逻辑，都在BTR_CUR_HASH_ADAPT BTR_CUR_ADAPT之内；如果想禁掉AHI，那么将这两个宏去掉即可。
 
 ### 3. 解析扫描的指令
 
-+ **加锁模式**：在第一步中，将高位的标记信息已经抹除；这里（btr0cur.cc:959）基于latch_mode和第一步得到的信息，对index加rw_lock；
+1. `dict_index_t`加锁：（btr0cur.cc:959）基于latch_mode和第一步得到的信息加rw_lock，同时设置变量`upper_rw_latch`（rw_lock_type_t ），后续给block加锁会参考。
 
-比如给Index加S锁：`mtr_s_lock(dict_index_get_lock(index), mtr);`
+2. 微调page cursor的搜索模式`page_cur_mode_t`：与Btree键值的比较大小方式(暂不讨论Rtree）。
 
-另外，根据对index加锁类型，设置变量`upper_rw_latch`（rw_lock_type_t ），后续给索引块加锁会参考。
-
-+ **查询模式**：根据参数`mode`定义的查询模式 ，决定cursor搜索方式（page_cur_mode_t：与Btree键值的比较大小方式，与Rtree是否相交/包含等位置关系）（1043）。
+   > 为什么要微调？
+   >
+   > InnoDB的Btree的branch_page上存放的是node_ptr，node_ptr的key是对应page的最小值；那么，我们如果按照PAGE_CUR_G和PAGE_CUR_GE的方式查找branch_page时，需要换成PAGE_CUR_L和PAGE_CUR_LE；举例，如果要找8，8位于page[3,5,78,9]中，那么有两个node_ptr：[3,<page_id1>]，[10,<page_id2>]，那么8是在3，而不是10中。
 
 ### 4. (search_loop)递归查找
 
-迭代多次，直到到达指定level（大部分情况level=0，即找到叶子节点；level!=0的一种情况是节点分裂，需要向父节点添加node_ptr），在循环中有如下步骤。
+迭代多次，直到到达指定level（不一定level=0，在节点分裂中需要向branch_page中插入node_ptr）;我们都知道mtr.m_memo存有进行原子变更的锁，在搜索之前，先取得当前的**savepoint**，即，m_memo当前的size，这样我们就知道搜索过程中加了多少锁。
 
-1. 确定`rw_latch`的模型；非特殊情况，第三步的`upper_rw_latch`就是这里的rw_latch类型。
+在循环中有如下步骤。
 
-2. `buf_page_get_gen`按照rw_latch类型读取page到buf_pool中，并加锁。
+1. 确定page需要加的锁模式(X?S?SX)与page的读取方式（BUF_GET...）。
 
-   ```c
-   	switch (rw_latch) {
-   			case RW_SX_LATCH:
-   		rw_lock_sx_lock_inline(&fix_block->lock, 0, file, line);\
-   ```
+2. `buf_page_get_gen`按照rw_latch类型读取page到buf_pool中，并加锁。对于可以利用change buffer的操作，可能没有读取到block，那么对操作进行缓存。
 
 3. 1265，第一次取出的root节点；通过root节点的得到Btree的height；
 

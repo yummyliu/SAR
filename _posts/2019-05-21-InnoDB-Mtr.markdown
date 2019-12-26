@@ -1,6 +1,6 @@
 ---
 layout: post
-title: InnoDB源码解析——MTR与Btree操作
+title: InnoDB源码——MTR与Btree操作
 date: 2019-05-21 16:35
 header-img: "img/head.jpg"
 categories: 
@@ -12,15 +12,13 @@ typora-root-url: ../../yummyliu.github.io
 {:toc}
 # Mini-transaction
 
-![image-20190826172710178](/image/mtr.png)
+![image-20191226122700730](/image/mtr.png)
 
-InnoDB的MTR是保证若干个page原子性变更的单位，不会回滚；在事务提交时，会将该事务涉及的所有mtr刷盘。一个mtr中包含若干个日志记录，每个日志记录都是对某个page的操作，操作的类型定义在`mtr_type_t`中，恢复的时候按照类型调用相应的回调函数，恢复page。
+InnoDB的Mini-transaction（简称mtr）是保证若干个page原子性变更的单位。一个mtr中包含若干个日志记录——mlog，每个日志记录都是对某个page——mblock；
 
-在mysql运行时，每个mtr由mtr_t表示，如下。
+在mtr_start后，只有`mtr_commit`一个操作；`mtr_commit`时会将mtr中的mlog和mblock（dirty page）分别拷贝到logbuffer和flushlist中。在真实事务提交时，会将该事务涉及的所有mlog刷盘，这样各个原子变更就持久化了。恢复的时候按照类型(`mtr_type_t`)调用相应的回调函数，恢复page。
 
-## mtr_t
-
-几个主要成员的含义：
+在代码（5.7）中，每个mtr由`mtr_t`结构表示，主要成员位于内部类Impl中，如下：
 
 + `m_inside_ibuf`：mtr正在操作ibuf
 
@@ -34,24 +32,15 @@ InnoDB的MTR是保证若干个page原子性变更的单位，不会回滚；在�
 
 + `m_log_mode`：当前mtr的日志模式（是否记录redo与刷脏）
 
-+ `m_user_space`/`m_undo_space`/`m_sys_space`；当前mtr修改的表空间
++ `m_user_space`/`m_undo_space`/`m_sys_space`：当前mtr修改的表空间
 
-+ `m_state`:mtr生命周期的四种状态 
++ `m_state`：生命周期的四种状态 
 
-+ `m_flush_observer` ： 对于不需要写redo的page操作的刷盘标记(create index)
-
-  ```c
-  /** We use FlushObserver to track flushing of non-redo logged pages in bulk
-  create index(BtrBulk.cc).Since we disable redo logging during a index build,
-  we need to make sure that all dirty pages modifed by the index build are
-  flushed to disk before any redo logged operations go to the index. */
-  ```
++ `m_flush_observer` ： 当`m_log_mode`表示不写redo时，dirty page的刷盘通过该参数判断(create index)。
 
 + `m_mtr` : 当前mtr指针（this）
 
-  > `m_user_space_id`/`m_magic_n` ： 调试代码时才有
-
-## 生命周期
+Mini-transaction有如下四种状态，即，mtr的生命周期。
 
 ```c++
 enum mtr_state_t {
@@ -62,24 +51,28 @@ enum mtr_state_t {
 };
 ```
 
-+ **初始化**：的时候是MTR_STATE_INIT；
++ **初始化**：MTR_STATE_INIT；
 
 + **启动**：`mtr.start`后是MTR_STATE_ACTIVE；
 
 + **提交**：`commit`/`commit_checkpoint`：MTR_STATE_COMMITTING
-  + log_reserve_and_write_fast：按照buf_free将记录复制到LogBuffer中。
-  + add_dirty_page_to_flush_list：将脏页放到flushlist中。
-+ **释放资源**：release_resources：在`add_dirty_page_to_flush_list`之后，设置当前状态为commited；
+  + `log_reserve_and_write_fast`：按照buf_free将记录复制到LogBuffer中。
+  + `add_dirty_page_to_flush_list`：将脏页放到flushlist中。
++ **释放资源**：`release_resources`：在`add_dirty_page_to_flush_list`之后，设置当前状态为MTR_STATE_COMMITTED；
 
 # 乐观的Insert涉及的mtr
 
-在Insert过程中，共有如下5个mtr（如果有索引可能会有额外的mtr），每个mtr中有若干个记录。
+在INSERT过程中，共有如下5个mtr（如果有索引可能会有额外的mtr），每个mtr中有若干个记录。
 
-+ 分配undo空间
-+ 写undo记录
-+ 写数据
-+ 2pc-prepare
-+ 2pc-commit
+1. 分配undo空间
+
+2. 写undo记录
+
+3. 写数据
+
+4. 2pc-prepare
+
+5. 2pc-commit
 
 ![image-20190826165702452](/image/optimistic_insert.png)
 

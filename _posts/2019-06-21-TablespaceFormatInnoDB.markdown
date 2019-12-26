@@ -20,10 +20,12 @@ typora-root-url: ../../yummyliu.github.io
 
 内存中主要就是Buffer Pool以及一些其他的辅助缓存。
 
-在InnoDB的代码中，关于Buffer Pool有三个需要区分的名称：
+关于bufferpool，按照层级划分有如下结构：
 
-+ frame代表内存的虚拟地址空间的一个16k单元，主要用在缓冲区管理中；
-+ page代表物理内存的一个16k单元，其中是需要写回到磁盘的数据；
+![image-20191226162157502](/image/1121-bufferpool.png)
+
++ frame代表内存的虚拟地址空间的一个16k单元，其是一个内存地址，指向实际的数据。
++ page是该页上的相关信息。
 + Block代表一个Control Block（`buf_block_t`），对于每个frame对应一个ControlBlock结构进行控制信息管理，但这些信息不写回内存。
 
 另外每个BufferPool有对应的LRU List、Flush List。
