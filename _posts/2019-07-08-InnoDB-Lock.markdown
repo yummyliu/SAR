@@ -90,7 +90,7 @@ enum btr_latch_mode {
 
 而高字节放一些标记位，用来判断rwlock的类型；如下是该函数的大体逻辑：
 
-![image-20190830121803173](/image/btr_cur_search_to_nth_level.png)
+![image-20191227175829430](/image/btr_cur_search_to_nth_level.png)
 
 ### **1. 初始化扫描指令**；
 
@@ -140,27 +140,27 @@ Adaptive Hash Index作为Btree寻路的缓存，提高Btree寻路的开销；在
 
 2. `buf_page_get_gen`按照rw_latch类型读取page到buf_pool中，并加锁。对于可以利用change buffer的操作，可能没有读取到block，那么对操作进行缓存。
 
-3. 1265，第一次取出的root节点；通过root节点的得到Btree的height；
+3. 第一次取出的root节点；通过root节点的得到Btree的height；
 
-4. 1440，在取出的page中，根据目标tuple，采用二分法，在page中定位page_cursor（可以是最终的叶子节点的键值对，可以是非叶子节点的node_ptr）；
+4. 在取出的page中，根据目标tuple，采用二分法，在page中定位page_cursor（可以是最终的叶子节点的键值对，可以是非叶子节点的node_ptr）；
 
-   ```c
+   ```cpp
    	/* Perform binary search until the lower and upper limit directory
    	slots come to the distance 1 of each other */
-   
    	while (up - low > 1) {
    		mid = (low + up) / 2;
-   
    		cmp = cmp_dtuple_rec_with_match(
    			tuple, mid_rec, offsets, &cur_matched_fields);
    	}
    ```
-
+   
 5. 1487，如果不是最终的level；height—;
 
 6. 1780，迭代到该节点的子节点；n_blocks++；在查找过程中维护了一个路径block数组。
 
-7. height!=0，继续迭代search_loop，返回1；height==0（1306），这时根据latch_mode进行遍历过程的收尾。
+7. height!=0，继续迭代search_loop，返回1；height==0（1306），结束
+
+8. 这时根据latch_mode，释放tree_savepoints和tree_blocks，以及对page也加锁。
 
 ### 5. 设置cursor
 
