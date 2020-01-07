@@ -142,7 +142,7 @@ LogBuffer主要承载mlog写入和log写盘。
 
 checkpoint LSN除了和上述提到的last_lsn - recent_closed.capacity（buffer中的最老修改）相关外，还和 recent_closed.tail() （flushlist中保证连续的lsn位置）以及logbuffer的flushed_to_disk_lsn（要保证日志先于数据刷盘）。
 
-# 总结
+# 总结与思考
 
 MySQL8中，日志的基本结构和原来一样；但是在整个处理流程上充分地异步处理了。其中，通过若干event将各个线程同步起来，有如下几个：
 
@@ -173,6 +173,22 @@ mtr提交时，首先通过prepare_write得到最终要写入的日志长度，�
 4. `log_buffer_close`：在**recent_closed**中加一个link。
 
 log_writer等线程等待各自的event，然后开始进行处理。
+
+## recovery
+
+`mtr_commit`会将该mtr对应的脏页添加到flush_list中，并在recent_closed中记下[start_lsn, end_lsn]，recent_closed会维护一个tail位置，tail_lsn之前的是连续的区间段。
+
+```c++
+buf_flush_insert_into_flush_list(buf_pool, block, start_lsn);
+```
+
+flush_list中的dirty page的oldest_modify_lsn会记下mtr.start_lsn。然后，log_closer会不断的向前推进recent_closed的tail。
+
+当需要做checkpoint时，checkpoint_lsn会根据recent_closed的tail_lsn进行取舍；在5.7中是取出flush_list中min(oldest_modify_lsn)；但是在8中，由于flush是非顺序添加的，min(oldest_modify_lsn)之前会有一些dirty page还未添加进来。但是乱序的最大区间就是recent_closed.size()。因此，安全的checkpoint_lsn可以用`min(oldest_modify_lsn)-recent_closed.size()`。
+
+但是，这带来一个问题，`min(oldest_modify_lsn)`一定是某个mtr的start_lsn，但是`min(oldest_modify_lsn)-recent_closed.size()`就不一定了，有可能会执行某个logrecord group的[start_lsn, end_lsn]之间。这样在恢复时，就不能从checkpoint_lsn点进行恢复。
+
+假如checkpoint_lsn指向了某个区间的中间，那么当前区间对应的dirtypage必然是落盘了（current_start_lsn < checkpoint_lsn），因此，解决办法就是找到**>=checkpoint_lsn的第一个logrecord group**（即，某个mtr的start_lsn）。
 
 # 参考文献
 

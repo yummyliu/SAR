@@ -11,50 +11,27 @@ typora-root-url: ../../yummyliu.github.io
 
 * TOC
 {:toc}
-类似PgSQL的多进程结构，MySQL是多线程结构，其中有如下的线程角色
-
-- User thread：每个链接一个线程；
-
-- Master thread：整体活动的调度；比如flush，purge，checkpoint，insert buffer merge等活动的调度。
-
-- IO threads
-
-  - read threads：多线程的预读
-  - write threads：多线程的后台写
-  - Insert Buffer thread：Insert Buffer合并
-  - log thread：刷新log
-
-- Purge threads：周期性执行的垃圾回收。清理index中的废弃值；清理表中被标记为`deleted`的记录；清理undo日志中的历史记录（rollback segment）。
-
-- 死锁检测/Page cleaner (flush)/FTS, Statistics, Monitor, Drop table, Dump
-
-  buffer pool等任务线程。
-
-InnoDB作为MySQL的默认事务型存储引擎，保证了MySQL的事务型查询。在一个经典的RDBMS架构中，分为如下几个部分：
+InnoDB首先是MySQL的一个可拔插存储引擎，提供事务型存储特性。在一个经典的RDBMS架构中，分为如下几个部分：
 
 ![adb](/image/arch-db.png)
 
-MySQL即主要提供了Relational Query Procesor的功能，InnoDB就是上图的Transaction Storage Manager部分。那么本文就从四个方面阐述InnoDB，希望想了解InnoDB的人，看到这篇文章能有所收获。
+MySQL即主要提供了Relational Query Procesor的功能，InnoDB就是上图的Transaction Storage Manager部分。那么本文就从四个方面阐述我所了解到的InnoDB，希望想了解InnoDB的人，看到这篇文章能有所收获。
 
 # Access Method
 
-目前有三种Btree，Rtree（spatial index）,倒排索引（Full-Text Search Index）。这里以最常用的Btree为例进行介绍。
+AccessMethod可以理解为数据在外存的组织形式，也可以简单理解为索引。在PostgreSQL内核中自带有6种，InnoDB目前有三种Btree，Rtree（spatial index）,倒排索引（Full-Text Search Index）。
+
+这里以最常用的Btree为例进行介绍。
 
 ## 文件组织方式
 
-在InnoDB的代码中，有三个需要区分的名称：
+那么我们首先了解一下InnoDB的外存文件组织，在外存中，按照表空间（space）进行组织；当启动了`innodb_file_per_table`参数后，每个数据表对应一个文件（参看系统表：`INFORMATION_SCHEMA.INNODB_SYS_DATAFILES`）。而对于全局共享的对象，需要放在共享的表空间space0（全局变量`：innodb_data_file_path，默认为ibdata1）中。ibdata1中除了每个表空间都有的对象（ibuf_bitmap、inode等）外，其中还有如下信息：
 
-+ frame代表内存的虚拟地址空间的一个16k单元，主要用在缓冲区管理中；
-+ page代表物理内存的一个16k单元，其中是需要写回到磁盘的数据；
-+ Block代表一个Control Block（`buf_block_t`），对于每个frame对应一个ControlBlock结构进行控制信息管理，但这些信息不写回内存。
-
-在外存中，按照表空间（space）进行组织；当启动了`innodb_file_per_table`参数后，每个数据表对应一个文件（参看系统表：`INFORMATION_SCHEMA.INNODB_SYS_DATAFILES`）。而对于全局共享的对象，需要放在共享的表空间space0（全局变量`：innodb_data_file_path，默认为ibdata1）中，除了每个表空间都有的对象（ibuf_bitmap、inode等）外，其中还有如下对象：
-
-+ Change Buffer Tree
-+ Transaction Sys Header
-+ 0号回滚段
-+ 目录头部信息
-+ Double Write Buffer
++ Change buf
++ Transaction sys
++ Dictionary 
++ Rollback seg
++ Double write buf
 
 > 除了space0是共享的以外，我们还可以通过create tablespace创建[General Tablespace](https://dev.mysql.com/doc/refman/5.7/en/general-tablespaces.html)，同样是全局共享的。
 >
@@ -86,6 +63,14 @@ MySQL即主要提供了Relational Query Procesor的功能，InnoDB就是上图�
 
 ### IO最小单元——Page
 
+在InnoDB的代码中，有三个需要区分的名称：
+
++ frame是内存地址，指向具体的数据；
++ page是frame指向数据的状态信息，其中是需要写回到磁盘的数据；
++ Block代表一个Control Block（`buf_block_t`），对于每个frame对应一个ControlBlock结构进行控制信息管理，但这些信息不写回内存。
+
+在InnoDB中有多种页类型，下面展示了FIL_PAGE_INDEX这个类型的结构。
+
 ![image-20190726104115317](/image/page逻辑物理对应.png)
 
 上图左侧是一个物理Page的结构，前面有三个头部信息：文件头部信息，索引头部信息，段头部信息；另外，还有两个虚拟系统记录：
@@ -105,14 +90,11 @@ MySQL即主要提供了Relational Query Procesor的功能，InnoDB就是上图�
 
 ### 读写最小单元——Record
 
-> 在innobase/include/rem0rec.ic；列出了record中各个值的偏移
->
-> /* We list the byte offsets from the origin of the record, the mask,
-> and the shift needed to obtain each bit-field of the record. */
+在innobase/include/rem0rec.ic；列出了record中各个值的偏移，如下图
 
 ![image-20190726105136952](/image/InnoDB读写最小单元.png)
 
-在上述Page中，我们可以看到其中的Record按照链表的形式组织起来。每个Record记录了其前向和后向Record的偏移。注意这个偏移是真实Record的数据部分的起始位置，如上图所示。另外，在每个Record中都有两(三)个隐藏列：
+在上述Page中，我们可以看到每个Record记录了其后向Record的偏移，可以看出page中的record按照链表的形式组织起来。注意这个偏移是真实Record的**数据部分**的起始位置，如上图所示。另外，在每个Record中都有两(三)个隐藏列：
 
 - DB_TRX_ID：区别于GTID按照事务提交顺序排列，这是按照事务创建顺序排列。非锁定读的事务不会产生。
 - DB_ROLL_PTR：指向该记录的前一个版本的undolog record。
@@ -129,7 +111,9 @@ MySQL即主要提供了Relational Query Procesor的功能，InnoDB就是上图�
 - `DYNAMIC`：和上两个不同，当列值超过40byte时，那么行中只存储一个指针，指向附加页；然后每个附加页内还有一个指针指向后续数据，指针大小20byte。
 - `COMPRESSED`：存储方式和DYNAMIC相似，只是该方式支持压缩表。在系统表空间中不可用，因此该参数不能设置为默认。
 
-> `REDUNDANT` 和 `COMPACT` 索引键值最大为 767 byte，然而 `DYNAMIC` 和 `COMPRESSED` 支持最大为 3072 byte。在主从复制中，如果`innodb_default_row_format`在master上设置为`DYNAMIC` ，在slave上设置为 `COMPACT` ，执行如下DDL操作，主上成功，从会失败。
+> `REDUNDANT` 和 `COMPACT` 索引键值最大为 767 byte，然而 `DYNAMIC` 和 `COMPRESSED` 支持最大为 3072 byte。
+>
+> 注意，在主从复制中，如果`innodb_default_row_format`在master上设置为`DYNAMIC` ，在slave上设置为 `COMPACT` ，执行如下DDL操作，主上成功，从会失败。
 >
 > ```sql
 > CREATE TABLE t1 (c1 INT PRIMARY KEY, c2 VARCHAR(5000), KEY i1(c2(3070)));
@@ -209,7 +193,7 @@ select * from INFORMATION_SCHEMA.INNODB_METRICS where name = 'index_page_merge_s
 
 除了这两个之外，还有为了减小二级索引的写放大，引入的Change Buffer机制；为了避免数据部分写，引入的DoubleWrite Buffer。
 
-> 另外，还有存储元数据目录与其他内部结果的Memory Pool，由参数`innodb_additional_mem_pool_size`控制，默认8MB；这个如果不够就会动态申请，然后再日志中写warning记录。
+> 另外，还有存储元数据目录与其他内部结果的Memory Pool，由参数`innodb_additional_mem_pool_size`控制，默认8MB；这个如果不够就会动态申请，这会在日志中写warning记录。
 
 ## Change Buffer
 
@@ -217,8 +201,10 @@ select * from INFORMATION_SCHEMA.INNODB_METRICS where name = 'index_page_merge_s
 
 Change Buffer是二级索引变更的缓存，其不仅仅是一个内存结构，内存中的changebuffer需要确保外存的changebuffer能够全部load进内存；因此，ChangeBuffer同样可通过Recovery恢复。
 
-ChangeBuffer也是一个Btree，Key为(spaceid,pageno,counter)三元组，其中counter在每个page有一次变更后加一。Value为该page上的操作，之前其中只有insert操作，后来也支持了delete/update/purge操作，成为ChangeBuffer；但是命名上没有改变，在内存中还是叫InsertBuffer；注意只是当非唯一的二级索引的块不在缓存中时，才会缓存相关操作。
+ChangeBuffer也是一个Btree，Key为(spaceid,pageno,counter)三元组，其中counter在每个page有一次变更后加一。Value为该page上的操作，之前其中只有insert操作，后来也支持了delete/update/purge操作，成为ChangeBuffer；但是命名上没有改变，在代码中还是叫InsertBuffer；
 
+> 注意只是当**非唯一的二级索引**的块不在缓存中时，才会缓存相关操作。
+>
 > 索引具有唯一约束时，修改索引需要读取数据确认是否存储重复值，因此，此时必须要读取indexpage，所以不用Change Buffer。
 
 当ChangeBuffer满了或者之前缺失的二级索引页被读取到内存中时，会按照changeBuffer中缓存的操作，merge该页的修改：
@@ -236,19 +222,11 @@ ChangeBuffer也是一个Btree，Key为(spaceid,pageno,counter)三元组，其中
 
 任何BufferPool都逃不过一个刷脏的问题；在数据库中，为了保证恢复及时；那么每间隔一段时间，会在日志中写入一个检查点。
 
-CHECKPOINT在DBMS都是同一个概念，其为redo日志中的一条记录，内容为CHECKPOINTLSN，其表示在CHECKPOINTLSN之前的脏页已经从缓冲区写入磁盘了。那么我们就知道了CHECKPOINT就是一条日志记录，但是其中记录了CHECKPOINTLSN。
+CHECKPOINT在DBMS都是同一个概念，其为redo日志中的一条记录，内容为CHECKPOINTLSN，其表示在CHECKPOINT_LSN之前的脏页已经从缓冲区写入磁盘了。而完成CHECKPOINT的方式主要有两种类型：
 
-而完成CHECKPOINT的方式主要有两种类型的CHECKPOINT：
++ **sharp checkpoint**: 只将commited的事务修改的页进行刷盘，并且记下最新Commited的事务的LSN。这样恢复的时候，redo日志从CHECKPOINT发生的LSN开始恢复即可。由于所有刷盘的数据都是在同一个点(CHECKPOINT LSN)之后，所以称之为sharp。
 
-**sharp checkpoint**:
-
-只将commited的事务修改的页进行刷盘，并且记下最新Commited的事务的LSN。这样恢复的时候，redo日志从CHECKPOINT发生的LSN开始恢复即可。由于所有刷盘的数据都是在同一个点(CHECKPOINT LSN)之后，所以称之为sharp。
-
-**fuzzy checkpoint:**
-
-如果脏页滞留到一定时间，就可能会刷盘。这种方式在日志中写下两个LSN：CHECKPOINT start和CHECKPOINT end。当恢复的时候，还是从CHECKPOINT start开始恢复。
-
-——[Gray and Reuter’s classic text on transaction processing](https://www.amazon.com/gp/product/1558601902/?tag=xaprb-20)
++ **fuzzy checkpoint:**如果脏页滞留到一定时间，就可能会刷盘。
 
 在InnoDB中，除了shutdown的时候，正常时候都是fuzzy CHECKPOINT。刷盘前，能够多次修改，这样省去了很多IO。BufferPool中的页由三个list维护，分别是：
 
@@ -256,15 +234,15 @@ CHECKPOINT在DBMS都是同一个概念，其为redo日志中的一条记录，�
 + LRU_list：最近使用的页
 + flush_list：按照LSN的顺序组织的脏页（即，最近修改的页）。
 
-由于buffer池是有限的，不能只是等满了才进行页换出；所以，InnoDB会持续地进行Page Clean，InnoDB中的换出有两种情况。
+由于bufferpool是有限的，不能只是等满了才进行页换出；所以，InnoDB会持续地进行Page Clean，InnoDB中的换出有两种情况。
 
 - BufferPool满了之后，基于LRU_list，进行页面置换。
 
 - 基于flush_list，其中按照修改的先后顺序排列，选择最早更改的脏页(LSN)进行换出。
 
-  > 为了避免将热数据换出，所以选择了最早更改的脏页。另外，由于事务日志（即，redo/wal日志）是固定大小的，因此，redo日志是循环使用的。
+  > 为了避免将热数据换出，所以选择了最早更改的脏页。
   >
-  > 当最早的日志记录相应的页一直没有刷盘，如果此时发生了日志重用，那么更改就没有持久化(违反D)；因此，当这种情况发生时，InnoDB需要夯住，进行刷盘（同样这也是为什么选择最早更改的脏页的一个原因）。x
+  > 另外，由于事务日志（即，redo/wal日志）是固定大小的，redo日志是循环使用的。当最早的日志记录相应的页一直没有刷盘，如果此时发生了日志重用，那么更改就没有持久化(违反D)；因此，当这种情况发生时，InnoDB需要夯住，进行刷盘（同样这也是为什么选择最早更改的脏页的一个原因）。
 
 为了避免checkpoint的频繁刷脏，pagecleaner和用户线程会按照一些阈值点，进行提前刷脏。和这相关是一个Page Cleaner线程组，其分为两个角色协调者和工作者，如下：
 
@@ -280,11 +258,11 @@ coordinator持续设置标记位触发worker进行刷盘，自己触发后也会
 
 ## AHI
 
-![image-20190726115150223](/image/ahi.png)
+![image-20200106154013692](/image/ahi.png)
 
 在Buffer Pool中，缓存了IndexPage。在二级索引中，存储的是一级索引的键；因此每次查询需要两个索引查询。为了减少寻路开销，打开参数[`innodb_adaptive_hash_index`](https://dev.mysql.com/doc/refman/5.7/en/innodb-parameters.html#sysvar_innodb_adaptive_hash_index)后，可以启动AHI功能。
 
-每次查询后，将tuple与page的映射关系存储在一个HashTable中，那么后续查询可以通过内存的HashTable进行定位；提高检索性能。现在在5.7中，避免锁的竞争，将AHI分成几块。
+每次查询后，将tuple与page的映射关系存储在一个HashTable中，那么后续查询可以通过内存的HashTable进行定位，如上图，提高检索性能。现在在5.7中，避免锁的竞争，将AHI分成几块。
 
 ## Doublewrite Buffer(disk)
 
