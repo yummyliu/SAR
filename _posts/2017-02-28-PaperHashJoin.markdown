@@ -19,27 +19,11 @@ typora-root-url: ../../yummyliu.github.io
 
 ## 并行层次
 
-+ **指令并行**（super scalar execution）：超流水线；CPU指令可能有若干个阶段，比如：获取指令，解码指令，执行，内存访问，寄存器回写等等；每个阶段操作的对象不同，在一个CPU的时钟周期中，就可以对不同指令的不同执行阶段进行同时执行。这就是指令级别的并行。
+数据库并行的对象有两种：1. Inter-query，查询间的并行；2. Intra-query，查询内的并行。并行的层次可以有以下三种：
+
++ 指令并行**（super scalar execution）：超流水线；CPU指令可能有若干个阶段，比如：获取指令，解码指令，执行，内存访问，寄存器回写等等；每个阶段操作的对象不同，在一个CPU的时钟周期中，就可以对不同指令的不同执行阶段进行同时执行。这就是指令级别的并行。
 + **数据并行**（SIMD）： 单指令多数据；一个指令同时处理多个数据。
 + **线程并行**：线程并行有两种，主要区别就是在一个指令周期里CPU上执行的指令是来自一个线程还是多个线程；来自一个线程叫Temporal multithreading；在超流水线中执行的多个指令可能来自多个线程叫Simultaneous multithreading。
-
-### Process Model
-
-#### CPU并行
-
-##### 并行实体
-
-###### 进程(池)
-
-###### 线程(池)
-
-##### 并行对象
-
-###### Inter-query
-
-###### Intra-query
-
-#### IO并行
 
 ## 存储层次
 
@@ -47,7 +31,7 @@ typora-root-url: ../../yummyliu.github.io
 
 这样我们再计算的时候，计算数据单元的大小应该和这些存储层次适配，才能发挥最佳性能。因此，在本文中就是讲述了Cache-resident的HashJoin。
 
-# Join ALGO
+# Join 算法概述
 
 假设我们有两张表R，S；分别有M，N个块；以及m，n个元组。常规的Join算法有三种：NestLoop，SortMerge，Hash。基本从名字上我们就能够了解到算法的机制。当进行选择的时候还会根据是否有索引，或者是否已经有序来选择合适的算法。数据库主要的性能瓶颈是IO，这里简单介绍一下各种算法的**IO代价**：
 
@@ -98,33 +82,48 @@ typora-root-url: ../../yummyliu.github.io
 
 ### Partition HashJoin
 
-上述算法的基本点就是先生成一个较大的HashTable，那么在内存中对HashTable的随机访问就可能造成较多的CacheMiss。因此，为减少CacheMiss，提出了将HashTable切分为若干个CacheSize大小的块，至此原HashJoin就加了一部Partition步骤，这个算法可称为**Partition HashJoin**，分为三步。
+上述算法的基本点就是先生成一个较大的HashTable，那么在内存中对HashTable的随机访问就可能造成较多的CacheMiss。因此，为减少CacheMiss，提出了将HashTable切分为若干个CacheSize大小的块，至此原HashJoin就加了一部Partition步骤，如下图：
 
-1. Partition：按照HashFunc1，将R和S分别划分为若干个ri和si（由于基于HashFunc1进行分区，这样ri和sj之间不会有交集）。
-2. Build：对于每个ri，按照HashFunc2，建立ri的的哈希表hi（这里是使用第二个Hash函数，创建Hash表）。
-3. Probe：对于每个si，按照HashFunc2，在响应的hi中找匹配。
+![image-20200108105050853](/image/0108-partition-hashjoin.png)
 
-这个算法在Build和Probe阶段使用了和Cache大小相同的HashTable，那么可以减少CacheMiss。但是引入的Partition阶段，会将各个Partition放在不同的内存页上；在虚拟内存映射表中对于每一页都需要一个条目；虚拟内存映射表的缓存叫TLB；因此，如果创建了很多Partition的话，TLB就会溢出，导致最终的TLB MISS；
+这个算法可称为**Partition HashJoin**，分为三步。
+
+1. Partition：按照哈希函数$h_1$，将R和S分别划分为若干个子块$r_i$和$s_j$（由于基于同一个哈希函数进行分区，这样$r_i$和$s_j$之间不会有交集，这样可以分别处理）。
+2. Build：对于每个$r_i$，按照哈希函数$h_2$，建立哈希表$h_i$（这里是使用不同的哈希函数）。
+3. Probe：对于每个$s_j$，按照哈希函数$h_2$，在相应的$h_i$中找匹配。
+
+这个算法在Build阶段生成的哈希表$h_i$可以装进cpu cache中，那么可以有效减少CacheMiss。
+
+但是引入的Partition阶段，可能会将各个Partition放在不同的内存页上；在虚拟内存映射表中对于每一页都需要一个条目，那么，如果有很多partition，就会有很多条目；而虚拟内存映射表也有自己的缓存，叫TLB，条目过多，TLB就会溢出，导致最终的TLB MISS；
 
 因此，可用的TLB条目大小决定了**可以高效使用的分区数**的上限，研究学者进一步考虑了Partition阶段的TLB的影响，最终提出了RadixJoin算法。
 
 ### Radix Join
 
+Radix join通过多次（一般来说两到三次即可）radix-partition，得到不超过TLB容量的partition。如下图。
+
+![image-20200108110812517](/image/0108-radix-join.png)
+
 #### Radix Partition
 
-Radix这里可以理解为JoinKey的若干个bit位。在Partition阶段，将分多步基于Radix将R和S进行分块，就能得到CacheSize大小且不会导致TLBMiss的hashTable（其实就是通过提前统计各个partition的大小，将其连续摆放，这样避免了分散的Partition Page导致的TLBMiss），其中关键的是：什么是Radix Partition？其可并行执行，有三步：
+Radix这里可以理解为JoinKey的某几个bit位，那么，什么是Radix Partition？
 
-1. 统计直方图：每个Radix取值下的元组数。
-2. 计算整个Radix序列：`r0,r1,r2,…,rn`的前缀和序列：`S0,S1,S2,...,Sn`。
-3. 基于前缀和序列，我们可知取值为ri的元组在内存连续的Partition块中的位置，对原tuple的位置重新调整。进而就将表进行的分区。
+举个例子：我们有一个表A，其join key为[**07**,18,19,**07**,**03**,11,15,10]。要对A进行radix partition，执行起来有三步：
 
-基于Radix进行分区后，整个Partition还是在一整块内存区域，避免了零散的内存Page导致的TLB过大。
+1. 统计直方图，统计每个Radix取值下的元组数。我们以十位数作为本次的radix，进行统计，这里可以将A进行等分，然后并行统计。
+2. 汇总统计结果，得到每个radix取值对应的序列号：`r0,r1,r2,…,rn`的前缀和序列：`S0,S1,S2,...,Sn`；统计结果为：count(radix=1)=3，count(radix=0)=5，那么，index(radix=0)=0，index(radix=1)=5。
+3. 基于统计结果，对原tuple的位置重新调整。进而就将表进行的分区，得到两个分区：[**07,07,03**,11,15,10,18,19]。
+4. 回到1，换一个radix，再次进行，直到划分出了特定数目的分区。
+
+基于Radix进行分区后，整个Partition还是在一整块内存区域，避免了零散的内存Page导致的TLB miss。
 
 最后，整个算法还是分为三步：
 
-1. 对R和S进行Radix Partition；
-2. Build：对于每个ri，按照HashFunc2，建立ri的的哈希表hi（这里是使用第二个Hash函数，创建Hash表）。
-3. Probe：对于每个si，按照HashFunc2，在响应的hi中找匹配。
+1. Radix Partition：对R和S进行Radix Partition，得到不超过TLB条目的子表；
+2. Build：对于每个$r_i$，按照哈希函数$h_2$，建立$r_i$的的哈希表$h_i$。
+3. Probe：对于每个$s_i$，按照哈希函数$h_2$，在相应的hi中找匹配。
+
+相比较于原来的partition hashjoin，radix join其实就是通过提前统计各个partition的大小，将其连续摆放，这样避免了分散的Partition Page导致的TLBMiss，并且其可并行执行。
 
 以上，over；至于具体的性能差异可以直接参考论文。
 
