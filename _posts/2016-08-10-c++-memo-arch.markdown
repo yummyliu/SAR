@@ -9,12 +9,11 @@ categories:
 
 * TOC
 {:toc}
+理解每一门语言其运行时的状态的关键一步就是了解该语言运行时的内存布局。比如学习Java就要了解JVM运行时结构；这篇文章简单讲述C++运行时的内存布局，便于初学者对C++有一个概况的了解。
 
 # C++内存布局
 
-理解每一门语言其运行时的状态的关键一步就是了解该语言运行时的内存布局。比如学习Java就要了解JVM运行时结构；这篇文章简单讲述C++运行时的内存布局，便于初学者对C++有一个概况的了解。
-
-从如下一个简单的代码开始分析，来了解C++的结构。
+从如下一个简单的代码开始分析。
 
 ```c
 #include <stdio.h> 
@@ -181,6 +180,23 @@ void foo()
 }
 ```
 
+```cpp
+void my_func()
+{
+    int* valuePtr = new int(15);
+    int x = 45;
+    // ...
+    if (x == 45)
+        return;   // here we have a memory leak, valuePtr is not deleted
+    // ...
+    delete valuePtr;
+}
+ 
+int main()
+{
+}
+```
+
 当`delete a_string`的时候,就会发生内存泄露，最终内存耗尽（memory exhausted）；
 
 首先我们分配内存后要判断，内存是否分配成功，失败就结束该程序；其次要注意**野指针/悬垂指针问题（Wild pointer/Dangling pointer）**：指针没有初始化，或者指针free后，没有置NULL。
@@ -188,39 +204,64 @@ void foo()
 ## RAII
 
 **"RAII: Resource Acquisition Is Initialization"**
-意思就是任何资源的获取，不管是不是在初始化阶段，都是被一个对象获得，
-而相应的释放资源就在该对象的析构函数中,资源不限于内存资源，
-包括file handles, mutexes, database connections, transactions等。
+意思就是任何资源的获取，不管是不是在初始化阶段，都是被一个对象获得，而相应的释放资源就在该对象的析构函数中,资源不限于内存资源，包括file handles, mutexes, database connections, transactions等。
 
-c++ 本身不提供垃圾回收的机制（尽管有一些相应的第三方库），
-比起Java等类似语言的finally construct的方式，要优。
-
-同样和C语言中的内存管理相比，要优的多。源于c++的封装，比如：
-
-
+智能指针就是基于RAII的思想实现的。
 
 ### 智能指针
 
-> 这是很有效的方法，来管理动态分配对象的生命周期。
+> Smart pointers are used to make sure that an object is deleted if it is no longer used (referenced).
 
-智能指针从某种意义上来说，不是一个真的指针，但是重载了 `->` `*` `->*`指针运算符，
-这使得其表现的像个内建的指针
+智能指针位于<memory>头文件中，从某种意义上来说，不是一个真的指针，但是重载了 `->` `*` `->*`指针运算符，这使得其表现的像个内建的指针，有以下几种类型：`auto_ptr`, `shared_ptr`,` weak_ptr`,`unique_ptr`。后三个是c++11支持的，第一个已经被弃用了,相应的在boost中也有智能指针，不过现在c++11已经支持了就不用了，比如`boost:scoped_ptr` 类似于 `std:unique_ptr`。
 
-`auto_ptr, shared_ptr, weak_ptr, unique_ptr`
-后三个是c++11支持的，第一个已经被弃用了,相应的在boost中也有只能指针，不过现在c++11已经支持了就不用了，
-boost:scoped_ptr 类似于 std:unique_ptr
+**unique_ptr**
 
-##### unique_ptr
+可用在有限作用域（restricted scope）中动态分配的对象资源。不可复制（copy），但是可以转移（move），转移之后原来的指针无效。
 
-不可复制
+```cpp
+#include <iostream>
+#include <memory>
+#include <utility>
+ 
+int main()
+{
+    std::unique_ptr<int> valuePtr(new int(15));
+    std::unique_ptr<int> valuePtrNow(std::move(valuePtr));
+}
+```
 
-##### shared_ptr
+**shared_ptr**
 
-可以复制，维护一个引用计数，当最后一个引用该对象的引用退出，那么才销毁
+可以复制，维护一个引用计数，当最后一个引用该对象的引用退出，那么才销毁；通常用在私有（private）的类成员变量上，外部通过成员函数获取该成员的引用，如下：
+
+```cpp
+#include <memory>
+ 
+class Foo
+{
+	public void doSomething();
+};
+ 
+class Bar
+{
+private:
+	std::shared_ptr<Foo> pFoo;
+public:
+	Bar()
+	{
+		pFoo = std::shared_ptr<Foo>(new Foo());
+	}
+ 
+	std::shared_ptr<Foo> getFoo()
+	{
+		return pFoo;
+	}
+};
+```
 
 但是可能带来的问题是 : 
 
-1. dangling reference
+1. 悬垂引用（dangling reference）
 
 ``` cpp
 // Create the smart pointer on the heap
@@ -229,7 +270,7 @@ MyObjectPtr* pp = new MyObjectPtr(new MyObject())
 // because of that, the object is never destroyed!
 ```
 
-2. circular reference
+2. 循环引用（circular reference）
 
 ``` cpp
 struct Owner {
@@ -242,13 +283,44 @@ p1->other = p2; // p1 references p2
 p2->other = p1; // p2 references p1
 ```
 
-##### weak_pointer
+**weak_pointer**
 
-配合shared_ptr使用，避免循环引用的问题
+配合`shared_ptr`使用，可避免循环引用的问题。`weak_ptr`不拥有对象，当其需要访问对象时，必须先临时转换成`shared_ptr`，然后再访问，如下例：
 
-shared_ptr：
-每一个shared_ptr对象内部，拥有两个指针ref_ptr与res_ptr，一个指向引用计数对象，一个指向实际的资源。
-在shared_ptr的拷贝构造等需要创造出其他拥有相同资源的shared_ptr对象时，会首先增加引用计数，然后将ref_ptr与res_ptr复值给新对象。
-发生析构时，减小引用计数，查看是否为0，如果是，则释放res_ptr与ref_ptr。
-weak_ptr简单介绍：
-weak_ptr的引入，我认为是smart_ptr概念的一个补全。一个raw指针，其实有两个含义，一是管理资源的句柄（拥有对象），一是指向一个资源的指针（不拥有对象）。举个例子，一般我们创建一个对象，在使用完之后销毁，那这个指针是拥有那个对象的，指针的作用域就是这个对象的生命周期，这个指针就是第一类指针。我们在使用observer模式时，被监测对象经常会持有所有observer的指针，以便在有更新时去通知他们，但是他并不拥有那些对象，这类指针就是第二类指针。在引入smart_ptr之前，资源的创建与释放都是调用者来做决定，所以一个指针是哪一类，完全由程序员自己控制。但是smart_ptr引入之后，这个概念就凸显出来。试想，在observer例子中，我们不会容许一个对象因为他是某一个对象的观察者就无法被释放。weak_ptr就是第二类指针的实现，他不拥有资源，当需要时，他可以通过lock获得资源的短期使用权。
+```cpp
+#include <iostream>
+#include <memory>
+ 
+std::weak_ptr<int> gw;
+ 
+void observe()
+{
+    std::cout << "use_count == " << gw.use_count() << ": ";
+    if (auto spt = gw.lock()) {
+     // Has to be copied into a shared_ptr before usage
+      std::cout << *spt << "\n";
+    }
+    else {
+        std::cout << "gw is expired\n";
+    }
+}
+ 
+int main()
+{
+    {
+        auto sp = std::make_shared<int>(42);
+				gw = sp;
+ 
+				observe();
+    }
+ 
+    observe();
+}
+```
+
+每一个shared_ptr对象内部，拥有两个指针ref_ptr与res_ptr，一个指向引用计数对象，一个指向实际的资源。在shared_ptr的拷贝构造等需要创造出其他拥有相同资源的shared_ptr对象时，会首先增加引用计数，然后将ref_ptr与res_ptr复值给新对象。发生析构时，减小引用计数，查看是否为0，如果是，则释放res_ptr与ref_ptr。
+weak_ptr的引入，我认为是智能指针概念的一个补全。一个裸指针有两种类型：一是管理资源的句柄（**拥有对象**），一是指向一个资源的指针（**不拥有对象**）。举个例子，一般我们创建一个对象，在使用完之后销毁，那这个指针是拥有那个对象的，指针的作用域就是这个对象的生命周期，这个指针就是第一类指针。我们在使用观察者（observer）模式时，被监测对象经常会持有所有observer的指针，以便在有更新时去通知他们，但是他并不拥有那些对象，这类指针就是第二类指针。在引入smart_ptr之前，资源的创建与释放都是调用者来做决定，所以一个指针是哪一类，完全由程序员自己控制。
+
+但是智能指针引入之后，这个概念就凸显出来。试想，在上述例子中，我们不会容许一个observer对象因为他是某一个对象的观察者就无法被释放。weak_ptr就是第二类指针的实现，他不拥有资源，当需要时，他可以通过lock获得资源的短期使用权。
+
+总之，`weak_ptr`是对裸指针的使用中的不拥有对象的这类场景进行模拟，当需要访问的时候借助升级为shared_ptr并lock进行访问。
