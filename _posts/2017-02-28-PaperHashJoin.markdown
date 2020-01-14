@@ -96,6 +96,8 @@ typora-root-url: ../../yummyliu.github.io
 
 但是引入的Partition阶段，可能会将各个Partition放在不同的内存页上；在虚拟内存映射表中对于每一页都需要一个条目，那么，如果有很多partition，就会有很多条目；而虚拟内存映射表也有自己的缓存，叫TLB，条目过多，TLB就会溢出，导致最终的TLB MISS；
 
+![image-20200108182527939](/image/0108-tlb.png)
+
 因此，可用的TLB条目大小决定了**可以高效使用的分区数**的上限，研究学者进一步考虑了Partition阶段的TLB的影响，最终提出了RadixJoin算法。
 
 ### Radix Join

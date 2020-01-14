@@ -4,11 +4,16 @@ title: Linux的IO初识
 date: 2016-03-23 16:11
 categories: 
     - Linux
+typora-root-url: ../../yummyliu.github.io
 ---
+
+[这里](https://www.thomas-krenn.com/en/wiki/Linux_Storage_Stack_Diagram)有Linux各个版本的存储栈图，了解IO首先对整体
+
+![img](/image/0109-linux-io-3.17.png)
 
 > **流机制**: linux 提供的构造内核设备驱动程序和网络协议包的一种通用方法
 > 用户进程->系统调用(->处理模块 使用ioctl命令可压入处理模块)->设备驱动程序
-> 用户进程调用系统调用来读取流，系统调用相当于流的首部
+> 用户进程调用系统调用来读取流，系统调用相当于流的首部。
 
 #### 写同步(以磁盘为例)
 

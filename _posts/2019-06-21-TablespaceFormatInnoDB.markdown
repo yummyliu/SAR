@@ -24,11 +24,11 @@ typora-root-url: ../../yummyliu.github.io
 
 ![image-20191226162157502](/image/1121-bufferpool.png)
 
-+ frame代表内存的虚拟地址空间的一个16k单元，其是一个内存地址，指向实际的数据。
-+ page是该页上的相关信息。
-+ Block代表一个Control Block（`buf_block_t`），对于每个frame对应一个ControlBlock结构进行控制信息管理，但这些信息不写回内存。
++ **frame**代表内存的虚拟地址空间的一个16k单元，其是一个内存地址，指向实际的数据。
++ **page**是该页上的相关信息。
++ **Block**代表一个Control Block（`buf_block_t`），对于每个frame对应一个ControlBlock结构进行控制信息管理，但这些信息不写回内存。
 
-另外每个BufferPool有对应的LRU List、Flush List。
+另外每个BufferPool维护了LRU List、Flush List、Free List，便于快速找到需要类型的page。
 
 除此之外，还有一个dictionary cache，dictionary cache是全局共享对象的cache，这其中的数据同样在系统表空间ibdata1中存在。比如：
 
