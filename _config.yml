@@ -3,7 +3,7 @@ title: SELECT * FROM LiuYangming;
 description: "open up the wasteland of brain"
 author: Yangming's Blog
 subtitle: table yangming;
-email: sdwhlym@126.com
+email: sdwhlym@gmail.com
 logo_location: "/image/sar.png"
 
 github: https://github.com/yummyliu
@@ -28,8 +28,8 @@ urls:
 
 url: "https://liuyangming.tech"
 baseurl: ""
-paginate: 20
-per_page: 20
+paginate: 25
+per_page: 25
 paginate_path: "/page/:num/"
 markdown: kramdown
 gems:
