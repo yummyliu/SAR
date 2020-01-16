@@ -1,7 +1,6 @@
 ---
 layout: post
 title: 认识PostgreSQL的MVCC
-subtitle: PostgreSQL中，对DML语句使用快照隔离，对DDL语句使用2PL，本文中主要介绍PostgreSQL的快照隔离，即MVCC；
 date: 2018-05-30 18:06
 header-img: "img/head.jpg"
 categories: 
@@ -12,86 +11,49 @@ typora-root-url: ../../yummyliu.github.io
 * TOC
 {:toc}
 
-当数据库中并发的执行多个任务时，并发控制是维护事务的一致性和隔离性的机制。
+当数据库中并发的执行多个任务时，并发控制是维护事务的一致性(C)和隔离性(I)的机制（[WAL for AD](http://liuyangming.tech/05-2018/WAL.html)）。有三个类并发控制策略：
 
-有三个类并发控制策略：
++ 多版本并发控制（MVCC），维护数据的多个版本，通过获取数据版本快照进行事务隔离。
++ 严格两阶段锁（S2PL），通过获取指定资源的锁的方式进行事务隔离；
++ 乐观的并发控制（OCC），将事务的冲突延后在commit时进行判断，适用于冲突少的场景。
 
-+ 多版本并发控制（MVCC）；
-+ 严格两阶段锁（S2PL）；
-+ 和乐观的并发控制。
+MVCC的是实现方式大概有两种，关键就在于将旧数据放在什么地方；
 
-PostgreSQL是基于MVCC实现的事务隔离称之为**快照隔离SI**（Snapshot Isolation）。
+      	1. 将多版本的记录都存储在数据库中，垃圾收集器清理不需要的记录。比如：PostgreSQL/Firebird/Interbase ，而SQL Server将其存储在tempdb中。
+      	2. 将最新的记录放在数据库中，通过恢复undo日志，来重建旧版本的数据。比如Oracle、MySQL(innodb)。
 
-通常MVCC的是实现方式，大概有两种，关键就在于将旧数据放在什么地方；
+在标准SQL中，隔离级别有四种：RU，RC，RR，Serialize。PostgreSQL是基于MVCC实现的事务隔离称之为**快照隔离SI**（Snapshot Isolation）。SI不允许出现在ANSI SQL-92标准中定义的三种异常，即*脏读，不可重复读和幻读*。但是，SI不能实现真正的**可串行化**，因为它允许**序列化异常**，比如 *Write Skew* 和 *Read-only Transaction Skew*。
 
-   	1. 将多版本的记录都存储在数据库中，垃圾收集器清理不需要的记录。比如：PostgreSQL/Firebird/Interbase ，而SQL Server将其存储在tempdb中。
-            	2. 将最新的记录放在数据库中，通过恢复undo日志，来重建旧版本的数据。比如Oracle、MySQL(innodb)。
+为了解决这个问题，从版本9.1开始添加了可序列化快照隔离（SSI）。 SSI可以检测序列化异常，并且可以解决由这种异常引起的冲突。因此，PostgreSQL 9.1及更高版本提供了真正的SERIALIZABLE隔离级别。
 
-SI不允许出现在ANSI SQL-92标准中定义的三种异常，即*脏读，不可重复读和幻读*。但是，SI不能实现真正的**可串行化**，因为它允许**序列化异常**，比如 *Write Skew* 和 *Read-only Transaction Skew*。
+> 据我目前所知，SQL Server也使用SSI，Oracle仍然只使用SI。
 
-为了解决这个问题，从版本9.1开始添加了可序列化快照隔离（SSI）。 SSI可以检测序列化异常，并且可以解决由这种异常引起的冲突。因此，PostgreSQL 9.1及更高版本提供了真正的SERIALIZABLE隔离级别（另外，SQL Server也使用SSI，Oracle仍然只使用SI）。
+# MVCC in PostgreSQL
 
-# PostgreSQL的MVCC
-
-在基于MVCC的DML操作中，当一个行被更新，创建一个新的tuple插入到表中。老tuple保留一个指向新tuple的指针。老tuple 标记为`expired`，但是仍然保留在数据库中，直到被作为垃圾清理了。
+在基于MVCC的DML操作中，当一个行被更新，创建一个新的tuple插入到表中。老tuple保留一个指向新tuple的指针。老tuple 标记为`expired`，但是仍然保留在数据库中，直到被作为**垃圾清理了(vacuum)**。
 
 ## 版本号——txid
 
-区别新老版本的依据是事务ID，为了支持多版本，每个tuple有额外的xid列，如下：
+区别新老版本的依据是事务ID（xid），xid从3开始增长，0，1，2已作为特殊用途：
+
++ InvalidTransactionId = 0：表示是无效的事务ID
+
++ BootstrapTransactionId = 1：表示系统表初使化时的事务ID，比任务普通的事务ID都旧。
+
++ FrozenTransactionId = 2：冻结的事务ID，比任务普通的事务ID都旧。
+
+txid是一个uint32类型的整数，由于32位整数可以达到理论上限（40亿容量，PostgreSQL未来可能会改成64位，可认为无限大，已经有商业版是64位的）；如果数据库长时间运行，那么可能txid不够，回卷（**wraparound**）到3，这会有问题，因此PostgreSQL会**定期回收xid（vacuum）**。
+
+那么，tuple就和xid进行绑定，每个tuple有两个额外的xid列，用来标记该tuple的生命周期，如下：
 
 - `xmin`：创建该tuple的事务id；
 - `xmax`：删除该tuple的事务id或者对该元组加锁的事务ID，初始为null（0）；
 
-```c
-typedef struct HeapTupleFields
-{
-	TransactionId t_xmin;		/* inserting xact ID */
-	TransactionId t_xmax;		/* deleting or locking xact ID */
-
-	union
-	{
-		CommandId	t_cid;		/* inserting or deleting command ID, or both */
-		TransactionId t_xvac;	/* old-style VACUUM FULL xact ID */
-	}			t_field3;
-} HeapTupleFields;
-struct HeapTupleHeaderData
-{
-	union
-	{
-		HeapTupleFields t_heap;
-		DatumTupleFields t_datum;
-	}			t_choice;
-
-	ItemPointerData t_ctid;		/* current TID of this or newer tuple (or a
-								 * speculative insertion token) */
-
-	/* Fields below here must match MinimalTupleData! */
-
-	uint16		t_infomask2;	/* number of attributes + various flags */
-
-	uint16		t_infomask;		/* various flag bits, see below */
-
-	uint8		t_hoff;			/* sizeof header incl. bitmap, padding */
-
-	/* ^ - 23 bytes - ^ */
-
-	bits8		t_bits[FLEXIBLE_ARRAY_MEMBER];	/* bitmap of NULLs */
-
-	/* MORE DATA FOLLOWS AT END OF STRUCT */
-};
-```
-
-txid是一个uint32类型的整数，由于32位整数可以达到理论有限（PostgreSQL未来可能会改成64位，已经有商业版是64位的）；如果数据库长时间运行，那么可能txid不够，回卷到3（0，1，2已作为特殊用途）；那么，就出现异常情况：原来是过去的元组会成为未来的事务。
-
-> 在PostgreSQL中的三个特殊事务ID:
->
-> 1. InvalidTransactionId = 0：表示是无效的事务ID
-> 2. BootstrapTransactionId = 1：表示系统表初使化时的事务ID，比任务普通的事务ID都旧。
-> 3. FrozenTransactionId = 2：冻结的事务ID，比任务普通的事务ID都旧。
+根据tuple绑定的xid和当前事务进行比较，就可以判断tuple的可见性。
 
 ### txid比较
 
-基于每个tuple上的txid，当txid没有发生回卷操作的时候，按照如下函数比较事务的新旧。
+当然比较的前提是数据库没有发生**txid wraparound**，基于每个tuple上的txid，按照如下函数比较事务的新旧。
 
 ```c
 // src/backend/access/transam/transam.c
@@ -111,21 +73,37 @@ TransactionIdPrecedesOrEquals(TransactionId id1, TransactionId id2)
 }
 ```
 
-+ 第一个判断条件`(!TransactionIdIsNormal(id1) || !TransactionIdIsNormal(id2))`：
++ 第一个判断条件`(!TransactionIdIsNormal(id1) || !TransactionIdIsNormal(id2))`：如果有一个事务是特殊事务，那么特殊事务一定比普通事务旧（等价于无符号的比较）；
 
-​	如果有一个事务是特殊事务，那么特殊事务一定比普通事务旧（等价于无符号的比较）；
++ 对于普通事务，在PostgreSQL中，认为同一个数据库中，有效的最旧和最新两个事务之间的年龄是最多是$2^{31}$，而不是无符号整数的最大范围$2^{32}$。那么有：
 
-+ 对于普通事务，PostgreSQL中是使用2^31取模的方法来比较事务的新旧的。也就是在PostgreSQL中，认为同一个数据库中，存在的最旧和最新两个事务之间的年龄是最多是2^31（以current_xid为中点，向前向后延伸2^31个版本），而不是无符号整数的最大范围2^32，只有2^32的一半。
+  $$id_1 < id_2$$
 
-> 小技巧：当id2比id1新时，意味着`0<id2-id1<2^31 <=> -2^31<id1-id2<0`，转成有符号数就是负数
+  $$\Leftrightarrow 0<id_2 - id_1<2^{31}$$
 
-所以，当数据库中的**表的年龄差将要超过**2^31次方时（即，`pg_class.relfrozenxid = vacuum freeze的上限`；这个上限根据配置决定）；就需要把旧的事务换成一个**事务ID为2的特殊事务**，这就是frozen操作。
+  $$\Leftrightarrow -2^{31}<id_1 - id_2<0$$
+
+  因此，可直接判断$id_1-id_2$转成有符号数是否为负数，可得到两个事务号的先后顺序。
+
+所以，当数据库中的**表的年龄差将要超过**2^31次方时（即，`pg_class.relfrozenxid = vacuum freeze的上限`；这个上限根据配置决定）；就需要回收旧的事务号，即，把旧的事务换成一个**事务ID为2的特殊事务**，这就是`vacuum freeze操作。
 
 在VACUUM FREEZE中，会将行FROZEN；被FROZEN的行根据第一个判断条件比所有事务都旧，即所有事务都可见。
 
 ## SnapShot
 
-PostgreSQL中的快照记录了当时事务的状态，由三元组表示：`xmin:xmax:xip_list`：
+```c
+typedef struct SnapshotData
+{
+    TransactionId xmin;            /* all XID < xmin are visible to me */
+    TransactionId xmax;            /* all XID >= xmax are invisible to me */
+
+    TransactionId *xip;
+    uint32        xcnt; /* # of xact ids in xip[] */
+    ...
+}
+```
+
+PostgreSQL中的快照记录了当时事务的状态，由三元组表示：
 
 + 该快照获取时的最老的事务xmin；
 + 该快照获取时的最新的事务xmax；
@@ -139,45 +117,45 @@ PostgreSQL中的快照记录了当时事务的状态，由三元组表示：`xmi
 (1 row)
 ```
 
-如上意味着，当前快照时：最小的`txid=38680822006`，最大的`txid=38681134130`；这之间还有这些`38680822006,38681033875,38681134028,38681134029,38681134060,38681134061,38681134062,38681134063,38681134064`事务还没结束。
+如上例意味着，获取当前快照时：最小的`txid=38680822006`，最大的`txid=38681134130`；这之间还有这些`38680822006,38681033875,38681134028,38681134029,38681134060,38681134061,38681134062,38681134063,38681134064`事务还没结束。
 
 ### 隔离性
 
-在RC级别，事务中的每个语句执行的时候，获取一个`txid_current_snapshot`；其他级别在事务一开始的时候获取`txid_current_snapshot`。基于当前快照和`pg_clog`的提交记录，与元组的`t_xmin/t_xmax`来综合判断可见性（另外为了提高速度，pg_clog有缓存，并且每个PostgreSQL Table有一个visibility map）。
+在RC级别，事务中的每个语句执行的时候，获取一个`txid_current_snapshot`；其他级别在事务一开始的时候获取`txid_current_snapshot`。基于当前快照和`pg_clog`的提交记录，与元组的`t_xmin/t_xmax`来综合判断可见性。
 
-> | 隔离级别        | 脏读 | 不可重复读 | 幻读                       | 序列化异常 |
-> | --------------- | ---- | ---------- | -------------------------- | ---------- |
-> | READ COMMITTED  | N    | P          | P                          | P          |
-> | REPEATABLE READ | N    | N          | N in PG; but P in ANSI SQL | P          |
-> | SERIALIZABLE    | N    | N          | N                          | N          |
->
-> 在PostgreSQL的RR级别中，当事务开始后，任何操作就是基于最开始的快照；因此，幻读也不会发生（幻读的发生也是当前事务能够感知到别的事务在其开始之后的更改）
+>另外为了提高速度，pg_clog有缓存，并且每个PostgreSQL Table有一个可见性映射表（visibility map。
 
-# PostgreSQL的VACUUM
+| 隔离级别        | 脏读 | 不可重复读 | 幻读                       | 序列化异常 |
+| --------------- | ---- | ---------- | -------------------------- | ---------- |
+| READ COMMITTED  | N    | P          | P                          | P          |
+| REPEATABLE READ | N    | N          | N in PG; but P in ANSI SQL | P          |
+| SERIALIZABLE    | N    | N          | N                          | N          |
+
+ 在PostgreSQL的RR级别中，当事务开始后，任何操作就是基于最开始的快照；因此，幻读也不会发生（幻读的发生也是当前事务能够感知到别的事务在其开始之后的更改）。
+
+# VACUUM for PostgreSQL MVCC
 
 说起PostgreSQL的MVCC，由于PostgreSQL的实现机制，不得不提**VACUUM**。
 
 事务的状态保存在clog中，表中包含两个bit的status信息（`in-progress/committed/aborted`）。当事务中止，PostgreSQL不做undo操作，只是简单的在clog/xact中将事务标记为aborted。因此PostgreSQL的表可能会包含aborted的事务的数据（为了避免总是查询CLOG，PostgreSQL在tuple中保存了status标记`known commited/known aborted`）。
 
-## VACUUM简述
+## 简述
 
 对于MVCC产出的脏数据以及XID回卷的问题，**VACUUM**进程作为数据库的维护进程，有两个主要任务：
 
 1. 清理dead tuple ：expired和aborted的行以及这些行相关的索引。
-2. 冻结旧事务id，更新相关系统表，**移除不需要的clog/xact**
+2. 冻结旧事务id，更新相关系统表，**移除不需要的clog/xact**。
 
-> vacuum和analyze是两个操作，但是vacuum命令可以加一个可选参数analyze，表示执行vacuum的时候收集一下统计信息；但是freeze不是一个单独的命令，执行vacuum不加freeze的时候，根据数据库的年龄以及配置参数也可能会执行一些冻结操作。
+> `vacuum`和`analyze`是两个操作，但是`vacuum`命令可以加一个可选参数`analyze`，表示执行`vacuum`的时候收集一下统计信息；但是`freeze`不是一个单独的命令，执行`vacuum`不加`freeze`的时候，会根据数据库的年龄以及配置参数也可能会执行一些冻结操作。
 
-我们可以手动或者自动的进行VACUUM操作，VACUUM 操作会重新回收dead tuple的磁盘空间，但是不会交给OS，而是为新tuple留着。
+我们可以手动或者自动的进行VACUUM操作，VACUUM 操作会重新回收dead tuple的磁盘空间，但是不会交给OS，而是留待重用。
 
-> VACUUM FULL 会把空间返回给OS，但是会有一些弊端；
+> `VACUUM FULL` 会把空间返回给OS，但是会有一些弊端；
 >
-> 1. 排他的锁表，block all ops
-> 2. 会创建一个表的副本，所以会将使用的磁盘空间加倍，如果磁盘空间不足，不要执行
+> 1. 排他的锁表，阻塞该表上的所有操作。
+> 2. 会创建一个表的副本，所以会将使用的磁盘空间加倍，如果磁盘空间不足，不要执行。
 
-虽然可以利用定时任务周期执行VACUUM，但是周期的大小不确定，而且有可能这个周期内并没有dead tuple产生，这样就徒增CPU和IO的负载；
-
-因此，有了`autovacuum`。其是按需执行的；autovacuum间隔`autovacuum_naptime`执行一次`vacuum`和`analyze`命令；但是，为了避免autovacuum对系统的影响，如果autovacuum的代价超过了`autovacuum_vacuum_cost_limit`，那么就等`autovacuum_vacuum_cost_delay`这些时间；
+虽然可以利用定时任务周期执行VACUUM，但是周期的大小不确定，而且有可能这个周期内并没有dead tuple产生，这样就徒增CPU和IO的负载；因此，有了autovacuum，这是按需执行的；autovacuum间隔`autovacuum_naptime`执行一次`vacuum`和`analyze`命令；但是，为了避免autovacuum对系统的影响，如果autovacuum的代价超过了`autovacuum_vacuum_cost_limit`，那么就等`autovacuum_vacuum_cost_delay`这些时间；
 
 >  *autoanalyze*
 >
@@ -185,9 +163,9 @@ PostgreSQL中的快照记录了当时事务的状态，由三元组表示：`xmi
 
 ## 两种模式
 
-+ **lazy vacuum**：执行的时候，会通过visible map，判断page中是否有垃圾需要清理；所以在lazy mode的时候，可能不会完全冻结表中的元组。
++ **lazy vacuum**：执行的时候，会通过可见性映射表(vm)，判断page中是否有垃圾需要清理；所以在lazy mode的时候，可能不会完全冻结表中的元组。
 
-+ **anti-wraparound vacuum**：会扫描所有的page，由于没有相应VM机制，执行比较慢；在pg9.6中，visible map加了一个bit位：all-frozen，提高anti-wraparound vacuum的性能。
++ **anti-wraparound vacuum**：会扫描所有的page，执行比较慢；在9.6中，visible map加了一个bit位：all-frozen，提高anti-wraparound vacuum的性能。
 
 每个表都有一个`pg_class.relfrozenxid`值（整个数据库有一个`pg_database.datfrozenxid`，是`pg_class.relfrozenxid`中最小的）。通过比较三个信息：**当前xid**（当前所有的运行事务的xid最老的，如果只有VACUUM那么就是是vacuum事务的xid）、**relfrozenxid**、**PostgreSQL配置的两个参数**，决定VACUUM是在那种模式下工作。
 
@@ -196,7 +174,7 @@ PostgreSQL中的快照记录了当时事务的状态，由三元组表示：`xmi
 
 当进行VACUUM时，如果表中的元组的版本号超过 `vacuum_freeze_min_age`时，VACUUM会将其替换为*FrozenTransactionId*(2)。
 
-![anti](/image/anti-wa.jpeg)
+![image-20200116181553704](/image/anti-wa.png)
 
 | 阶段                                                         | 操作                                          |
 | ------------------------------------------------------------ | --------------------------------------------- |
@@ -215,11 +193,9 @@ PostgreSQL中的快照记录了当时事务的状态，由三元组表示：`xmi
 1. 动态分配空间的free space map，这样当fsm空间不够，PG不会丢失对这些的记录；
 2. 添加一个visibility map，维护了堆表中哪些page只包含所有事务都可见的tuple，VACUUM可以通过判断该map，跳过部分没有脏row的page。
 
-### VACUUM问题的不断优化
-
 PostgreSQL中的锁，除了用户可见的表锁，行锁之外，还有内部的页锁。VACUUM被卡主这个问题主要是因为autovacuum等待的页锁，很长时间没有释放，这样就会导致膨胀问题。
 
-#### 针对VACUUM阻塞问题的优化
+**针对VACUUM阻塞问题的优化**：
 
 在9.1中，autovacuum可以跳过当前获得不到表锁的表。
 
@@ -227,7 +203,7 @@ PostgreSQL中的锁，除了用户可见的表锁，行锁之外，还有内部�
 
 在9.5中，减少了b-index保留最近访问的index page的情形，这样减少了VACUUM因为等待index scan而被卡主的case。
 
-#### 针对减少page访问次数的优化
+**针对减少page访问次数的优化**：
 
 在9.3之前，在上一次VACUUM中，某个page如果没有更改，那么这次的vacuum就将其中的tuple标记为all-visible，这样，除非xid溢出，之后的VACUUM就会跳过这一个page。
 
@@ -256,7 +232,7 @@ VACUUM发展了这么久，小型系统可以应付，大系统依然需要良�
 
 清理dead tuple时，不浪费磁盘空间、**预防索引膨胀**、保证查询响应速度；最小化清理的影响；不要清理的太频繁，这样**浪费CPU/IO资源影响性能**（实际案例中，由于执行autovacuum，影响系统的pagecache，进而影响内存利用率，从而影响性能）。
 
-#### 表的参数
+**1. 表的参数**
 
 控制autovacuum触发的时间；
 
@@ -270,7 +246,7 @@ ALTER TABLE t SET (autovacuum_vacuum_scale_factor = 0.1);
 ALTER TABLE t SET (autovacuum_vacuum_threshold = 10000);
 ```
 
-#### 系统代价参数
+**2. 系统代价参数**
 
 为了不影响用户使用，不过多的占用cpu io；
 
@@ -299,7 +275,7 @@ vacuum_cost_page_dirty = 20
 
 基于当前的硬件，这些参数都太小了，cost_limit可以设置成1000+
 
-#### 工作进程数
+**3. 工作进程数**
 
 PostgreSQL可以启动`autovacuum_max_workers`个的进程来清理不同的数据库/表；大表小表的代价不同，这样不会因为大表的工作，阻塞了小表；**但是上面的cost_limit是被所有的worker共享的**，所以开多个worker也不一定快。
 
