@@ -1,16 +1,13 @@
 ---
 layout: post
-title: 协程与goroutine
+title: IO in Network
 date: 2017-08-10 18:03
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
-    - Go
+categories: 
+    - Linux
 ---
 
-https://www.ibm.com/developerworks/cn/java/j-lo-iocp/index.html
-https://my.oschina.net/u/202946/blog/803088
-https://www.quora.com/Why-doesnt-Linux-have-a-system-like-IOCP-or-Rio-does
+
 
 # 多线程，基于回掉的异步IO，协程
 
