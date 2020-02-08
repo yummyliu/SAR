@@ -1,6 +1,6 @@
 ---
 layout: post
-title: /proc/pid里的东西
+title: Linux AIO
 date: 2018-05-30 11:31
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -10,59 +10,6 @@ tags:
 
 * TOC
 {:toc}
-在Linux
-
-```bash
-[postgres@ymtest 94103]$ ps aux  |grep 94103 | grep -v grep
-postgres  94103  0.0  0.0 38795672 2500 ?       Ss   Jan18   0:22 postgres: autovacuum launcher process
-[postgres@ymtest 94103]$ ll
-total 0
-dr-xr-xr-x 2 postgres postgres 0 Jan 29 10:59 attr
--rw-r--r-- 1 postgres postgres 0 Jan 29 10:59 autogroup
--r-------- 1 postgres postgres 0 Jan 29 10:59 auxv
--r--r--r-- 1 postgres postgres 0 Jan 29 10:59 cgroup
---w------- 1 postgres postgres 0 Jan 29 10:59 clear_refs
--r--r--r-- 1 postgres postgres 0 Jan 18 16:25 cmdline
--rw-r--r-- 1 postgres postgres 0 Jan 29 10:59 comm
--rw-r--r-- 1 postgres postgres 0 Jan 29 10:59 coredump_filter
--r--r--r-- 1 postgres postgres 0 Jan 29 10:59 cpuset
-lrwxrwxrwx 1 postgres postgres 0 Jan 29 10:59 cwd -> /export/postgresql/affdata/affdata
--r-------- 1 postgres postgres 0 Jan 29 10:59 environ
-lrwxrwxrwx 1 postgres postgres 0 Jan 29 10:59 exe -> /usr/local/pgsql/bin/postgres
-dr-x------ 2 postgres postgres 0 Jan 29 10:59 fd
-dr-x------ 2 postgres postgres 0 Jan 29 10:59 fdinfo
--r-------- 1 postgres postgres 0 Jan 29 10:59 io
--rw------- 1 postgres postgres 0 Jan 29 10:59 limits
--rw-r--r-- 1 postgres postgres 0 Jan 29 10:59 loginuid
--r--r--r-- 1 postgres postgres 0 Jan 29 10:59 maps
--rw------- 1 postgres postgres 0 Jan 29 10:59 mem
--r--r--r-- 1 postgres postgres 0 Jan 29 10:59 mountinfo
--r--r--r-- 1 postgres postgres 0 Jan 29 10:59 mounts
--r-------- 1 postgres postgres 0 Jan 29 10:59 mountstats
-dr-xr-xr-x 5 postgres postgres 0 Jan 29 10:59 net
-dr-x--x--x 2 postgres postgres 0 Jan 29 10:59 ns
--r--r--r-- 1 postgres postgres 0 Jan 29 10:59 numa_maps
--rw-r--r-- 1 postgres postgres 0 Jan 29 10:59 oom_adj
--r--r--r-- 1 postgres postgres 0 Jan 29 10:59 oom_score
--rw-r--r-- 1 postgres postgres 0 Jan 29 10:59 oom_score_adj
--r--r--r-- 1 postgres postgres 0 Jan 29 10:59 pagemap
--r--r--r-- 1 postgres postgres 0 Jan 29 10:59 personality
-lrwxrwxrwx 1 postgres postgres 0 Jan 29 10:59 root -> /
--rw-r--r-- 1 postgres postgres 0 Jan 29 10:59 sched
--r--r--r-- 1 postgres postgres 0 Jan 29 10:59 schedstat
--r--r--r-- 1 postgres postgres 0 Jan 29 10:59 sessionid
--r--r--r-- 1 postgres postgres 0 Jan 29 10:59 smaps
--r--r--r-- 1 postgres postgres 0 Jan 29 10:59 stack
--r--r--r-- 1 postgres postgres 0 Jan 18 16:25 stat
--r--r--r-- 1 postgres postgres 0 Jan 18 16:25 statm
--r--r--r-- 1 postgres postgres 0 Jan 21 14:11 status
--r--r--r-- 1 postgres postgres 0 Jan 29 10:59 syscall
-dr-xr-xr-x 3 postgres postgres 0 Jan 29 10:59 task
--r--r--r-- 1 postgres postgres 0 Jan 29 10:59 wchan
-```
-
-
-
 特点：
 
 1. 简洁：只有几百个系统调用；
@@ -120,8 +67,8 @@ Linux的基础是内核，C库，工具集，系统的基本工具；
 
 该结构体代表了活动的以片段链表形式组织的块IO操作。这样不需要单个缓冲区一定连续。所以通过片段来面熟缓冲区即使缓冲区分散在内存的多个位置上，内核还是可以进行块IO；这样的Vector IO被称为scatter-gatter IO；
 
-* TOC
-{:toc}
+
+
 
 
 考虑到文件系统如果支持sparsefile，那么文件的物理大小和逻辑大小是不同的。ll 显示的是逻辑大小，du显示的是按block（默认是1024byte）为单位的物理大小。因此有如下情况，du显示是4（就是4*1024，4k），ll显示的是1025（就是逻辑上的大小）
