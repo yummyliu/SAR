@@ -7,11 +7,55 @@ categories:
 typora-root-url: ../../yummyliu.github.io
 ---
 
-在关于[PgSQL和MySQL的bufferpool探讨](http://liuyangming.tech/10-2019/INNODB-vs-PgSQL-buffer.html)中，我们知道在数据库对于内存和外存之间的读写速度差异，通过bufferpool的方式进行调和。bufferpool的实现相对复杂，那么在实现bufferpool不合算，但是又希望减小内外读写差异对性能的影响，可以通过mmap/msync**将文件的page cache直接映射到进程的地址空间，通过写内存的方式修改文件**，借用操作系统对内存的管理来获得一个bufferpool。而除了bufferpool这个思路，还可以通过异步（Async）的思想减少block的时间。
+我们知道在数据库对于内存和外存之间的读写速度差异，通过bufferpool的方式进行调和。bufferpool的实现相对复杂，那么在实现bufferpool不合算，但是又希望减小内外读写差异对性能的影响，可以通过mmap/msync**将文件的page cache直接映射到进程的地址空间，通过写内存的方式修改文件**，这其实是借用操作系统对内存的管理来获得一个bufferpool。而除了bufferpool这个思路，还可以通过异步（Async）的思想减少block的时间。
 
 ![image-20200207145938692](/image/20200207-linuxIO.png)
 
-在Linux中，目前所知有三种异步的思路：signal，MSG_ERRQUEUE和io_getevents。io_getevents就是Linux的异步IO（**A**sync **IO**）。
+在Linux中，目前所知有三种异步的思路：signal，MSG_ERRQUEUE和io_getevents。io_getevents就是Linux的异步IO（**A**sync **IO**），本文从blocking概念开始说起，希望读到这篇文章的同学能对Linux的IO有个大致的了解。
+
+# blocking vs non-blocking
+
+在Linux中，一切皆文件。数据都是通过fd标识进行交互；默认情况下，fd读取时如果没有数据，那么需要等待有数据了，**此时当前进程状态变为sleep**，那么称这个fd为blocking file descripter。这对于需要高吞吐的的应用是不适用的；为解决这个问题，我们可以将该fd变为非阻塞的：
+
+```c
+/* set O_NONBLOCK on fd */
+int flags = fcntl(fd, F_GETFL, 0);
+fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+```
+
+这时对于这个fd，读取立即返回（如果没有读取到数据，则返回一个错误信息），这就是non-blocking file descripter；进程不会sleep，但是我们需要不断检查是否准备好。
+
+在实际情况中，通常我们需要管理多个fd（比如C/S架构中，server与client就有多个socket fd）。如果fd是blocking，那么需要多个线程（进程太重，在这里不太适用）分别管理每个blocking fd，这就是**阻塞性同步IO**，存在线程间信息同步的代价。
+
+而将各个fd设置为non-blocking的，那么可以通过一个线程对各个non-blocking fd进行轮询，这就是**非阻塞同步IO**，但是这样浪费了CPU资源。
+
+这时通常可结合IO multiplexing接口——select/poll/epoll，来对多个fd进行管理，当然这些fd中可以有阻塞，也可以有非阻塞的，只是实际应用中更多结合non-blocking fd使用。
+
+> epoll与select/poll的区别：
+>
+> 后者是各维护一个列表，采用轮询的方式进行事件触发管理，对系统内任何类型操作符都有效。
+>
+> epoll是通过中断信号触发的方式管理，但是epoll只对流设备有效。
+>
+> ```c
+> struct epoll_event {
+> __uint32_t events;  /* Epoll events */
+> epoll_data_t data;  /* User data variable */
+> };
+> #include <sys/epoll.h>
+> int epoll_create(int size);
+> int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event);
+> int epoll_wait(int epfd, struct epoll_event * events, int maxevents, int timeout);
+> ```
+
+epoll对文件描述符的操作有两种模式：LT（level trigger）和ET（edge trigger）。LT模式是默认模式，LT模式与ET模式的区别如下：
+LT模式：当epoll_wait检测到描述符事件发生并将此事件通知应用程序，应用程序可以不立即处理该事件。下次调用epoll_wait时，会再次响应应用程序并通知此事件。
+ET模式：当epoll_wait检测到描述符事件发生并将此事件通知应用程序，应用程序必须立即处理该事件。如果不处理，下次调用epoll_wait时，不会再次响应应用程序并通知此事件。
+ET模式在很大程度上减少了epoll事件被重复触发的次数，因此效率要比LT模式高。epoll工作在ET模式的时候，必须使用非阻塞套接口，以避免由于一个文件句柄的阻塞读/阻塞写操作把处理多个文件描述符的任务饿死。
+
+注意通过多路复用的方式进行IO同样是**同步IO**，因为epoll只是监听了数据是否准备好，具体的处理程序还是需要将数据从系统空间拷贝到用户空间，这里需要同步等待。而异步IO是进程告知操作系统我需要哪些数据，操作系统在将数据直接拷贝到用户空间后才通知用户，这是根本区别。
+
+有些操作系统并没有真正在内核层面支持异步IO，只是对该逻辑在系统库中进行了封装；在Linux中内核层面支持了，见下节。
 
 # Linux AIO介绍
 
@@ -70,58 +114,16 @@ Linux在2.6版的内核中支持了AIO特性，启用AIO特性需要以下前提
 > static inline void io_set_eventfd(struct iocb *iocb, int eventfd);
 > ```
 
+# 小结
 
-
-# Linux AIO与epoll的区别
-
-epoll通常称为IO多路复用，Linux AIO是相对应同步IO而言的异步IO模式。两者是解决的不同的问题，可以结合使用如上节。
-
-在Linux中，一切皆文件。数据都是通过fd标识进行交互；那么，对于某个fd有的是读取立即返回，没有读取到数据，则返回一个错误信息，这是非阻塞文件句柄（non-blocking file descripter）；然而，有些fd读取时如果没有数据，那么需要等待有数据了，**此时当前thread状态为blocked**，这就是（blocking file descripter）。
-
-当我们需要管理多个fd（比如C/S架构中，server与client就有多个socket fd）时，如果fd是阻塞的，那么需要多个线程（进程太重，在这里不太适用）分别管理每个blocking fd，这就是**阻塞性同步IO**，存在线程间信息同步的代价。
-
-而将各个fd设置成非阻塞的，那么可以通过一个线程对各个non-blocking fd进行轮询，这就是**非阻塞同步IO**，但是这样浪费了CPU资源。
-
-```c
-/* set O_NONBLOCK on fd */
-int flags = fcntl(fd, F_GETFL, 0);
-fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-```
-
-基于以上两个模式的各自缺陷，在Linux中，通过`epoll`等IO多路复用的系统调用，来管理多个fd的情景，当然这些fd中可以有阻塞，也可以有非阻塞的。
-
-> epoll对文件描述符的操作有两种模式：LT（level trigger）和ET（edge trigger）。LT模式是默认模式，LT模式与ET模式的区别如下：
-> LT模式：当epoll_wait检测到描述符事件发生并将此事件通知应用程序，应用程序可以不立即处理该事件。下次调用epoll_wait时，会再次响应应用程序并通知此事件。
-> ET模式：当epoll_wait检测到描述符事件发生并将此事件通知应用程序，应用程序必须立即处理该事件。如果不处理，下次调用epoll_wait时，不会再次响应应用程序并通知此事件。
-> ET模式在很大程度上减少了epoll事件被重复触发的次数，因此效率要比LT模式高。epoll工作在ET模式的时候，必须使用非阻塞套接口，以避免由于一个文件句柄的阻塞读/阻塞写操作把处理多个文件描述符的任务饿死。
-
-注意通过多路复用的方式进行IO同样是**同步IO**，因为epoll只是监听了数据是否准备好，具体的处理程序还是需要将数据从系统空间拷贝到用户空间，其在`recvfrom`调用中阻塞。而异步IO是进程告知操作系统我需要哪些数据，操作系统在将数据已经拷贝到用户空间后才通知用户，这是根本区别。有些操作系统并没有真正在内核层面支持异步IO，只是对该逻辑在系统库中进行了封装；在Linux中内核层面支持了。
-
-> epoll与select/poll的区别：
->
-> 后者是各维护一个列表，采用轮询的方式进行事件触发管理，对系统内任何类型操作符都有效。
->
-> epoll是通过中断信号触发的方式管理，但是epoll只对流设备有效。
->
-> ```c
-> struct epoll_event {
->   __uint32_t events;  /* Epoll events */
->   epoll_data_t data;  /* User data variable */
-> };
-> #include <sys/epoll.h>
-> int epoll_create(int size);
-> int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event);
-> int epoll_wait(int epfd, struct epoll_event * events, int maxevents, int timeout);
-> ```
-
-在日常工作中，涉及的IO一般就包括两种：磁盘的读写、网络的读写。对于磁盘文件的读写通常采用的有以下几个方案：
+在日常工作中，涉及的IO一般就包括两种：磁盘的读写、网络的读写。对于磁盘文件的读写通常，目前想到的有以下几个方案：
 
 1. 通过专门的IO工作线程池来做这个工作，可以调用*glibc POSIX AIO*接口，其就是对这个逻辑的封装。
 2. 通过`posix_fadvise`对一段磁盘文件进行预热。
 3. 使用mmap将磁盘文件映射进内存
 4. 使用Linux AIO，文件需要以`O_DIRECT`的方式打开。
 
-这些方法都不是完美的，即使是Linux AIO，如果使用不恰当，也会阻塞在`io_submit`中。那么具体使用什么方案，可以具体情况进行分析。
+这些方法都不是完美的，即使是Linux AIO，如果使用不恰当，也会阻塞在`io_submit`中。那么具体使用什么方案，可以具体情况进行分析。而对于网络IO通常是epoll监听非阻塞socket fd，转给线程池进行处理的方式。
 
 ###### 参考
 
