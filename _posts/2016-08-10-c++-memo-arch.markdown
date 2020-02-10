@@ -5,6 +5,7 @@ date: 2016-08-10 15:58
 header-img: "img/head.jpg"
 categories: 
     - C++
+typora-root-url: ../../yummyliu.github.io
 ---
 
 * TOC
@@ -25,7 +26,7 @@ int main(void)
 
 通过`size`命令，我们知道文件的布局如下所示，分为三部分：text/data/bss。而当代码运行起来，这三部分就是进程所占地址空间的全局区域，另外加上栈和堆就是一个应用进程的整体布局。下面就分别从这几部分进行梳理。
 
-![image-20200210155950568](/Users/liuyangming/yummyliu.github.io/image/20200210-proglayout.png)
+![image-20200210155950568](/image/20200210-proglayout.png)
 
 **1. data**
 
