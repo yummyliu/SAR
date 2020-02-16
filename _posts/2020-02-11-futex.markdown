@@ -1,0 +1,242 @@
+---
+layout: post
+title: C++11并行编程模型简介
+date: 2020-02-11 16:50
+categories:
+  - Linux
+typora-root-url: ../../yummyliu.github.io
+---
+* TOC
+{:toc}
+# 基础设施
+
+关于多线程并行编程，除了系统得支持线程外，线程之间的同步是最重要的话题，那么线程的同步通常就是基于锁来实现的。这可看做是多线程编程的一个基础设施，那么就从这开始了解。
+
+## 自旋锁
+
+自旋锁的概念是在PostgreSQL中了解到的，自旋锁（SpinLock）作为PostgreSQL最底层的锁（关于PostgreSQL的锁，可见另一篇——[Lock in PG](http://liuyangming.tech/05-2018/lock-PostgreSQL.html)），它的实现是和操作系统和硬件环境相关的。在PostgreSQL中，实现了两种SpinLock：
+
+- Hardware-dependent，利用TAS指令集实现(s_lock);
+
+  ```c
+  static __inline__ int
+  tas(volatile slock_t *lock)
+  {
+  	register slock_t _res = 1;
+  
+  	__asm__ __volatile__(
+  		"	lock			\n"
+  		"	xchgb	%0,%1	\n"
+  :		"+q"(_res), "+m"(*lock)
+  :		/* no inputs */
+  :		"memory", "cc");
+  	return (int) _res;
+  }
+  ```
+
+  在编程语言中，CPU有时不会从内存读取，会直接从寄存器中读取变量值；那么，定义变量为volatile，表示这个变量是易失的，所以会编译器会强制每次都去内存中取原始值，而不是直接拿寄存器中的值，常用在锁变量等对象上。
+
+- Hardware-independent，利用PostgreSQL定义的信号量PGSemaphore实现(spin)。
+
+  ```c
+  int
+  tas_sema(volatile slock_t *lock)
+  {
+  	int			lockndx = *lock;
+  
+  	if (lockndx <= 0 || lockndx > NUM_SPINLOCK_SEMAPHORES)
+  		elog(ERROR, "invalid spinlock number: %d", lockndx);
+  	/* Note that TAS macros return 0 if *success* */
+  	return !PGSemaphoreTryLock(SpinlockSemaArray[lockndx - 1]);
+  }
+  /*
+   * PGSemaphoreTryLock
+   *
+   * Lock a semaphore only if able to do so without blocking
+   */
+  bool
+  PGSemaphoreTryLock(PGSemaphore sema)
+  {
+  	int			errStatus;
+  
+  	/*
+  	 * Note: if errStatus is -1 and errno == EINTR then it means we returned
+  	 * from the operation prematurely because we were sent a signal.  So we
+  	 * try and lock the semaphore again.
+  	 */
+  	do
+  	{
+  		errStatus = sem_trywait(PG_SEM_REF(sema));
+  	} while (errStatus < 0 && errno == EINTR);
+  
+  	if (errStatus < 0)
+  	{
+  		if (errno == EAGAIN || errno == EDEADLK)
+  			return false;		/* failed to lock it */
+  		/* Otherwise we got trouble */
+  		elog(FATAL, "sem_trywait failed: %m");
+  	}
+  
+  	return true;
+  }
+  ```
+  
+
+自旋锁需要占用CPU资源进行不断的检查，对于比较耗时的操作，通常不建议使用，会浪费太多的CPU资源。
+
+## 原子操作
+
+PostgreSQL在9.6版本中，将bufferpool中的spinlock替换为atomic operations（[commitlog](https://commitfest.postgresql.org/9/408/#)），例如从commitlog中找到的下面的变更：
+
+```c
+-		LockBufHdr(buf);
+-		buf->refcount++;
++		pg_atomic_add_fetch_u32(&buf->refcount, 1);
++
+```
+
+其将`refcount`设计成一个原子变量，对其的操作可通过add_fetch原子操作进行，这样减少了自旋锁的代价，比如：
+
++ Test and set：`pg_atomic_test_set_flag_impl`;
++ Compare and exchange：`pg_atomic_compare_exchange_u32_impl`;
+
++ Fetch and add：`pg_atomic_fetch_add_u32_impl`。
+
+在gcc中，提供了类似的操作，比如`__sync_lock_test_and_set`。而在在C++11中有原子变量类型，提供了各种原子操作；原子操作是操作系统提供最小的且不可并行化的指令。
+
+## futex调用
+
+**futex**是**Fast Userspace muTEX**的简称。是在2003由IBM的工程师引入到Kernel中的，主要用于减小高并发下锁同步是system call的代价。
+
+由于在大部分情况下，锁上并没有竞争。应用可基于硬件提供的原子操作就可以进行锁资源的占用了。
+
+> Most modern processors have built-in atomic instructions implemented in HW. For example on Intel architectures `cmpxhg` is an instruction. While it's not as cheap as non-atomic instructions (especially in multi-core systems), it's significantly cheaper than system calls.
+
+对于少部分情况下，获取锁时确实存在竞争，此时通过原子操作获取锁可能会失败。如果锁获取失败，有两种处理方案：
+
++ 方案一是不断自旋检查锁资源是否可用，但是这样会浪费CPU资源；
++ 方案二就可用先将当前线程（进程）状态变为sleep，等到锁资源释放了，再唤醒处理，那么如何进行sleep/wakeup呢？这里就需要`futex`了。
+
+```c
+#include <linux/futex.h>
+#include <sys/time.h>
+
+int futex(int *uaddr, int futex_op, int val,
+          const struct timespec *timeout,   /* or: uint32_t val2 */
+          int *uaddr2, int val3);
+```
+
+futex调用接口如上，futex_op参数定义了多种不同的操作，比如`FUTEX_WAIT`和`FUTEX_WAKE`，一个是等待`uaddr`处的数据等于val，一个是唤醒等待的线程（进程）。
+
+![image-20200216101837409](/image/2020-0215-futex.png)
+
+这样实际上，内核帮用户态线程维护了一个锁队列，如上图，thread通过`FUTEX_WAIT`通知内核将自己挂起并排队，然后由另外一个进程通过`FUTEX_WAKE`释放该锁，并唤醒队列中的线程（唤醒时，可通过参数指定唤醒数量）；这就是上面所述的方案二的简单原理，避免了队列中每个线程都不断的检查原子变量，而消耗CPU资源；并且Futex大部分是在用户态完成的，减少了陷入内核态的代价。
+
+> 实际上Futex是通过一个hash table维护各个key，如下图，详细的实现逻辑，有兴趣可以继续了解：
+>
+> ![Futex implementation diagram from LWN](/image/2020-0215-futex-lwn-diagram.png)
+>
+> 而且futex可作用的共享资源不仅仅是多线程并行中的共享变量，还有多进程中的资源，比如mmap(2) 或 shmat(2)创建的共享内存，
+>
+
+futex一般用在低冲突的锁同步场景中。在实际代码中，我们经常会用到`mutex`进行线程互斥，mutex底层就是基于futex和atomics实现的，即，通过atomics存储锁字节，然后通过futex进行atomics的检测，[这里](https://github.com/eliben/code-for-blog/blob/master/2018/futex-basics/mutex-using-futex.cpp)有个简单实现样例。实际的例子，我们可以参见glibc中的`pthread_mutex_t`，翻看NPTL（Native_POSIX_Thread_Library）的代码可以从注释中了解一二（sysdeps/nptl/lowlevellock.h）：
+
+```c
+/* Low-level locks use a combination of atomic operations (to acquire and
+   release lock ownership) and futex operations (to block until the state
+   of a lock changes).  A lock can be in one of three states:
+   0:  not acquired,
+   1:  acquired with no waiters; no other threads are blocked or about to block
+       for changes to the lock state,
+   >1: acquired, possibly with waiters; there may be other threads blocked or
+       about to block for changes to the lock state.
+
+   We expect that the common case is an uncontended lock, so we just need
+   to transition the lock between states 0 and 1; releasing the lock does
+   not need to wake any other blocked threads.  If the lock is contended
+   and a thread decides to block using a futex operation, then this thread
+   needs to first change the state to >1; if this state is observed during
+   lock release, the releasing thread will wake one of the potentially
+   blocked threads.
+ ..
+ */
+```
+
+基于以上的了解，基本对多线程中的资源同步有了简单的了解，而在实际编程中，可能会涉及更多的问题；
+
+2000年以后，随着处理器架构的变化，很多编程语言都内建了并行编程的支持；而在C++中，一般还是通过pthread和OpenMP进行多线程编程；在C++11中，对并行编程模型进行了系统的封装，下面就了解一下C++11中的并行编程模型。
+
+# C++11并行编程模型
+
+## 原子类型
+
+之前对变量的互斥访问是通过lock/unlock构建一个临界区来互斥的，这样编程特别麻烦。在C++11中，在标准库内引入了多线程的支持，最重要的就是原子类型的引入。
+
++ atomic_*和`atomic<T>`
+
+> C11的新关键字_Atomic是同样的道理
+
+在c++11之前的原子类型是通过内联汇编代码实现。对于每种原子类型，都提供了基本的原子操作，比如`test_and_set`、`fetch_and_add`、`compare_and_exchange`等等。
+
+> 相比于其他原子类型，automic_flag的访问是lock-free的，其只支持两种原子操作：`test_and_set`和`clear`，一般基于atomic_flag实现一个spinlock。
+>
+> ```c++
+> std::atomic_flag lock = ATOMIC_FLAG_INIT;
+> void lock(int n) {
+>   	while(lock.test_and_set());
+>    }
+> void unlock(int n) {
+> 	lock.clear();
+>   }
+> ```
+
+## 内存顺序模型
+
+CPU在超标量流水线执行中，一个时钟周期会执行多条指令。对于一些硬件上没有相关性的指令，这会造成代码执行顺序与原来不一样；另外在代码编译中，编译器会执行重新排列指令，进行乱序执行的优化；这都会造成实际执行顺序与原来编写的顺序不一致的问题，如果我们要求某些语句的执行顺序需要和看到的一样，这就叫顺序一致的内存模型（Sequential consistent）。
+
+> 不同的处理器架构的内存模型不一样。如果指令严格按照顺序执行，这叫强顺序的架构（x86），否则叫弱顺序（PowerPC，ArmV7等）。那么对于弱顺序的机器，为了保障执行的顺序，在汇编指令中有内存栅栏(memory barrier）的指令，比如PowerPC的sync，在执行到内存栅栏时，会等待之前的指令都执行完成后再执行后面的指令。
+
+编译器的乱序执行的优化对于原子类型默认始终保持与原来一样，这可能会限制并发性能的提升。而如果我们可以对于某些场景并不需要原子类型保证顺序一致性，这该怎么做呢？
+
+在C++11中，通过memory_order来让程序员为原子操作指定内存顺序，有6种：
+
++ `memory_order_relaxed`：不对执行顺序做任何保证；
++ `memory_order_acquire`：本线程中，后续的读操作需要在当前指令结束后执行；
++ `memory_order_release`：本线程中，之前的写操作都完成后，才能执行当前指令；
++ `memory_order_acq_rel`：结合上两条；
++ `memory_order_consume`：本线程中，后续与本原子变量相关的操作，必须在本指令完成后执行；
++ `memory_order_seq_cst`：全部读写都按顺序执行，默认值；
+
+可以看出这里的顺序对应的操作都是原子类型的存取操作。`memory_order_acquire`和`memory_order_release`经常结合使用，这种内存顺序成为**release-acquire内存模型**。而`memory_order_consume`是`memory_order_acquire`的更加弱化版本，`memory_order_release`和`memory_order_consume`可以建立关于某原子变量的生产者-消费者顺序，这称为**release-consume内存模型**。加上`memory_order_relaxed`的**松散内存模型**和默认的**顺序一致型内存模型**，是c++11中典型的四种内存模型。
+
+另外，对于`memory_order_acq_rel`常用在实现CAS（compare and swap）同步原语，也称之为**acquire-release内存顺序模型**。
+
+在MySQL8中，对log模块进行了大量的重构，其中就包括异步无锁刷盘的逻辑，其中使用了大量的c++11的并行编程的特性，可作为学习C++11很好参考，比如这里就通过`memory_order_release`进行内存顺序的保证：
+
+```c++
+ using atomic_lsn_t = std::atomic<lsn_t>;
+...
+/* Do not reorder writes above, below this line. For x86 this
+ * protects only from unlikely compile-time reordering. */
+ std::atomic_thread_fence(std::memory_order_release);
+```
+
+## 线程本地存储
+
+对于栈内变量，肯定就是线程本地的；但是对于全局变量，一般就是全局共享的，而如果我们想将一些全局变量变成线程本地存储的，在一个编译器中可以加`__thread`前缀，而在c++11中，对其进行了统一，使用`thread_local`关键字：
+
+```c++
+int thread_local errCode;
+```
+
+thread_local的具体实现方式不同的编译器不一样，有的是在一开始就分配好，有的是动态分配的，但一般来说thread_local变量的性能一般不高于全局变量。
+
+## 快速退出
+
+进程退出时，如果是异常退出，一般走`abort`，这时不会进行析构函数的调用，有可能会产生coredump；如果是正常退出，一般走`exit`，这时会进行析构函数的调用，也会调用`atexit`注册的清理函数。有时为了快速正常退出，不想走大量的析构函数，在C++11中，提供了`quick_exit`以及对应的`at_quick_exit`接口。
+
+**参考**
+
+[futex overview](https://eli.thegreenplace.net/2018/basics-of-futexes/#id9)
+
+

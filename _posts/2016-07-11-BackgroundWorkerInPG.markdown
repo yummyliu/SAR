@@ -4,14 +4,11 @@ title: 认识postgresql的BGW
 date: 2016-07-11 21:07
 categories: 
     - PostgreSQL
-    - Program
 typora-root-url: ../../yummyliu.github.io
 ---
 
-## 1. 进程简述
-
-### 1.1. PG进程
-
+* TOC
+{:toc}
 ```bash
 /home/liuyangming/postgresql-9.5.3/build/bin/postgres -D data
 postgres: checkpointer process

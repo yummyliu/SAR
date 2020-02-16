@@ -6,34 +6,32 @@ header-img: "img/head.jpg"
 categories: 
     - CitusDB
     - PostgreSQL
+typora-root-url: ../../yummyliu.github.io
 ---
 
-#### 概述
+* TOC
+{:toc}
+# 概述
 
-创建PG的插件的方式分为两种，一种利用hook，一种编写C函数然后和数据库关联。而FDW插件属于后一种。
-实现FDW需要实现两个C函数，Handler和 Validator （可选）。然后写一个control文件，control文件是在create extension加载的文件，根据这个文件，PG去寻找对应的sql文件，在 `create extension … ` 的时候调用，执行相应的sql文件来建立和数据库的关联。比如cstore_fdw.sql文件内容：
-![cstorefdwdql](/image/cstorefdwsql.png)
+创建PG的插件的方式分为两种，一种利用hook，一种叫Forigin Data Wrapper（FDW）。实现FDW需要实现两个C函数，Handler和 Validator （可选），然后写一个control文件。control文件是在 `create extension … ` 的时候调用，执行相应的sql文件来建立和数据库的关联。
 
- 	完成fdw的开发工作，主要的工作就是实现两个C函数，就是用户自定义函数的编写，而其中Handler函数的返回是一个结构体，其中包含很多函数指针，如下：
-![fdwroutine](/image/fdwroutine.png)
+ 完成fdw的开发工作，主要的工作就是实现两个C函数，即用户自定义函数的编写，其中Handler函数的返回是一个结构体，其中包含很多函数指针，见`struct FdwRoutine`。外表的scan是必须要实现的方法，同时也支持了对外表的其他操作，择需而定。
 
-#### 详述
-
-对于外表的scan是必须要实现的方法，同时也支持了对外表的其他操作，择需而定。
-
-fdw的回调函数GetForeignRelSize, GetForeignPaths, GetForeignPlan, 和 PlanForeignModify 必须和pg的planner运行机制相符。
-以下就是他们要做到的东西
-
-> note：root和baserel的信息能够减少必须要从外部表获得的信息数量，从而降低消耗。
+> 关键变量：
+>
+> root和baserel的信息能够减少必须要从外部表获得的信息数量，从而降低消耗。
 > baserel 是 RelOptInfo 类型
 > baserel->baserestrictinfo 是一个链表。其中都是Restrictinfo 类型，
-> Restrictinfo类型 在pg的relation.h文件中。和sql中的WHERE和join/on相关。相当于AND类型，所以使用这个信息来过滤元素，达到优化。
+> Restrictinfo类型 在pg的relation.h文件中。和sql中的WHERE和join/on相关。所以使用这个信息来过滤元素，达到优化。
 > 如果对于一个基本表，那么会出现在基本表的baserestrictinfo中
 > 多个表就是在joininfo中，总之就是用来过滤的。
 
-##### 关键函数
-可参考[funcs][funcs]
-###### GetForeignRelSize
+而FDW的回调函数`GetForeignRelSize`, `GetForeignPaths`, `GetForeignPlan`, 和 `PlanForeignModify` 必须和pg的planner运行机制相符。
+
+## 关键回调
+
+**1. GetForeignRelSize**
+
 ```
 void GetForeignRelSize (PlannerInfo *root,
                    		RelOptInfo *baserel,

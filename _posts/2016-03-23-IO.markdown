@@ -7,6 +7,8 @@ categories:
 typora-root-url: ../../yummyliu.github.io
 ---
 
+* TOC
+{:toc}
 我们知道在数据库对于内存和外存之间的读写速度差异，通过bufferpool的方式进行调和。bufferpool的实现相对复杂，那么在实现bufferpool不合算，但是又希望减小内外读写差异对性能的影响，可以通过mmap/msync**将文件的page cache直接映射到进程的地址空间，通过写内存的方式修改文件**，这其实是借用操作系统对内存的管理来获得一个bufferpool。而除了bufferpool这个思路，还可以通过异步（Async）的思想减少block的时间。
 
 ![image-20200207145938692](/image/20200207-linuxIO.png)
@@ -125,8 +127,9 @@ Linux在2.6版的内核中支持了AIO特性，启用AIO特性需要以下前提
 
 这些方法都不是完美的，即使是Linux AIO，如果使用不恰当，也会阻塞在`io_submit`中。那么具体使用什么方案，可以具体情况进行分析。而对于网络IO通常是epoll监听非阻塞socket fd，转给线程池进行处理的方式。
 
-###### 参考
+**参考**
 
 [如何调用LinuxAIO](https://github.com/littledan/linux-aio)
 
 [阻塞fd、非阻塞fd和epoll](https://eklitzke.org/blocking-io-nonblocking-io-and-epoll)
+
