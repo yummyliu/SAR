@@ -135,7 +135,7 @@ X-Engine整体上和基于LSM-tree的存储引擎类似，在数据层面分为�
 
 在电商场景下，数据请求有很强的空间局部性（spatial locality）和时间局部性（temporal locality），基于这种前提，设计了多种类型的cache，提高检索的速度；比如row-cache可加速点查（temporal locality），block-cache可加速范围查询（spatial locality）。
 
-在X-engine中数据存储的单元为extent，大小为2MB；对于其中的数据还建立了metadata-index和Bloomfilter；在查询的时候，首先通过bloomfilter将肯定不在表中的元素筛除，然后通过metadata-index进行定位；同时metadata-index是一个多版本的index，能够。
+在X-engine中数据存储的单元为extent，大小为2MB；对于其中的数据还建立了metadata-index和Bloomfilter；在查询的时候，首先通过bloomfilter将肯定不在表中的元素筛除，然后通过metadata-index进行定位；
 
 当extent中发生compaction后，extent可能会进行重用（下面compaction一节)，此时Metadata-index会建立一个新版本的Metadata-index，减少不同的read查询之间的冲突；同时对应的cache也会过期，这里采用incremently replace的方式更新cache，即如果Compacttion中，更新了cache底层的数据块，那么就同时更新cache内的block。
 
@@ -160,9 +160,9 @@ Compaction首先是Immutable Table向$level_0$进行flush。为保证快速刷�
 
 另外，在Compaction过程中，对于无重叠的extent会进行重用，这样减少了大量的IO。
 
-Compaction的过程，就是mergesort中的merge的过程；一是读取两个段，二合并，三写回去；其中涉及两次IO操作，X-Engine中使用了AsyncIO，并将第二步作为第一步的回调函数，这样大大提高了整理的IO吞吐。
+Compaction的过程中的merge的过程，一是读取两个段，二合并，三写回去；其中涉及两次IO操作，X-Engine中使用了AsyncIO，并将第二步作为第一步的回调函数，这样大大提高了整理的IO吞吐。
 
-Compact是LSM-tree中很重的操作，在X-Engine中，将其分为不同的类型进行基于规则（extent数量和整层的数据量）的调度，让数据能够及时的得到规整；并且将部分计算任务转移到FPGA中，减少了CPU代价。
+ Compact是LSM-tree中很重的操作，在X-Engine中，将其分为不同的类型进行基于规则（层内的extent数量和整层的数据量）的调度，让数据能够及时的得到规整；并且将部分计算任务转移到FPGA中，节约了CPU资源。
 
 以上... ...Links：
 
