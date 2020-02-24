@@ -1,14 +1,17 @@
 ---
 layout: post
-title: C++11并行编程模型简介
+title: Overview of concurrency in C++11
 date: 2020-02-11 16:50
 categories:
   - Linux
+  - C++
 typora-root-url: ../../yummyliu.github.io
 ---
 * TOC
 {:toc}
-# 基础设施
+并发编程中最常见的概念就是mutex，这里先简单讲一下mutex；然后，对C++11提供的并发编程框架进行简单介绍，希望对第一次了解C++11并发编程的同学能有简单的帮助。
+
+# 关于mutex
 
 关于多线程并行编程，除了系统得支持线程外，线程之间的同步是最重要的话题，那么线程的同步通常就是基于锁来实现的。这可看做是多线程编程的一个基础设施，那么就从这开始了解。
 
@@ -166,9 +169,30 @@ futex一般用在低冲突的锁同步场景中。在实际代码中，我们经
 
 2000年以后，随着处理器架构的变化，很多编程语言都内建了并行编程的支持；而在C++中，一般还是通过pthread和OpenMP进行多线程编程；在C++11中，对并行编程模型进行了系统的封装，下面就了解一下C++11中的并行编程模型。
 
-# C++11并行编程模型
+# C++11并发编程框架
 
-## 原子类型
+> *Concurrency* means that two or more calculations happen **within the same time frame**, and there is usually some sort of **dependency** between them. *Parallelism* means that two or more calculations happen **simultaneously**. Parallel is subset of Concurrency; 
+
+在C++11中，`std::thread`进行了跨平台的线程封装；原来通过pthread的多线程编程，就可变为这样了：
+
+```c++
+int main()
+{
+    int n = 0;
+    std::thread my_thread(f1, n + 1); // pass by value
+    my_thread.join();
+}
+```
+
+下面，从三个方面，对C++的并发编程框架进行简单介绍：
+
+1. 数据的原子操作，atomic/memory_order
+2. 数据的共享与互斥，thread_local/mutex/condition_variable
+3. 线程的执行与退出，CPU affinity/quick_exit
+
+## 数据的原子操作
+
+### 原子类型
 
 之前对变量的互斥访问是通过lock/unlock构建一个临界区来互斥的，这样编程特别麻烦。在C++11中，在标准库内引入了多线程的支持，最重要的就是原子类型的引入。
 
@@ -190,7 +214,7 @@ futex一般用在低冲突的锁同步场景中。在实际代码中，我们经
 >   }
 > ```
 
-## 内存顺序模型
+### 内存顺序模型
 
 CPU在超标量流水线执行中，一个时钟周期会执行多条指令。对于一些硬件上没有相关性的指令，这会造成代码执行顺序与原来不一样；另外在代码编译中，编译器会执行重新排列指令，进行乱序执行的优化；这都会造成实际执行顺序与原来编写的顺序不一致的问题，如果我们要求某些语句的执行顺序需要和看到的一样，这就叫顺序一致的内存模型（Sequential consistent）。
 
@@ -221,7 +245,9 @@ CPU在超标量流水线执行中，一个时钟周期会执行多条指令。�
  std::atomic_thread_fence(std::memory_order_release);
 ```
 
-## 线程本地存储
+## 数据的共享与互斥
+
+### 线程本地存储
 
 对于栈内变量，肯定就是线程本地的；但是对于全局变量，一般就是全局共享的，而如果我们想将一些全局变量变成线程本地存储的，在一个编译器中可以加`__thread`前缀，而在c++11中，对其进行了统一，使用`thread_local`关键字：
 
@@ -231,12 +257,70 @@ int thread_local errCode;
 
 thread_local的具体实现方式不同的编译器不一样，有的是在一开始就分配好，有的是动态分配的，但一般来说thread_local变量的性能一般不高于全局变量。
 
-## 快速退出
+### mutex
+
+通过mutex，对某段临界区进行互斥访问，可以通过lock_guard进行简化，lock_guard是按照RAII的方式进行mutex管理。
+
+```cpp
+std::mutex my_mutex;
+int main(int argc, char *argv[])
+{
+	{
+		std::cout << "block in" << std::endl;
+		std::lock_guard<std::mutex> lock(my_mutex);
+		test t;
+		std::cout << "block out" << std::endl;
+	}
+	std::cout << "out" << std::endl;
+	return 0;
+}
+```
+
+### condition_variable
+
+如果对某个数据的处理，线程间存在偏序关系，那么通过信号量进行同步；c++11中的信号量是condition_variable：
+
+```cpp
+void waitingForWork(){
+    std::cout << "Waiting " << std::endl;
+    std::unique_lock<std::mutex> lck(mutex_);
+    condVar.wait(lck);                       // (1)
+    std::cout << "Running " << std::endl;
+}
+
+void setDataReady(){
+    std::cout << "Data prepared" << std::endl;
+    condVar.notify_one();                   // (2)
+}
+```
+
+## 线程的执行与退出
+
+### CPU affinity
+
+在Linux下，通过命令taskset或系统调用（`sched_getaffinity`）可以设定process与某个CPU核的绑定关系；如果通过pthread进行多线程编程，可以通过`pthread_setaffinity_np`或`pthread_attr_setaffinity_np`进行线程与CPU的绑定。那么，在C++11中，可通过`threads[i].native_handle()`获得thread在当前平台的ID，然后通过相应的方式进行CPU绑定：
+
+```cpp
+// Create a cpu_set_t object representing a set of CPUs. Clear it and mark
+// only CPU i as set.
+cpu_set_t cpuset;
+CPU_ZERO(&cpuset);
+CPU_SET(1, &cpuset);
+int rc = pthread_setaffinity_np(my_threads.native_handle(),
+                                sizeof(cpu_set_t), &cpuset);
+if (rc != 0) {
+  std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";
+}
+```
+
+### 快速退出
 
 进程退出时，如果是异常退出，一般走`abort`，这时不会进行析构函数的调用，有可能会产生coredump；如果是正常退出，一般走`exit`，这时会进行析构函数的调用，也会调用`atexit`注册的清理函数。有时为了快速正常退出，不想走大量的析构函数，在C++11中，提供了`quick_exit`以及对应的`at_quick_exit`接口。
 
 **参考**
 
 [futex overview](https://eli.thegreenplace.net/2018/basics-of-futexes/#id9)
+
+[trap of mutex&condition_var](https://www.modernescpp.com/index.php/c-core-guidelines-be-aware-of-the-traps-of-condition-variables)
 
 
