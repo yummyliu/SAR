@@ -60,7 +60,11 @@ LSM-tree(Log Struct Merge tree) 其中的Log思想来源于Log Structured FileSy
 >
 > 在原论文中，有个有趣的结论——The Five Minute Rule，即，若某页的访问频率>5min/次，那么可考虑将该页放到内存中。这要求我们在设计存储引擎时，要充分利用内存和外存的存储特点。
 
-在LSM-tree结构的存储引擎中，每一层可看做是一个有序的树结构，在进行**rolling merge**的过程中，先从C1取一个multi-page block放到C1-buffer中，其中包含若干个C1的leafnode；然后从C0的leafnode中取entry进行合并，将合并结果追加到C1后面，如下图；新合并的节点不会覆盖原节点，旧节点可用来恢复数据。
+在LSM-tree结构的存储引擎中，每一层可看做是一个有序的树结构，外存中时一个类似Btree的特殊结构，其中leafnode是压实的（没有free space）；并且是按照multi-page block进行组织，加上page是4kb，multi-page block是256kb，那么一个block里可以放64个连续的page，范围查询时可以直接读multi-page block。
+
+不同层的树会由专门的后台进程执行rolling merge**，先从C1取一个multi-page block放到C1-buffer中，其中包含若干个C1的leafnode；然后从C0的leafnode中取entry进行合并，将合并结果追加到C1后面，如下图；新合并的节点不会覆盖原节点，旧节点可用来恢复数据。
+
+
 
 ![Alt](/image/1212-rollmerge.png)
 
@@ -176,6 +180,8 @@ Compaction的过程中的merge的过程，一是读取两个段，二合并，�
 以上... ...Links：
 
 [log-structured-merge-tree](https://www.slideshare.net/ssuser7e134a/log-structured-merge-tree)
+
+[lsm-tree](http://smalldatum.blogspot.com/2018/06/the-original-lsm-paper.html)
 
 [deep-dive-tikv](https://tikv.github.io/deep-dive-tikv/key-value-engine/B-Tree-vs-Log-Structured-Merge-Tree.html)
 
