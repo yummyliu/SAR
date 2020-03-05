@@ -9,14 +9,12 @@ typora-root-url: ../../yummyliu.github.io
 ---
 * TOC
 {:toc}
-TransactionManager / LockManager / LogManager / AccessMethod是事务型存储引擎中的四个重要组成部分。AccessMethod表示数据组织，例如Btree / LSM-tree。
-
-Btree的设计是基于HDD的；如今，存储介质的差异越来越大，因此对新的访问方法的研究也在不断进行。在本文中，我尝试总结下对LSM-tree的了解，这是和Btree不同的存储结构，包括四个部分：
+TransactionManager / LockManager / LogManager / AccessMethod是事务型存储引擎中的四个重要组成部分。其中，AccessMethod表示数据组织，例如我们常说的Btree。Btree的设计是基于HDD的；如今，存储介质的差异越来越大，因此对新的AccessMethod的研究也在不断进行。在本文中，我尝试总结下一个和Btree不同的存储结构——LSM-tree，包括四个部分：
 
 1. 介绍accessmethod设计的RUM猜想；
 2. 回顾了经典的访问方法——Btree；
 3. 分享了对新流行的（1996年问世也不算新）的LSM-tree的学习；
-4. 介绍X-Engine对LSM-tree的优化（只是看了论文而已）。
+4. 通过了解X-Engine对LSM-tree的优化，加深理解。
 
 # RUM conjecture
 
@@ -32,7 +30,7 @@ Btree的设计是基于HDD的；如今，存储介质的差异越来越大，因
 
 ![image-20200221103609246](/image/1212-storage.png)
 
-写放大是指写入介质的数据和写入数据库的数据的比值，比值越大表示写放大越大，意味着我们完成一次写入，额外需要更多的IO；为优化写放大，我们需要合并写（write consolidation)并减少数据重组（data reorganization），但这会增高读延迟并有空间上的代价。读放大是指一次查询需要读取的数据页数量，我们可以使用特定的物理索引来加速读取速度，但是这需要写更多的数据，同时也需要更多的空间。基于这样的猜想，来重新认识一下Btree和LSM-tree。
+写放大是指写入介质的数据和写入数据库的数据的比值，比值越大表示写放大越大，意味着我们完成一次写入，额外需要的IO量；为优化写放大，我们需要合并写（write consolidation)并减少数据重组（data reorganization），但这会增高读延迟并有空间上的代价。读放大是指一次查询需要读取的数据页数量，我们可以使用特定的物理索引来加速读取速度，但是这需要写更多的数据，同时也需要更多的空间。那么基于这个的猜想，来重新认识一下Btree和LSM-tree。
 
 # Btree
 
@@ -42,29 +40,36 @@ Btree的设计是基于HDD的；如今，存储介质的差异越来越大，因
 
 一般来说，当我们讨论Btree时，我们说的是B+-tree。假设Btree对于的表的大小是N，这意味着leafnode有N条记录；我们假设Btree的高度不包含最后一层并且每个page上有B条记录，这样我们可以得出Btree的深度为$log_{B}N/B$:
 
-<=> $N = B^{depth+1}$
+> <=> $N = B^{depth+1}$
+>
+> <=> $N/B = B^{depth}$
+>
+> <=>$depth = log_{B}N/B$
 
-<=> $N/B = B^{depth}$
+相比于BST，Btree更宽，更浅，从而减少读写时的磁盘IO，适合磁盘的的数据组织。另外，当读取Btree中的一条记录时，我们会将读取ReadPath中的所有节点，因此读放大等于Btree的深度；当我们写一条记录时，就需要将整页写出，因此写放大为B（这里不考虑bufferpool的写合并优化）。
 
-<=>$depth = log_{B}N/B$
-
-相比于BST，Btree更宽，更浅，从而减少磁盘IO，适合磁盘的的数据组织。另外，当读取Btree中的一条记录时，我们会将读取ReadPath中的所有节点，因此读放大等于Btree的深度；当我们写一条记录时，就需要将整页写出，因此写放大为B（这里不考虑bufferpool的写合并优化）。
-
-Btree几乎在所有传统数据库的存储引擎上都支持，比如InnoDB、PostgreSQL。但是现在涌现了一些新兴的存储引擎，比如LevelDB/RockDB；他们使用了一种完全不同的存储结构——LSM-tree，理论上相比于Btree有更好的WriteOptimized，让我来瞧一瞧。
+Btree几乎在所有传统数据库的存储引擎上都支持，比如InnoDB、PostgreSQL。而现在涌现了一些以LSM-tree为主的新兴存储引擎，理论上相比于Btree有更好的WriteOptimized，让我来瞧一瞧。
 
 # LSM-tree
 
-LSM-tree(Log Struct Merge tree) 更多的是一个理论上的概念，而不是像Btree有明确的实现方式。其中的Log思想来源于Log Structured FileSystem，而不是数据库的Write Ahead Log，而LSM-tree中的Tree可以被任何有序的结构替代；因此，LSM-tree的内核是Merge的思想，它充分利用了多层的存储结构，将write进行多层的缓冲，因此有了比较好的写性能。
+LSM-tree(Log Struct Merge tree) 其中的Log思想来源于Log Structured FileSystem，而不是数据库的Write Ahead Log，而LSM-tree中的Tree理论上可以被任何有序的结构替代；因此，LSM-tree的内核是Merge的思想，它充分利用了多层的存储结构，将write进行多层的缓冲，因此有了比较好的写性能。
 
 > 一句话总结LSM-tree：“Log is borrowed, Tree can be replaced, Merge is the king.”
+>
+> ![image-20200305134448348](/image/1212-level.png)
+>
+> 在原论文中，有个有趣的结论——The Five Minute Rule，即，若某页的访问频率>5min/次，那么可考虑将该页放到内存中。这要求我们在设计存储引擎时，要充分利用内存和外存的存储特点。
 
-如下图（from Hbase：The Definitive Guide），在LSM-tree结构的存储引擎中，每一层都
+在LSM-tree结构的存储引擎中，每一层可看做是一个有序的树结构，在进行**rolling merge**的过程中，先从C1取一个multi-page block放到C1-buffer中，其中包含若干个C1的leafnode；然后从C0的leafnode中取entry进行合并，将合并结果追加到C1后面，如下图；新合并的节点不会覆盖原节点，旧节点可用来恢复数据。
 
-![image-20200305134448348](/image/1212-level.png)
+![Alt](/image/1212-rollmerge.png)
 
-因此，理解LSM-tree关键是理解Merge做了什么事情。在最初的论文中，如图，LSM-tree有若干个类树的结构组成，这些类树的结构从上到下，从小贵块的介质到大贱慢的介质中；而Merge就是不断的将相邻的树进行合并。由于LSM-tree更多的是一个概念设计，在实际的工业实现中，LSM-tree有不同的实现方式，比如LevelDB，RockDB，Cassandra等。本文中，主要通过LevelDB的实现来解释LSM-tree的工作原理。
+相比于Btree，LSM可用更少的IO完成数据的持久化，有两个原因：
 
-> 这里有个有趣的结论——The Five Minute Rule，即，若某页的访问频率>5min/次，那么可考虑将该页放到内存中。这要求我们在设计存储引擎时，要充分利用内存和外存的存储特点。
+1. LSM-tree每次IO都是顺序写多个page（multi-page write），相比于Btree的single-page write，能够节省大量的磁盘寻道时间；尽管现在很多数据库已经不再传统磁盘上了，在SSD上，LSM-tree还是可以空间压缩和少IO长寿命的优势。
+2. 相比于Btree修改一个元组，就要写一次页；LSM-tree可以延迟批量写，充分利用IO。
+
+由于LSM-tree更多的是一个概念设计，在实际的实现中，LSM-tree有不同的实现方式，比如LevelDB，RockDB，Hbase，Cassandra等。本文中，通过LevelDB的实现来了解一下LSM-tree结构的存储引擎。
 
 ## LevelDB
 
