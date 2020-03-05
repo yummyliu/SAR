@@ -58,9 +58,13 @@ LSM-tree(Log Struct Merge tree) 更多的是一个理论上的概念，而不是
 
 > 一句话总结LSM-tree：“Log is borrowed, Tree can be replaced, Merge is the king.”
 
-![image-20191216110957361](/image/1212-level.png)
+如下图（from Hbase：The Definitive Guide），在LSM-tree结构的存储引擎中，每一层都
+
+![image-20200305134448348](/image/1212-level.png)
 
 因此，理解LSM-tree关键是理解Merge做了什么事情。在最初的论文中，如图，LSM-tree有若干个类树的结构组成，这些类树的结构从上到下，从小贵块的介质到大贱慢的介质中；而Merge就是不断的将相邻的树进行合并。由于LSM-tree更多的是一个概念设计，在实际的工业实现中，LSM-tree有不同的实现方式，比如LevelDB，RockDB，Cassandra等。本文中，主要通过LevelDB的实现来解释LSM-tree的工作原理。
+
+> 这里有个有趣的结论——The Five Minute Rule，即，若某页的访问频率>5min/次，那么可考虑将该页放到内存中。这要求我们在设计存储引擎时，要充分利用内存和外存的存储特点。
 
 ## LevelDB
 

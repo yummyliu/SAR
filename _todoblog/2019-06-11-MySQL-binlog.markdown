@@ -310,12 +310,12 @@ event的内容按照如下约定写入：
 在启动的时候，由binlog-format指定三种类型：statement、row、mixed。
 
 - statement：记录主上执行的语句
-
 - row：以主键为标识，记录相应行的变更。
-
 - mixed：默认使用statement，当MySQL认为[某个语句不能完全复制](https://dev.mysql.com/doc/refman/5.7/en/binary-log-mixed.html)，升级为记录row。
 
-  
+## lossless semi-synchronous
+
+TODO
 
 # Group Commit
 
@@ -386,7 +386,21 @@ make
 
 
 
+## 参数
 
+- slave_exec_mode
+
+▪ binlog_format=ROW
+▪ binlog_rows_query_log_events=ON
+▪ “mysqlbinlog –vv --base64-output=decode-rows” can print original statements
+▪ binlog_row_image=FULL
+▪ slave_type_conversions=ALL_NON_LOSSY
+▪ log_only_query_comments=OFF (FB extension)
+▪ slave_exec_mode=SEMI_STRICT (FB extension)
+▪ log_column_names=ON (FB extension)
+▪ Changes binlog format
+▪ slave_run_triggers_for_rbr=YES (MariaDB extension, FB backported)
+▪ sql_log_bin_triggers=OFF (MariaDB extension, FB backported)
 
 TODO：https://dev.mysql.com/doc/internals/en/event-header-fields.html
 
