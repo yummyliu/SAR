@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Overview of concurrency in C++11
+title: concurrency in C++11
 date: 2020-02-11 16:50
 categories:
   - Linux
@@ -9,13 +9,19 @@ typora-root-url: ../../yummyliu.github.io
 ---
 * TOC
 {:toc}
-并发编程中最常见的概念就是mutex，这里先简单讲一下mutex；然后，对C++11提供的并发编程框架进行简单介绍，希望对第一次了解C++11并发编程的同学能有简单的帮助。
+前段时间看了MySQL8中的redolog无锁优化，对其中c++11的并发框架的运用影响深刻，基于这个出发点，有了本文；
 
-# 关于mutex
+# 关于锁
 
-关于多线程并行编程，除了系统得支持线程外，线程之间的同步是最重要的话题，那么线程的同步通常就是基于锁来实现的。这可看做是多线程编程的一个基础设施，那么就从这开始了解。
+并发编程中最常见的概念就是同步，而实现同步的方式有很多种，有互斥锁（mutex），原子变量（atomic），自旋锁（spinlock），信号量（singal），读写锁（share/exclusive lock）等等。本文主要讨论前三种：
 
-## 自旋锁
++ 互斥锁：mutex需要陷入内核态，存在上下文切换的代价，主要代价在cpu-sys。
++ 自旋锁：spinlock通常基于CAS等原子操作实现，如果当下没有取到锁，那么会在用户态自旋等待一段时间，避免频繁陷入内核态，代价在cpu-usr。
++ 原子变量：封装了原子操作的变量，不需要锁，也能保证并发更新的正确性；前两个可用在某段临界区的互斥上，原子变量的互斥临界区可认为缩小到一个变量的更新。
+
+下面对这三类进行简单展开。
+
+## spinlock
 
 自旋锁的概念是在PostgreSQL中了解到的，自旋锁（SpinLock）作为PostgreSQL最底层的锁（关于PostgreSQL的锁，可见另一篇——[Lock in PG](http://liuyangming.tech/05-2018/lock-PostgreSQL.html)），它的实现是和操作系统和硬件环境相关的。在PostgreSQL中，实现了两种SpinLock：
 
@@ -87,9 +93,9 @@ typora-root-url: ../../yummyliu.github.io
 
 自旋锁需要占用CPU资源进行不断的检查，对于比较耗时的操作，通常不建议使用，会浪费太多的CPU资源。
 
-## 原子操作
+## atomic
 
-PostgreSQL在9.6版本中，将bufferpool中的spinlock替换为atomic operations（[commitlog](https://commitfest.postgresql.org/9/408/#)），例如从commitlog中找到的下面的变更：
+PostgreSQL在9.6版本中，将bufferpool中的spinlock替换为atomic operations（[commitlog](https://commitfest.postgresql.org/9/408/#)），例如下面的commitlog：
 
 ```c
 -		LockBufHdr(buf);
@@ -98,18 +104,19 @@ PostgreSQL在9.6版本中，将bufferpool中的spinlock替换为atomic operation
 +
 ```
 
-其将`refcount`设计成一个原子变量，对其的操作可通过add_fetch原子操作进行，这样减少了自旋锁的代价，比如：
+其将`refcount`设计成一个原子变量，借助底层的add_fetch原子指令进行操作；相比于lock，类似cas的原子操作有是乐观的。很多用lock实现的地方，可以变成原子操作，这样能够减少锁的额外代价，实现lock-free；但是不等于wait-free。在gcc中，提供了类似的操作，比如`__sync_lock_test_and_set`。而在在C++11中有原子变量类型，提供了各种原子操作；原子操作是操作系统提供最小的且不可并行化的指令。
+
+PostgreSQL类似的原子操作有：
 
 + Test and set：`pg_atomic_test_set_flag_impl`;
 + Compare and exchange：`pg_atomic_compare_exchange_u32_impl`;
-
 + Fetch and add：`pg_atomic_fetch_add_u32_impl`。
 
-在gcc中，提供了类似的操作，比如`__sync_lock_test_and_set`。而在在C++11中有原子变量类型，提供了各种原子操作；原子操作是操作系统提供最小的且不可并行化的指令。
+在InnoDB5.7的os0sync中同样封装了原子操作，而在8中，直接使用了C++11的原子类型。·
 
-## futex调用
+## Mutex
 
-**futex**是**Fast Userspace muTEX**的简称。是在2003由IBM的工程师引入到Kernel中的，主要用于减小高并发下锁同步是system call的代价。
+关于Mutex，主要了解一下futex调用，**futex**是**Fast Userspace muTEX**的简称。是在2003由IBM的工程师引入到Kernel中的，主要用于减小高并发下锁同步是system call的代价。
 
 由于在大部分情况下，锁上并没有竞争。应用可基于硬件提供的原子操作就可以进行锁资源的占用了。
 
@@ -167,7 +174,7 @@ futex一般用在低冲突的锁同步场景中。在实际代码中，我们经
 
 基于以上的了解，基本对多线程中的资源同步有了简单的了解，而在实际编程中，可能会涉及更多的问题；
 
-2000年以后，随着处理器架构的变化，很多编程语言都内建了并行编程的支持；而在C++中，一般还是通过pthread和OpenMP进行多线程编程；在C++11中，对并行编程模型进行了系统的封装，下面就了解一下C++11中的并行编程模型。
+2000年以后，随着处理器架构的变化，很多编程语言都内建了并行编程的支持；而在C++中，一般还是通过pthread和OpenMP进行多线程编程；在C++11中，对并行编程模型进行了系统的封装，下面就了解一下C++11中的并行编程模型。
 
 # C++11并发编程框架
 
@@ -216,13 +223,11 @@ int main()
 
 ### 内存顺序模型
 
-CPU在超标量流水线执行中，一个时钟周期会执行多条指令。对于一些硬件上没有相关性的指令，这会造成代码执行顺序与原来不一样；另外在代码编译中，编译器会执行重新排列指令，进行乱序执行的优化；这都会造成实际执行顺序与原来编写的顺序不一致的问题，如果我们要求某些语句的执行顺序需要和看到的一样，这就叫顺序一致的内存模型（Sequential consistent）。
+内存顺序模型分两类：软件层面和硬件层面。硬件层面上，CPU在超标量流水线执行中，一个时钟周期会执行多条指令。对于一些硬件上没有相关性的指令，这会造成代码执行顺序与原来不一样；软件层面上，在代码编译中，编译器也会会执行重新排列指令，进行乱序执行的优化；这都会造成实际执行顺序与原来编写的顺序不一致的问题。
 
-> 不同的处理器架构的内存模型不一样。如果指令严格按照顺序执行，这叫强顺序的架构（x86），否则叫弱顺序（PowerPC，ArmV7等）。那么对于弱顺序的机器，为了保障执行的顺序，在汇编指令中有内存栅栏(memory barrier）的指令，比如PowerPC的sync，在执行到内存栅栏时，会等待之前的指令都执行完成后再执行后面的指令。
+而如果我们要求某些语句的执行顺序需要和看到的一样，这就叫顺序一致的内存模型（Sequential consistent）。不同的处理器架构的内存模型不一样。如果指令严格按照顺序执行，这叫强顺序的架构（x86），否则叫弱顺序（PowerPC，ArmV7等）。那么对于弱顺序的机器，为了保障执行的顺序，在汇编指令中有内存栅栏(memory barrier）的指令，比如PowerPC的sync，在执行到内存栅栏时，会等待之前的指令都执行完成后再执行后面的指令。
 
-编译器的乱序执行的优化对于原子类型默认始终保持与原来一样，这可能会限制并发性能的提升。而如果我们可以对于某些场景并不需要原子类型保证顺序一致性，这该怎么做呢？
-
-在C++11中，通过memory_order来让程序员为原子操作指定内存顺序，有6种：
+memory barrier可认为有三种，一是full memory barrier，二是acquire memory barrier，三是release memory barrier。对于原子类型默认是full memory barrier，这可能会限制并发性能的提升。而如果我们可以对于某些场景并不需要原子类型保证顺序一致性，在C++11中，通过`memory_order`来让程序员为原子操作指定内存顺序，有6种：
 
 + `memory_order_relaxed`：不对执行顺序做任何保证；
 + `memory_order_acquire`：本线程中，后续的读操作需要在当前指令结束后执行；
@@ -317,10 +322,20 @@ if (rc != 0) {
 
 进程退出时，如果是异常退出，一般走`abort`，这时不会进行析构函数的调用，有可能会产生coredump；如果是正常退出，一般走`exit`，这时会进行析构函数的调用，也会调用`atexit`注册的清理函数。有时为了快速正常退出，不想走大量的析构函数，在C++11中，提供了`quick_exit`以及对应的`at_quick_exit`接口。
 
+> 可重入（reentrant）函数、线程安全（thread-safe）函数、幂等（idempotence）函数：
+>
+> 首先这两个概念没有任何包含关系，一个函数可以满足两者也可以两者都不满足，或只满足其中一个。
+>
+> 可重入概念的提出是在单进程单线程的背景下，意思是函数在执行的过程中，可以中断当前执行，再次调用该函数，而不会出错，当前的执行函数也不一定会等待。其常见的场景是发生了硬件中断或函数递归调用，
+
+
+
 **参考**
 
 [futex overview](https://eli.thegreenplace.net/2018/basics-of-futexes/#id9)
 
 [trap of mutex&condition_var](https://www.modernescpp.com/index.php/c-core-guidelines-be-aware-of-the-traps-of-condition-variables)
 
+[reentrance func](https://en.wikipedia.org/wiki/Reentrancy_(computing))
 
+[condition value](http://mysql.taobao.org/monthly/2017/01/01/)

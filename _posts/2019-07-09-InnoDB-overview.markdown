@@ -13,7 +13,7 @@ typora-root-url: ../../yummyliu.github.io
 {:toc}
 InnoDB首先是MySQL的一个可拔插存储引擎，提供事务型存储特性。在一个经典的RDBMS架构中，分为如下几个部分：
 
-![adb](/image/arch-db.png)
+![adb](/image/innodb-overview/arch-db.png)
 
 MySQL即主要提供了Relational Query Procesor的功能，InnoDB就是上图的Transaction Storage Manager部分。那么本文就从四个方面阐述我所了解到的InnoDB，希望想了解InnoDB的人，看到这篇文章能有所收获。
 
@@ -39,7 +39,7 @@ AccessMethod可以理解为数据在外存的组织形式，也可以简单理�
 
 ### 宏观上物理与逻辑的对应
 
-![image-20190726103704241](/image/InnoDB-宏观存储.png)
+![image-20190726103704241](/image/innodb-overview/InnoDB-macro.png)
 
 物理上，在每个space中，有若干个文件或者磁盘分区；每个file分为若干个segment，其中有LeafNodeSegment、NonLeafNodeSegment、rollbacksegment三种类型。每个segment是按照extent为单位进行伸缩，每个extent中有若干个固定大小的page，如下 图：
 
@@ -71,7 +71,7 @@ AccessMethod可以理解为数据在外存的组织形式，也可以简单理�
 
 在InnoDB中有多种页类型，下面展示了FIL_PAGE_INDEX这个类型的结构。
 
-![image-20190726104115317](/image/page逻辑物理对应.png)
+![image-20190726104115317](/image/innodb-overview/page-logical-vs-physical.png)
 
 上图左侧是一个物理Page的结构，前面有三个头部信息：文件头部信息，索引头部信息，段头部信息；另外，还有两个虚拟系统记录：
 
@@ -92,7 +92,7 @@ AccessMethod可以理解为数据在外存的组织形式，也可以简单理�
 
 在innobase/include/rem0rec.ic；列出了record中各个值的偏移，如下图
 
-![image-20190726105136952](/image/InnoDB读写最小单元.png)
+![image-20190726105136952](/image/innodb-overview/InnoDB-io-unit.png)
 
 在上述Page中，我们可以看到每个Record记录了其后向Record的偏移，可以看出page中的record按照链表的形式组织起来。注意这个偏移是真实Record的**数据部分**的起始位置，如上图所示。另外，在每个Record中都有两(三)个隐藏列：
 
@@ -102,7 +102,7 @@ AccessMethod可以理解为数据在外存的组织形式，也可以简单理�
 
 对于记录中的变长字段，InnoDB采用overflow page的方式进行存储，这也分为4中类型，如下：
 
-![image-20190726105556341](/image/rowformat.png)
+![image-20190726105556341](/image/innodb-overview/rowformat.png)
 
 默认的rowformat由参数**`innodb_default_row_format`**控制，默认值是`DYNAMIC`。
 
@@ -189,7 +189,7 @@ select * from INFORMATION_SCHEMA.INNODB_METRICS where name = 'index_page_merge_s
 
 在InnoDB中，有如下一些缓冲区；大类上和PgSQL相似都有一个放数据页的BufferPool，和一个放日志记录的LogBuffer。在CHECKPOINT的调度下，进行BufferPool刷盘；每次事务commit进行LogBuffer刷盘。
 
-![image-20190726110915433](/image/InnoDB-caching.png)
+![image-20190726110915433](/image/innodb-overview/InnoDB-caching.png)
 
 除了这两个之外，还有为了减小二级索引的写放大，引入的Change Buffer机制；为了避免数据部分写，引入的DoubleWrite Buffer。
 
@@ -197,7 +197,7 @@ select * from INFORMATION_SCHEMA.INNODB_METRICS where name = 'index_page_merge_s
 
 ## Change Buffer
 
-![image-20190726111320366](/image/change-buffer.png)
+![image-20190726111320366](/image/innodb-overview/change-buffer.png)
 
 Change Buffer是二级索引变更的缓存，其不仅仅是一个内存结构，内存中的changebuffer需要确保外存的changebuffer能够全部load进内存；因此，ChangeBuffer同样可通过Recovery恢复。
 
@@ -246,7 +246,7 @@ CHECKPOINT在DBMS都是同一个概念，其为redo日志中的一条记录，�
 
 为了避免checkpoint的频繁刷脏，pagecleaner和用户线程会按照一些阈值点，进行提前刷脏。和这相关是一个Page Cleaner线程组，其分为两个角色协调者和工作者，如下：
 
-![image-20190726113541342](/image/page-cleaner.png)
+![image-20190726113541342](/image/innodb-overview/page-cleaner.png)
 
 coordinator持续设置标记位触发worker进行刷盘，自己触发后也会参与刷盘；各自认领不同bufferpool对应的list进行清理。worker结束后，设置标记位通知coordinator该轮清理完成。
 
@@ -258,7 +258,7 @@ coordinator持续设置标记位触发worker进行刷盘，自己触发后也会
 
 ## AHI
 
-![image-20200106154013692](/image/ahi.png)
+![image-20200106154013692](/image/innodb-overview/ahi.png)
 
 在Buffer Pool中，缓存了IndexPage。在二级索引中，存储的是一级索引的键；因此每次查询需要两个索引查询。为了减少寻路开销，打开参数[`innodb_adaptive_hash_index`](https://dev.mysql.com/doc/refman/5.7/en/innodb-parameters.html#sysvar_innodb_adaptive_hash_index)后，可以启动AHI功能。
 
@@ -290,7 +290,7 @@ SELECT name, subsystem, status FROM INFORMATION_SCHEMA.INNODB_METRICS;
 
 在MySQL中，事务的并发控制是通过InnoDB实现的；而在MySQL层中，会有一个MDL维护元数据信息，主要用在DDL场景中。但是DML中的锁，都在InnoDB实现；可以分为两部分：事务锁和线程锁。
 
-![image-20190726115031799](/image/innodb-lockmanager.png)
+![image-20190726115031799](/image/innodb-overview/innodb-lockmanager.png)
 
 ## 显式事务锁
 
@@ -352,7 +352,7 @@ enum lock_mode {
 
 另外，还有一种特殊的表锁：Auto-Inc Lock，当有AUTO_INCREMENT列时，插入数据时会有这个锁，由参数**innodb_autoinc_lock_mode**控制自增长的控制算法。
 
-![image-20190726121911562](/image/ailock.png)
+![image-20190726121911562](/image/innodb-overview/ailock.png)
 
 默认地，innodb_autoinc_lock_mode=1，此时对于任何insert-like的语句都需要获取AI锁。
 
@@ -402,7 +402,7 @@ InnoDB中一方面通过锁来进行并发控制（**一致性锁定读**，sele
 
 具体地，是通过ReadView机制实现的，如下图：
 
-![image-20190726122527556](/image/readview.png)
+![image-20190726122527556](/image/innodb-overview/readview.png)
 
 ReadView是在某一时刻（语句开始，或者事务开始）获取可以看做是三个信息的组合：
 
@@ -571,7 +571,7 @@ MTR是保证InnoDB对若干个page变更的原子性的机制，一个mtr中包�
 
 在InnoDB中，其redo日志就是一种Physiological的日志。其中记录了数据页上的所有变更操作。每个记录的形式如下：
 
-![innodb-redo-rec](/image/innodb-redo-rec.png)
+![innodb-redo-rec](/image/innodb-overview/innodb-redo-rec.png)
 
 redo日志是按照磁盘扇区大小（**512byte**）的块，存储日志记录，而不是是page大小，redolog位于`$innodb_log_group_home_dir/ib_logfile`中，可能有多个文件。
 
@@ -602,7 +602,7 @@ mysql> show global variables like '%innodb_log_file%';
 
 ### LogBuffer的写入/写出
 
-![image-20190729194135905](/image/logbuffer-flush.png)
+![image-20190729194135905](/image/mysql-8-redo/logbuffer-flush.png)
 
 `log_t*	log_sys`是redo日志系统的关键全局变量。通过log_sys中的三个锁，来确保log_sys的并发访问正确性：
 
@@ -628,7 +628,7 @@ mysql> show global variables like '%innodb_log_file%';
 
 InnoDB中可以有专门的UNDO表空间（5.6之后可以启用独立undo表空间，之前是放在系统表空间ibdata0中）。在ibdata0中，存储一个trx_sys结构，其中维护了事务相关的信息，就包括了所有的128个回滚段，如下图。
 
-![image-20190718154613462](/image/trx_sys.png)
+![image-20190718154613462](/image/innodb-overview/trx_sys.png)
 
 > 由`innodb_rollback_segments`定了了rollback segment的个数([1,128]），默认128个。每个rseg中，有1024个slot(用了存放undo log page)；
 >
@@ -641,7 +641,7 @@ InnoDB中可以有专门的UNDO表空间（5.6之后可以启用独立undo表空
 >
 > + [33,+)，如果没有开启独立表空间，那么用户回滚段都在ibdata1这个系统表空间中。
 
-![image-20190718161534628](/image/undo-map.png)
+![image-20190718161534628](/image/innodb-overview/undo-map.png)
 
 如上图，一个事务如果只对应一个UNDOpage（实际上可能不止），那么最多支持96*1024个事务并发。
 
@@ -671,7 +671,7 @@ InnoDB中可以有专门的UNDO表空间（5.6之后可以启用独立undo表空
 
 4. Undo：`dict_boot`初始化数据字典子系统；`trx_sys_init_at_db_start`初始化事务子系统，undo段的初始化在此完成；
 
-   ![image-20190529105306507](/image/init-undo.png)
+   ![image-20190529105306507](/image/innodb-overview/init-undo.png)
 
    对于Active的事务，进行回滚；
    

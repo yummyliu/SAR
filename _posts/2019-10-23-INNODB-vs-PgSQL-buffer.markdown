@@ -50,7 +50,7 @@ typora-root-url: ../../yummyliu.github.io
 
 我们要将数据库的数据写入到磁盘文件中，要经历图中的几层缓存；
 
-![image-20191126172824947](/image/1030-jm-data-flow.png)
+![image-20191126172824947](/image/pg-buffer-pool/1030-jm-data-flow.png)
 
 IO就是内存和外存之间的数据传输。在数据库场景中，我们认为外存是一些块设备，目前我们有很多类型的块设备，比如HDD，SSD以及一些云厂商的EBS服务，在接口上基本都一样，不需要我们考虑这里的区别。
 
@@ -117,11 +117,11 @@ mmap将外存的文件块映射到内存中，可以利用OS的页面管理（�
 
 上述文件读写方式，适用于对单个文件的多次频繁IO；而当我们需要将一个大文件传输到另一个大文件中时，如果采用read+write的方式，那么会和下图类似，频繁的在用户态和内核态之间拷贝数据。
 
-![image-20191101105156152](/image/1030-read-write.png)
+![image-20191101105156152](/image/pg-buffer-pool/1030-read-write.png)
 
 这时可以考虑使用sendfile。sendfile不需要内核态和用户态之间的数据拷贝，但是DMA需要在内核中需要维护一个连续的buffer用来传输数据。
 
-![image-20191101105456535](/image/1030-sendfile.png)
+![image-20191101105456535](/image/pg-buffer-pool/1030-sendfile.png)
 
 + **Linux AIO**
 
@@ -136,7 +136,7 @@ AIO需要文件按照**O_DIRECT**的方式打开，AIO的接口有两种：
 
 ## PostgreSQL的文件读写
 
-![image-20191126174909329](/image/1030-doublebuffer.png)
+![image-20191126174909329](/image/pg-buffer-pool/1030-doublebuffer.png)
 
 
 
@@ -150,7 +150,7 @@ AIO需要文件按照**O_DIRECT**的方式打开，AIO的接口有两种：
 
 另外，PostgreSQL采用多进程的并发机制，那么多进程和多线程对内存的使用方式上存在区别，同样也是一个原因，page cache可以看做多进程之间的一种数据共享方式，关于这个这里有个小例子，如下图：
 
-![image-20191126180215922](/image/1030-db01.png)
+![image-20191126180215922](/image/pg-buffer-pool/1030-db01.png)
 
 在流复制中，通过buffer io，那么wal sender可以从page cache读取wal，减少了物理读的次数。
 
@@ -158,7 +158,7 @@ AIO需要文件按照**O_DIRECT**的方式打开，AIO的接口有两种：
 
 由于PostgreSQL采用的是buffer io，那么我们可以换一个角度看PostgreSQL的内存。可以看做是整个内存空间的一个两级缓存，但是PostgreSQL对第一级有完全的控制权。
 
-![image-20191126183805926](/image/1030-db02.png)
+![image-20191126183805926](/image/pg-buffer-pool/1030-db02.png)
 
 由于内存中的两级缓存存在，那么shared_buffers中的数据页会在内存中存在两份，因此，当我们将shared_buffer配置为推荐配置的最大值40%时，其实我们已经用了80%的内存空间。这就可以理解为什么PostgreSQL推荐最大是40%。
 
@@ -178,7 +178,7 @@ AIO需要文件按照**O_DIRECT**的方式打开，AIO的接口有两种：
 
 > 找了下资料，发现PostgreSQL目前的存储引擎似乎就没打算用direct IO?那么，可以期待下Zheap的引擎哈
 >
-> ![image-20191101142643173](/image/1030-pg-directio.png)
+> ![image-20191101142643173](/image/pg-buffer-pool/1030-pg-directio.png)
 
 另外，MySQL是多线程架构，bufferPool就是进程堆内空间，而且可以有多个bufferpool，那么可以尽量多将内存留给自己用，这样就会将更多的热点数据放在内存中处理，得到很好的性能，这就很直观了。
 
@@ -186,7 +186,7 @@ AIO需要文件按照**O_DIRECT**的方式打开，AIO的接口有两种：
 
 数据回写是指从buffer pool向磁盘中写数据的过程，首先回顾以下BufferPool的结构。
 
-![image-20191126192202580](/image/1030-db03.png)
+![image-20191126192202580](/image/pg-buffer-pool/1030-db03.png)
 
 作为对比，这里还是列出MySQL的buffer pool，直观上来看，两者都是由一个hash表和一个page池。hash表就是用来定位page的地址；另外，还需要一些结构来存储page的状态，在PostgreSQL和page一一对应的有一个描述符层，其中存储了各个page的状态标志；在MySQL中，同样有一个结构存储各个page的状态，另外通过几个List来维护了脏页的list。
 
@@ -194,7 +194,7 @@ AIO需要文件按照**O_DIRECT**的方式打开，AIO的接口有两种：
 
 ## Write()的演进
 
-![image-20191126200835373](/image/1030-db04.png)
+![image-20191126200835373](/image/pg-buffer-pool/1030-db04.png)
 
 首先看一下在PostgreSQL中的write()调用，一开始只有一个backend worker进行write，负责将自己的脏页刷盘。在8.0中，拆除一个bg writer，专门负责刷脏。这样，backend worker只需要操作buffer pool中的页即可，除非bg writer写的慢了，才会自己进行write。
 
@@ -202,7 +202,7 @@ AIO需要文件按照**O_DIRECT**的方式打开，AIO的接口有两种：
 
 那么在目前我们用的版本中，数据的回写就是由着三个进程负责的：
 
-![image-20191126201902278](/image/1030-db05.png)
+![image-20191126201902278](/image/pg-buffer-pool/1030-db05.png)
 
 可以看出来，在整个回写的逻辑中只有checkpointer在进行fsync。那么这个点可能会造成IO阻塞。问题来了，如何保障平滑呢？
 
@@ -212,7 +212,7 @@ AIO需要文件按照**O_DIRECT**的方式打开，AIO的接口有两种：
 
 然后，再重新回顾以下checkpoint的流程：
 
-![image-20191126203153521](/image/1030-db06.png)
+![image-20191126203153521](/image/pg-buffer-pool/1030-db06.png)
 
 1. 从描述符层，找到脏页
 2. 在CkptBufferIds数组中，对脏页进行排序（随机IO变顺序IO）
@@ -226,7 +226,7 @@ AIO需要文件按照**O_DIRECT**的方式打开，AIO的接口有两种：
 
 现在块设备的类型比之前多的多了，但是数据页的落盘还是存在落盘失败的可能。那么，肯定是会产生块IO错误，只不过出现的很少。那么在PostgreSQL的fsync失败后，如何进行处理呢。这里画了CHECKPOINT前后一个时序图，阐述一些这块的逻辑：
 
-![image-20191126204141874](/image/1030-db07.png)
+![image-20191126204141874](/image/pg-buffer-pool/1030-db07.png)
 
 黑色箭头表示上次CHECKPOINT的fsync成功了，PostgreSQL开始进行下一次spread CHECKPOINT。首先，进行了多次write，最后调用fsync，但是返回失败。那么PostgreSQL选择重试，重试返回成功。
 

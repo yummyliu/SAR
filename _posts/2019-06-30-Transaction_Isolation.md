@@ -79,7 +79,7 @@ ANSI SQL 为了预防三种不同的并发异常现象，定义了四个隔离�
 
 以上的SQL隔离级别标准并没有做到实现无关，基本就是基于Lock的并发控制中的隔离级别。在论文Generalized Isolation Level Definitions中，基于事务之间的读写依赖，提出了新的**实现无关的隔离级别**，如下。
 
-![img](/image/ansi-sql-isolation-levels.png)
+![img](/image/trx-isolation/ansi-sql-isolation-levels.png)
 
 另外，由于大部分数据库实现了MVCC的并发控制，因此也产生了Lock机制下没有的并发异常，如下三种：
 
@@ -225,7 +225,7 @@ ERROR:  could not serialize access due to concurrent update
 
 如下
 
-![image-20190724095522856](/image/PostgreSQL-并发更新同一行.png)
+![image-20190724095522856](/image/trx-isolation/PostgreSQL-并发更新同一行.png)
 
 因此，对于RR级别，有如下结论：
 

@@ -63,7 +63,7 @@ InnoDB中只支持Btree一种索引类型（index_type字段只有一种选择�
 
 入口函数是`mysql_alter_table`，大致的过程如图所示：
 
-![image-20191118143812556](/image/online-create-index.png)
+![image-20191118143812556](/image/index-create-mysql/online-create-index.png)
 
 在该函数中，首先通过调用`create_table_impl`，**创建一个临时的frm文件**。然后通过`ha_innobase::check_if_supported_inplace_alter`检查该表对应的存储引擎是否支持inplace的alter table（create index 属于alter table的一种）；InnoDB返回`HA_ALTER_INPLACE_NO_LOCK_AFTER_PREPARE`，表示支持在prepare阶段之后不加锁，然后进入了`mysql_inplace_alter_table`。分为以下几步：
 
@@ -71,7 +71,7 @@ InnoDB中只支持Btree一种索引类型（index_type字段只有一种选择�
 
 2. `tdc_remove_table（TDC_RT_REMOVE_NOT_OWN_KEEP_SHARE）`：清理该表的TABLE_SHARE对应的TABLE，但是并不置旧TABLE_SHARE。
 
-3. `lock_tables`：加表级锁。
+3. `lock_tables`：**加表级锁**。
 
 4. `ha_innobase::prepare_inplace_alter_table`；**准备系统结构**：插入SYS_INDEXES，并建立btree根节点；分配RowLog（`dict_index_t->online_log`）空间；获取一个read view，后期基于该read view读取数据。
 

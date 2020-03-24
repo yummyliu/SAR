@@ -17,7 +17,7 @@ CitusDB并不是Postgresql的一个分支，而是Postgresql的一个扩展，�
 
 ### 架构图
 
-![citusdb](/image/citusdb-basic-arch.png)
+![citusdb](/image/citus/citusdb-basic-arch.png)
 
 ### 逻辑分区
 
@@ -263,7 +263,7 @@ master_move_shard_placement(PG_FUNCTION_ARGS)
 
 ###### 图1 老数据不再更新
 
-![](/image/citus-copy.png)
+![](/image/citus/citus-copy.png)
 
 ### 方案中的问题
 
@@ -300,7 +300,7 @@ postgres=# select * from pg_dist_placement where shardid = 102085;
 (2 rows)
 ```
 
-![](/image/citus-r.jpeg)
+![](/image/citus/citus-r.jpeg)
 
 `insert 0 2` 是因为我测试数据是插入两条，一个属于这个shard，一个不属于；
 
@@ -328,7 +328,7 @@ postgres=# select * from pg_dist_placement where shardid = 102085;
 >
 > 我们现在各个分片没有逻辑冗余片，而是采用pg自身的流复制冗余；关于这个copy函数本身的作用是，当有逻辑冗余片损坏是，repair用的；这里迁移的方法就是，手动做一个inactive的坏冗余片，利用这个`master_copy_shard_placement`函数，将数据迁移过来，让后把老的inactive即可；
 
-![](/image/citus-repair.png)
+![](/image/citus/citus-repair.png)
 
 **因此，迁移过程不必一次完成，可以慢慢的一个个观察着迁移；**
 

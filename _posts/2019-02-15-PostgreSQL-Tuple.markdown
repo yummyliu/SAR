@@ -12,7 +12,7 @@ typora-root-url: ../../yummyliu.github.io
 
 # 总体结构
 
-![image-20190216125128234](/image/image-20190216125128234.png)
+![image-20190216125128234](/image/pg-tuple/image-20190216125128234.png)
 
 PostgreSQL的堆表由多个页组成。业内结构如上图所示(代码readme中)，由5部分构成，如下。
 
@@ -26,14 +26,14 @@ PostgreSQL的堆表由多个页组成。业内结构如上图所示(代码readme
 
 ## Page Header
 
-![image-20190610132427655](/image/page-header.png)
+![image-20190610132427655](/image/pg-tuple/page-header.png)
 
 + LSN：在BufferManager中，为了保证WAL的原则（*thou shalt write xlog before data*），对每个块标记了一个日志序列号（Log Sequence Number）。
 + prune xid：PostgreSQL中有一个对页内空间进行整理的过程，该列记录了上一个对页进行整理的xid。
 
 ## Item ID(行指针)
 
-![image-20190610132146799](/image/itemid.png)
+![image-20190610132146799](/image/pg-tuple/itemid.png)
 
 包括偏移和长度两个信心，另外还有一个标记位，标记该行指针的状态。为了节省空间，代码中多处Struct中标记了**位域**，如下，行指针只占4个字节了。
 
@@ -51,7 +51,7 @@ typedef struct ItemIdData
 
 ## Tuple Header
 
-![image-20190610131840392](/image/tuple-header.png)
+![image-20190610131840392](/image/pg-tuple/tuple-header.png)
 
 Tuple头部是由**23byte固定大小的前缀**和可选的NullBitMap构成。
 
@@ -84,7 +84,7 @@ postgres=# SELECT pg_column_size(row(NULL, NULL, NULL, NULL, NULL, NULL, NULL, N
 
 另外在t_infomask2和t_infomask中，存储了属性列的个数以及若干标记位，其中就包括**HEAP_HASNULL(标识bitmap存不存在)**，如下。
 
-![image-20190610175230711](/image/infomask.png)
+![image-20190610175230711](/image/pg-tuple/infomask.png)
 
 ## Tuple data
 
@@ -177,7 +177,7 @@ typedef struct varatt_external
 }			varatt_external;
 ```
 
-![image-20190610155404930](/image/toast-pointer.png)
+![image-20190610155404930](/image/pg-tuple/toast-pointer.png)
 
 # 启发
 

@@ -72,7 +72,7 @@ Raft确保共识组运行中，始终满足以下五个特性：
 
 ### Leader选举
 
-![image-20191029151530653](/image/1029-raft-election.png)
+![image-20191029151530653](/image/raft/1029-raft-election.png)
 
 Raft以任期（term）的方式划分时间，每个任期开始的时候，进行一次选举；在每次选举中，可能有一个或多个candidate；term是一个单调递增的序列，在每个server中，存储了一个current term，并且会和其他server进行交换，如果发现自己的term比别人的小，那么就更新为大的term（如果自己的角色不是follower，那么就降级为follower）。
 
@@ -82,7 +82,7 @@ Raft以任期（term）的方式划分时间，每个任期开始的时候，进
 
 如果candidate收到一个leader的**`AppendEntries`**请求，如果该请求的term值比自己的term值大，那么自己在该term内成为follower，否则拒绝该请求，继续选举。
 
-![image-20191029152732563](/image/1029-raft-term.png)
+![image-20191029152732563](/image/raft/1029-raft-term.png)
 
 另外，有可能在某个任期内，很多follower同时变成candidate，那么可能由于分票，导致选举失败；Raft采用随机设置election timeout的方式（每个follower的超时时间的随机的[150ms, 300ms]），减少多个follower同时选举的情况，来减少这个问题。
 
@@ -96,7 +96,7 @@ Log中每个Entry包含一个logindex和一个termid，用来保证每个loginde
 
 + 在共识组的两个不同log中，如果logentry有相同的logindex和term，那么之前的logentry都是相同的；leader在`AppendEntries`请求中，会带上new logentry前一个logentry的logindex和term，如果follower在本地日志中没有找到该项logentry，就拒绝这个new logentry，直到follower响应了`AppendEntries`请求， 那么leader就知道follower已经同步到的该位置，如下图：
 
-  ![image-20191029183030601](/image/1029-raft-leader-init-nextindex.png)
+  ![image-20191029183030601](/image/raft/1029-raft-leader-init-nextindex.png)
 
 当新leader初始化时，对于每个follower初始化一个**nextIndex**（等于leader当前的index），然后通过多次AppendEntries，将nextIndex向前推进到正确的位置中。
 
@@ -106,7 +106,7 @@ Log中每个Entry包含一个logindex和一个termid，用来保证每个loginde
 
 综上，发现只要有大多数节点活着，大部分情况下，一次rpc就能提交，那么我们可以得出一次提交的过程如下：
 
-![image-20191029174944957](/image/1029-raft-logreplication.png)
+![image-20191029174944957](/image/raft/1029-raft-logreplication.png)
 
 1. client请求leader
 2. leader将client的command封装成logentry，记在本地log中
@@ -142,7 +142,7 @@ Log中每个Entry包含一个logindex和一个termid，用来保证每个loginde
 
 一个新的leader中，可能有一些之前没有标记commited的entry；对于这些日志，不能简单的采用多数派的方式来提交，考虑以下情况：
 
-![image-20191030182047841](/image/1029-commit-previous.png)
+![image-20191030182047841](/image/raft/1029-commit-previous.png)
 
 在c时间点处，S5挂了，S1作为新leader；S1将之前term=2的日志复制到S3中，这时满足了多数派；如果，就这样提交了前任期的日志，那么如果此时S1挂了，S5起来了，S5同样复制自己的遗留entry，这时就会把已经提交的日志覆盖了，这就有问题了。
 
@@ -160,11 +160,11 @@ Log中每个Entry包含一个logindex和一个termid，用来保证每个loginde
 
 ### Joint Consensus
 
-![image-20191030095402098](/image/1029-raft-membershipchange.png)
+![image-20191030095402098](/image/raft/1029-raft-membershipchange.png)
 
 在集群配置变更的过程中，无法保证所有节点同时变更；因此，在变动过程中，由于同一时刻存在两种配置，会对majority的认识不一致（如上图）；那么为了保证配置变更时的集群安全，Raft采用两阶段的方式，如下图。
 
-![image-20191031150609711](/image/1029-raft-conf-2pc.png)
+![image-20191031150609711](/image/raft/1029-raft-conf-2pc.png)
 
 相比于其他两阶段的方式，Raft的两阶段不会阻塞客户请求，其添加了一个过渡期（称为**joint consensus**，见上图红色部分），过渡期是RaftLog是**[C_old_new,C_new)**的日志段，这段日志可以理解为在C_old和C_new两个共识组中进行双写，因此，就算在joint consensus中Leader挂了，然后回滚到C_old配置，数据也不会丢失；
 
@@ -178,7 +178,7 @@ joint consensus有以下三个特点：
 
 那么，配置变更的流程总结如下：
 
-![image-20191030224836898](/image/1029-membership.png)
+![image-20191030224836898](/image/raft/1029-membership.png)
 
 1. 当leader收到了配置变更的请求后，将C_old和C_new结合，生成一个**特殊的logentry——C_old_new**，将其复制到其他所有新老server中；
 
@@ -212,7 +212,7 @@ joint consensus有以下三个特点：
 
 > 如果只允许Leader才能创建Snapshot，那么Leader的实现逻辑就会变得很复杂，即在传输Snapshot的过程中，还要保证Client的响应正常；并且，创建Snapshot的信息在每个server都有，那么每个Follower产生自己的Snapshot是很容易的，没有必要限制只在Leader才可以。
 
-![image-20191031095118806](/image/1029-snapshot.png)
+![image-20191031095118806](/image/raft/1029-snapshot.png)
 
 对于请求snapshot之前的记录的follower，leader直接通过`InstallSnapshot`调用，将Snapshot发送给Follower。
 

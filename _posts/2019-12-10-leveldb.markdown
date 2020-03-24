@@ -22,13 +22,13 @@ TransactionManager / LockManager / LogManager / AccessMethod是事务型存储�
 >
 > *When designing access methods we set an upper bound for two of the RUM overheads, this implies a hard lower bound for the third overhead which cannot be further reduced*
 
-![img](/image/1212-rum.png)
+![img](/image/lsm-tree/1212-rum.png)
 
 类似于分布式系统中的CAP理论，RUM猜想是设计AccessMethod的一个三角形，意思是我们很难设计一个完美的存储结构，能够同时满足Read Optimized/Update Optimized/MemoryOptimized。只能尽力满足其中两项，而牺牲第三者。因此，我们设计一个数据库存储结构时，我们需要考虑三个**放大点（amplification）**。
 
 
 
-![image-20200221103609246](/image/1212-storage.png)
+![image-20200221103609246](/image/lsm-tree/1212-storage.png)
 
 写放大是指写入介质的数据和写入数据库的数据的比值，比值越大表示写放大越大，意味着我们完成一次写入，额外需要的IO量；为优化写放大，我们需要合并写（write consolidation)并减少数据重组（data reorganization），但这会增高读延迟并有空间上的代价。读放大是指一次查询需要读取的数据页数量，我们可以使用特定的物理索引来加速读取速度，但是这需要写更多的数据，同时也需要更多的空间。那么基于这个的猜想，来重新认识一下Btree和LSM-tree。
 
@@ -36,7 +36,7 @@ TransactionManager / LockManager / LogManager / AccessMethod是事务型存储�
 
 首先来回顾以下Btree；BTREE是一个自平衡的树，相比于BST/AVL/RB-tree这些树，它是一个磁盘上的平衡树，平衡的是磁盘IO路径。如下图，简单描述了各个树的关系。
 
-![image-20191215101830900](/image/1212-BBB.png)
+![image-20191215101830900](/image/lsm-tree/1212-BBB.png)
 
 一般来说，当我们讨论Btree时，我们说的是B+-tree。假设Btree对于的表的大小是N，这意味着leafnode有N条记录；我们假设Btree的高度不包含最后一层并且每个page上有B条记录，这样我们可以得出Btree的深度为$log_{B}N/B$:
 
@@ -56,7 +56,7 @@ LSM-tree(Log Struct Merge tree) 其中的Log思想来源于Log Structured FileSy
 
 > 一句话总结LSM-tree：“Log is borrowed, Tree can be replaced, Merge is the king.”
 >
-> ![image-20200305134448348](/image/1212-level.png)
+> ![image-20200305134448348](/image/lsm-tree/1212-level.png)
 >
 > 在原论文中，有个有趣的结论——The Five Minute Rule，即，若某页的访问频率>5min/次，那么可考虑将该页放到内存中。这要求我们在设计存储引擎时，要充分利用内存和外存的存储特点。
 
@@ -64,9 +64,7 @@ LSM-tree(Log Struct Merge tree) 其中的Log思想来源于Log Structured FileSy
 
 不同层的树会由专门的后台进程执行rolling merge**，先从C1取一个multi-page block放到C1-buffer中，其中包含若干个C1的leafnode；然后从C0的leafnode中取entry进行合并，将合并结果追加到C1后面，如下图；新合并的节点不会覆盖原节点，旧节点可用来恢复数据。
 
-
-
-![Alt](/image/1212-rollmerge.png)
+![Alt](/image/lsm-tree/1212-rollmerge.png)
 
 相比于Btree，LSM可用更少的IO完成数据的持久化，有两个原因：
 
@@ -86,11 +84,11 @@ Compaction主要完成两件事：归并排序和垃圾收集。一般策略有�
 
 这两种策略都是可行的，但前者为了减小写放大，牺牲了读取速度和空间利用率；后者为了读取速度和空间利用率，带来了一定的写放大。而LevelDB的Compaction是两种策略的结合。
 
-![image-20191216103816910](/image/1212-leveldb.png)
+![image-20191216103816910](/image/lsm-tree/1212-leveldb.png)
 
 在LevelDB中，$Level_0$采取的是**Sized-tiered Compaction**；其他level中将key进行分区，采取**Level-based Compaction**，需要注意的是LevelDB中合并的新block不会覆盖旧的block，因为旧的block会用在recovery中。
 
-![image-20191216114802822](/image/1212-leveldb-compact.png)
+![image-20191216114802822](/image/lsm-tree/1212-leveldb-compact.png)
 
 ## 小结
 
@@ -140,7 +138,7 @@ Compaction操作是LSM-tree很重要的操作，其执行的速率（rate）控�
 
 X-Engine整体上和基于LSM-tree的存储引擎类似，在数据层面分为内存和外存两块结构；在外存分为若干层（一般三层就够了），上层不断向下进行compact；内存分为活跃的内存表（Active Memtable）和固定的内存表（Immutable Memtable），Active Memtable满了后，转换为一个新的Immutable Memtable，最终Immutable Memtable会flush到$level_0$中，作为一个extent。另外，很重要的一点，作为一个数据库引擎，Redolog是必不可少的。
 
-![image-20200220154116548](/image/20200220-xengine.png)
+![image-20200220154116548](/image/lsm-tree/20200220-xengine.png)
 
 其实这样整体就可以了解的，但是X-Engine在此基础上加了Cache，Index，FPGA，NVMe等软硬件的优化手段；就从ReadPath、WritePath和Compaction三个方面进行了解。
 

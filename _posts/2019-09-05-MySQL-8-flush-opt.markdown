@@ -10,11 +10,9 @@ typora-root-url: ../../yummyliu.github.io
 ---
 * TOC
 {:toc}
-> 转载请注明出处：http://liuyangming.tech or http://yummyliu.github.io
 
 
-
-![image-20190619171105314](/image/logbuffer-flush.png)
+![image-20190619171105314](/image/mysql-8-redo/logbuffer-flush.png)
 
 在上述LogBuffer的机制中，明显在多个UserThread写入的时候，存在一个竞争瓶颈。尤其是如果磁盘的写入速度比较快，导致磁盘在等待内存线程写入的竞争；这就大大限制了整个系统的写TPS。
 
@@ -32,7 +30,7 @@ typora-root-url: ../../yummyliu.github.io
 
 > storage/innobase/include/ut0link_buf.h
 
-![image-20191016170806232](/image/link-buf.png)
+![image-20191016170806232](/image/mysql-8-redo/link-buf.png)
 
 在8.0中，添加了一个新的数据结构：Link Buffer。
 
@@ -68,7 +66,7 @@ LogBuffer主要承载mlog写入和log写盘。
 - buf_ready_for_write_lsn(其实就是recent_written.tail())表示可以进行write的位置，该位置之前日志是连续的，之后会有空洞。
 - current_lsn，已经分配给某个mtr进行日志写入的最远位置。
 
-![image-20191016180050715](/image/recent-written.png)
+![image-20191016180050715](/image/mysql-8-redo/recent-written.png)
 
 当前mtr0已经结束，在log_writer下一次写盘时，会尝试推进tail。那么就会推进到mtr0结束处。将此处的mtrrecordgroup刷盘。由于recent_written是有限大小的，因此会循环使用，并且如果新的mtr没有得到link，那么就会等linkbuf有空间才会写。
 
@@ -86,7 +84,7 @@ LogBuffer主要承载mlog写入和log写盘。
 
 我们将flushList中的最早添加的脏页的lsn称为**last_lsn**；由于一个page可能会被修改多次，其中记录了oldest_modification和newest_modification（但是bufferpool中的状态始终是page最新的状态），那么，5.7的flushlist中的每个page的**oldest_modification >= last_lsn**；
 
-![image-20191016180343977](/image/recent-closed.png)
+![image-20191016180343977](/image/mysql-8-redo/recent-closed.png)
 
 而在8.0的flushlist中，flushlist没有按照lsn的顺序添加，page的oldest_modification >= last_lsn-recent_close.capacity（可能recent_closed的最后一个mtr的dirtypage已经addtoflushlist了，但是之前的mtr的dirtypage还未addtoflushlist，如上图，只有mtr2的日志拷贝到flushlist中了，但是mtr2对应的lsn是最大的）；这就意味着，在新的flushlist中，最早放到flushlist中的page的oldest_modification不是最小的，因此不能用这个oldest_modification作为checkpoint_lsn，而是要由oldest_modification-recent_closed->capacity作为checkpoint_lsn。
 
@@ -115,17 +113,17 @@ LogBuffer主要承载mlog写入和log写盘。
 
 在事务提交的时候，一般要求日志必须落盘(除非重新设置了参数)。在5.7中，提交的时候由UserThread负责日志落盘。在8.0中，则是由专门的线程负责，如下图：
 
-![image-20190906174825675](/image/logbuffer-8.png)
+![image-20190906174825675](/image/mysql-8-redo/logbuffer-8.png)
 
 + **log_writer**：原来是由UserThread驱动的，每次将整个LogBuffer写出；现在只要LogBuffer中有数据可以写，专门的log_writer线程不断地将日志记录write到pagecache中；为了避免覆盖不完整的block，每次写都是写一个完整的block；同时更新write_lsn。
 
-  ![image-20191016180843535](/image/log-writer.png)
+  ![image-20191016180843535](/image/mysql-8-redo/log-writer.png)
 
 + **log_flusher**：log_flusher不断的读取write_lsn，然后调用`fil_flush_file_redo`将日志落盘，同时更新flushed_to_disk_lsn。这样log_flusher和log_writer按照各自的速度同时运行，除了系统内核中的同步外（write_lsn的原子读写），没有同步操作。
 
 + **log_flush_notifier**：之前提交的时候，当前线程需要确认LogBuffer已经fsync到哪个位置，如果没有，就将LogBuffer落盘，然后等待；
 
-  ![image-20190909203252074](/image/log_flush_notifier.png)
+  ![image-20190909203252074](/image/mysql-8-redo/log_flush_notifier.png)
 
   而现在用户线程提交的时候，会检查flushed_to_disk_lsn是否足够，如果不够，那么等待某个flush_events。如上图，这里的flush_event按照lsn的区间分成不同的块（默认**INNODB_LOG_EVENTS_DEFAULT**个），并可以循环利用；这样flushed_to_disk_lsn推进一块，就可以通知一部分线程commitOK，提高整体的扩展性，如下图。
   
@@ -162,7 +160,7 @@ MySQL8中，日志的基本结构和原来一样；但是在整个处理流程�
 
 大致流程如下图：
 
-![image-20190910162425005](/image/events.png)
+![image-20190910162425005](/image/mysql-8-redo/events.png)
 
 mtr提交时，首先通过prepare_write得到最终要写入的日志长度，分为5步：
 

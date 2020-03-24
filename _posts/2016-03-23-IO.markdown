@@ -11,7 +11,7 @@ typora-root-url: ../../yummyliu.github.io
 {:toc}
 我们知道在数据库对于内存和外存之间的读写速度差异，通过bufferpool的方式进行调和。bufferpool的实现相对复杂，那么在实现bufferpool不合算，但是又希望减小内外读写差异对性能的影响，可以通过mmap/msync**将文件的page cache直接映射到进程的地址空间，通过写内存的方式修改文件**，这其实是借用操作系统对内存的管理来获得一个bufferpool。而除了bufferpool这个思路，还可以通过异步（Async）的思想减少block的时间。
 
-![image-20200207145938692](/image/20200207-linuxIO.png)
+![image-20200207145938692](/image/linux-io/20200207-linuxIO.png)
 
 在Linux中，目前所知有三种异步的思路：signal，MSG_ERRQUEUE和io_getevents。io_getevents就是Linux的异步IO（**A**sync **IO**），本文从blocking概念开始说起，希望读到这篇文章的同学能对Linux的IO有个大致的了解。
 

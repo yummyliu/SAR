@@ -64,7 +64,7 @@ NVMe和NVM不是一个东西；NVMe是和AHCI是同一类同，其是一个存�
 + PolarDB Cluster：实现了基于InnoDB的redo日志的物理复制的一主多从的集群，其中存储模块由实现的类POSIX的文件操作API替换，从而将**数据和redolog都**写入到PolarFS中。
 + PolarFS：网络上利用RDMA，wal buffer上利用3D Xpoint介质的NVRam等新硬件优化的分布式文件存储服务。这里的WAL buffer是每个chunkserver对于文件块中更改的wal；不是database的wal buffer。
 
-![image-20190605141205518](/image/polardb.png)
+![image-20190605141205518](/image/polardb/polardb.png)
 
 ## PolarDB与Aurora的比较
 
@@ -83,7 +83,7 @@ NVMe和NVM不是一个东西；NVMe是和AHCI是同一类同，其是一个存�
 
 PolarFS是一个用户空间的分布式文件系统。MySQL代码可以容易的从Linux FS迁移到PolarFS；提供了O_DIRECT的读写操作；支持数据页的原子写；
 
-![image-20190604181103288](/image/image-20190604181103288.png)
+![image-20190604181103288](/image/polardb/image-20190604181103288.png)
 
 
 

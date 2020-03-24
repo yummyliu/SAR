@@ -13,7 +13,7 @@ typora-root-url: ../../yummyliu.github.io
 
 当单机系统的发展遭遇摩尔定律的限制时，将数据（磁盘或者内存）或计算任务（CPU）进行拆分就是**分布式存储**或**分布式计算**系统。对于无状态的任务，可以简单的将单机并行，变成多机并行；但是如果将数据进行了拆分，那么就需要考虑数据的可用性、容错性和一致性。本文针对数据的分布式存储场景，梳理一下当前自己所了解的大概，如下是简单梳理了一个的脑图。
 
-![image-20191221122232898](/image/1217-distribute-data.png)
+![image-20191221122232898](/image/dist-db/1217-distribute-data.png)
 
 如果将分布式的逻辑下方到存储层，常常会遇到分布式环境下四个问题：消息丢失，连接失败，整站挂掉和网络分割。
 
@@ -66,19 +66,19 @@ typora-root-url: ../../yummyliu.github.io
 
 第二个问题就是分布式环境中，各个服务之间的操作同步；单机中可以通过**mutex**或**semaphore**进行同步，类似的在分布式环境中也有类似概念，但是复杂点，这里为了和事务锁进行区分，称其distributed rwlock。实现方式分为乐观锁和悲观锁两种，如下图：
 
-![image-20191220160125996](/image/1217-dist-lock.png)
+![image-20191220160125996](/image/dist-db/1217-dist-lock.png)
 
 这里主要讨论悲观锁。由于锁超时的机制存在（且必须存在锁超时的机制，否则一个挂掉的owner会一直不释放锁），我们不能保证持有锁并执行自己任务所花的时间一定小于锁超时的时间，那么有可能在owner不知情的情况下，lockmanager将锁释放的情况；这样就会产生异常，比如lost update。因此，不能对执行时间有任何假设，从而expiration time就很难确定。
 
-![Unsafe access to a resource protected by a distributed lock](/image/1217-unsafe-lock.png)
+![Unsafe access to a resource protected by a distributed lock](/image/dist-db/1217-unsafe-lock.png)
 
 解决这个问题一个很巧妙的方式就是lock manager在每次分配锁时，会分配一个**单调递增**的fence token，这样存储层会判断fence token的大小，拒绝小于存储记录的fence token的更新请求。
 
-![Using fencing tokens to make resource access safe](/image/1217-fencing-tokens.png)
+![Using fencing tokens to make resource access safe](/image/dist-db/1217-fencing-tokens.png)
 
 这样，就解决了expiration time带来的问题，但是如何生成全局递增的fence token呢？感觉很简单哈？
 
-![image-20191220152131591](/image/1217-incre-counter.png)
+![image-20191220152131591](/image/dist-db/1217-incre-counter.png)
 
 简单的方式就是直接利用一个单点数据库来生成，可以给这个单点加一个standby保证可用性，但是需要在两者的强一致和性能之前权衡；然后也可以使用前一节的分布式逻辑时间戳（可见在分布式环境下这个全局递增的时间戳太有用了）。
 
@@ -137,7 +137,7 @@ typora-root-url: ../../yummyliu.github.io
 
 在2PC中一般有两个角色，一个全局协调者的TM(Transaction Manager)与多个本地存储服务的RM(ResourceManager)。2PC的两个阶段如下：
 
-![image-20191221130609598](/image/1217-2pc.png)
+![image-20191221130609598](/image/dist-db/1217-2pc.png)
 
 理想情况是：在voting阶段，如果RM节点返回了Yes；那么提交成功。否则，全部回滚。
 
@@ -151,7 +151,7 @@ typora-root-url: ../../yummyliu.github.io
 
 2PC的RM在返回Yes之后，处于阻塞的状态；如果此时TM挂了，那么系统就阻塞住了；Skeen和Stonebreaker 在1981年，提出了3PC的解决方案。相比于2PC，3PC是非阻塞的分布式事务原子提交协议，其将commit阶段分为两步，并引入了RM的超时处理，如下图（from Wikipedia）：
 
-![image-20191224214606499](/image/1217-3pc.png)
+![image-20191224214606499](/image/dist-db/1217-3pc.png)
 
 相比于2PC，3PC的节点可以对事务进行超时处理，避免了系统阻塞。另外，在2PC在commit阶段，如果TM和RM都挂了，并且该某个RM已经对事务进行了提交（**可以这么看，RM对事务commit状态的确认发生在了TM之前**）；那么，系统recover后，TM中事务是Prepared，而某个RM中却是commited，这造成了数据状态的不一致。
 

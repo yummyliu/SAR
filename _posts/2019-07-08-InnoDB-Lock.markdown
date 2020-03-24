@@ -13,7 +13,7 @@ typora-root-url: ../../yummyliu.github.io
 
 + mutex：基于系统提供的原子操作，用在内存共享结构的串行访问上，比如：
 
-![image-20191226141404664](/image/1226-share-innodb.png)
+![image-20191226141404664](/image/btr-rwlock/1226-share-innodb.png)
 
 + Dictionary Cache
 + Transaction System的并发访问；比如，在修改indexpage前，在Transaction system的header中写入一个undo log entry。
@@ -90,7 +90,7 @@ enum btr_latch_mode {
 
 而高字节放一些标记位，用来判断rwlock的类型；如下是该函数的大体逻辑：
 
-![image-20191227175829430](/image/btr_cur_search_to_nth_level.png)
+![image-20191227175829430](/image/btr-rwlock/btr_cur_search_to_nth_level.png)
 
 ### **1. 初始化扫描指令**；
 
@@ -106,7 +106,7 @@ enum btr_latch_mode {
 
 ### 2. 查找AHI信息
 
-![image-20191226172027826](/image/ahi-search.png)
+![image-20191226172027826](/image/btr-rwlock/ahi-search.png)
 
 Adaptive Hash Index作为Btree寻路的缓存，提高Btree寻路的开销；在按层查找Btree之前，荣国`btr_search_guess_on_hash`先检索内存page的hash。
 

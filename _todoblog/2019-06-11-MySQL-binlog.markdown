@@ -1,6 +1,6 @@
 ---
 layout: post
-title: MySQL Binlog
+title: MySQL-Binlog由很浅到浅
 date: 2019-06-11 18:28
 header-img: "img/head.jpg"
 categories: jekyll update
@@ -11,6 +11,8 @@ typora-root-url: ../../yummyliu.github.io
 
 * TOC
 {:toc}
+作为一个MySQL初学者，BinLog是MySQL经常提到的很关键的一个模块，这篇文章整理了对这方面的总结，从基本配置开始。
+
 # binlog配置与管理
 
 + MySQL的配置文件
@@ -35,7 +37,7 @@ server-id=1
 
 + 重启MySQL
 
-```bash
+```
 mysqladmin -u root -p shutdown
 
 /usr/local/mysql/bin/mysqld_safe --datadir=/Users/liuyangming/dbdata/mysql/data &
@@ -72,7 +74,7 @@ mysql> show binary logs;
 4 rows in set (0.01 sec)
 ```
 
-+ binlog的切换时机：
+在如下三种情况下，binlog会发生切换：
 
 1. MySQL重启
 
@@ -108,17 +110,15 @@ mysql> show binary logs;
    5 rows in set (0.00 sec)
    ```
 
-查看binlog内容
+## binlog内容
+
+binlog是一组binlog文件加一个索引文件，包含了MySQL中的数据更改。每个log文件由一个magic数(`#define BINLOG_MAGIC        "\xfe\x62\x69\x6e"`，即"\xfe bin")和一组event构成。
 
 ```sql
 mysql> show binlog events in 'bin.000001';
 ```
 
-![image-20190612084052992](/image/binlog-example.png)
-
-binlog是一组binlog文件加一个索引文件，包含了MySQL中的数据更改。
-
-每个log文件由一个magic数(`#define BINLOG_MAGIC        "\xfe\x62\x69\x6e"`，即"\xfe bin")和一组event构成。
+<img src="/image/mysql-binlog/binlog-example.png" alt="image-20190612084052992" style="zoom: 67%;" />
 
 每个log的第一个event都是一个`Format_description_log_event`；描述了当前的log文件是什么格式。后续的event就按照这个格式进行解析；最后一个event是log-rotation事件，描述了下一个binlog文件的名称，如下：
 
@@ -153,17 +153,13 @@ IO thread：从master端读取binlog，然后写入到本地的relaylog中。
 
 SQL thread：读取relay log，按照event重做数据。
 
-通过`show slave status`可以查看复制的进度。当SQL线程执行完某个relaylog上的所有event，那么就将该文件删除。
-
-在如下三个情况下，MySQL slave会创建一个新的relaylog：
+通过`show slave status`可以查看复制的进度。当SQL线程执行完某个relaylog上的所有event，那么就将该文件删除。在如下三个情况下，MySQL slave会创建一个新的relaylog：
 
 + IO线程启动
 + FLUSH LOGS
 + 当前relaylog大于配置项([`max_relay_log_size`](https://dev.mysql.com/doc/refman/5.7/en/replication-options-slave.html#sysvar_max_relay_log_size))。
 
 ## GTID-based replication
-
-> [GTID-based replication](https://dev.mysql.com/doc/refman/5.7/en/replication-gtids.html)
 
 全局事务ID，每个事务由GTID标识，在master上跟踪事务状态并在slave上应用。gtid在整个复制集群中是唯一的，slave中如果重做了某个gtid标识的事务，那么后续该gtid标识的事务则不予理睬。
 
@@ -262,7 +258,7 @@ event的内容按照如下约定写入：
 
 + 数字按照little-endian存储。
 
-  ![Image result for little-endian](/image/bigLittleEndian.png)
+  ![Image result for little-endian](/image/mysql-binlog/bigLittleEndian.png)
 
 + 代表位置和长度的值，按照byte表示。
 
@@ -289,9 +285,16 @@ event的内容按照如下约定写入：
   + null结尾的变长串的前置length不包含null。
   + 如果变长串是event内容的最后一个，如果没有length前缀；那么就可以通过event的长度得出。
 
-> * TOC
+## 事务binlog event写入流程
 
-{:toc}
+binlog cache和binlog临时文件都是在事务运行过程中写入，一旦事务提交，binlog cache和binlog临时文件都会释放掉。而且如果事务中包含多个DML语句，他们共享binlog cache和binlog 临时文件。整个binlog写入流程：
+
+1. 事务开启
+2. 执行dml语句，在dml语句第一次执行的时候会分配内存空间binlog cache
+3. 执行dml语句期间生成的event不断写入到binlog cache
+4. 如果binlog cache的空间已经满了，则将binlog cache的数据写入到binlog临时文件，同时清空binlog cache。如果binlog临时文件的大小大于了max_binlog_cache_size的设置则抛错ERROR 1197
+5. 事务提交，整个binlog cache和binlog临时文件数据全部写入到binlog file中，同时释放binlog cache和binlog临时文件。但是注意此时binlog cache的内存空间会被保留以供THD上的下一个事务使用，但是binlog临时文件被截断为0，保留文件描述符。其实也就是IO_CACHE(参考后文)保留，并且保留IO_CACHE中的分配的内存空间，和物理文件描述符
+6. 客户端断开连接，这个过程会释放IO_CACHE同时释放其持有的binlog cache内存空间以及持有的binlog 临时文件。 本文主要关注步骤3和4过程中对binlog cache以及binlog 临时文件的写入细节。
 
 # MySQL的BinLog
 
@@ -337,24 +340,23 @@ InnoDB是MySQL默认支持的事务型存储引擎，当上层同时启用binlog
 
 2. Prepare binlog
 
-   1. 将事务写入binlog；
-
-   2. **fsync**：基于`sync_binlog`配置的行为，进行binlog刷盘。
+   1. 没什么特别需要做的
 
       > **XA recovery**
-      >
+   >
       > 如果这里binlog刷盘了，那么恢复的时候，该事务认为是提交的；如果在这之前crash了，该事务会被回滚。
+   
+3. Commit binlog
 
-3. Commit InnoDB
+   1. 将事务写入binlog；
+   2. **fsync**：基于`sync_binlog`配置的行为，进行binlog刷盘。
+
+4. Commit InnoDB
 
    1. 在logbuffer中，写入commit记录；
    2. 释放`prepare_commit_mutex`;
    3. **fsync**：日志文件刷盘
    4. 释放InnoDB的锁
-
-4. Commit binlog
-
-   1. 没什么特别需要做的
 
 在多个事务并发的进行2PC提交的时候，redolog的写入顺序和binlog的写入顺序可能不一致；基于`prepare_commit_mutex`，确保三次刷盘操作的顺序，从而保证binlog与InnoDB的redolog的顺序是一致的。
 

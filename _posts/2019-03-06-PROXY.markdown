@@ -237,7 +237,7 @@ while True:
     print response
 ```
 
-![image-20190312171300960](../image/image-20190312171300960.png)
+![image-20190312171300960](../image/pgb-proxy/image-20190312171300960.png)
 
 # Pgbouncers
 

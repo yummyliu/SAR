@@ -42,7 +42,7 @@ TCP总共有11中状态：
 
 从网上摘了个图：
 
-![](/../yummyliu.github.io/image/tcp.gif)
+![](/../yummyliu.github.io/image/tcp-overview/tcp.gif)
 
 # TCP连接建立与断开
 
@@ -63,7 +63,7 @@ TCP总共有11中状态：
 
 server收到ACK后，先和ESTABLISHED的连接对比，然后和`SYN QUEUE`中的对比；对比成功，syn queue中的slot删掉，创建一个新的inet_sock，放到ACCEPT QUEUE队列中；**连接建立成功**。当application调用accept的时候，相应的sockets出列，赋予给application
 
-![img](/../yummyliu.github.io/image/all-1.png)
+![img](/../yummyliu.github.io/image/tcp-overview/all-1.png)
 
 以上就是通常的三次握手；但是如果设置了`TCP_FASTOPEN`和`TCP_DEFER_ACCEPT`就有点不一样
 

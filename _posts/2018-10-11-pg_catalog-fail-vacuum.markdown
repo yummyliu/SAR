@@ -14,7 +14,7 @@ typora-root-url: ../../yummyliu.github.io
 
 # 现象
 
-![image-20190110130454213](/image/image-20190110130454213.png)
+![image-20190110130454213](/image/pg-catalog-vacuum/image-20190110130454213.png)
 
 系统表pg_shdescription是cluster共享的catalog（其他共享的catalog还有pg_authid等）。出现的问题如下：
 
@@ -233,7 +233,7 @@ postgres=# select pg_relation_filepath('pg_shdescription');
 
 552是有问题的记录。`vim -b global/2396`打开文件，硬改。将552改成和其他正常记录一样的xmin。
 
-![image-20190118154836538](/image/image-20190118154836538.png)
+![image-20190118154836538](/image/pg-catalog-vacuum/image-20190118154836538.png)
 
 由于文件有缓存，这里利用重启的方式，重新加载文件。
 

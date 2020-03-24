@@ -15,7 +15,7 @@ typora-root-url: ../../yummyliu.github.io
 
 Nginx是一个无阻赛，事件驱动的单线程多进程的结构，其内部高度模块化，整体性能表现优异，资源利用率高。
 
-![The NGINX (/image/infographic-Inside-NGINX_process-model.png) master process spawns three types of child process: worker, cache manage, and cache loader. They used shared memory for caching, session persistence, rate limits, and logging.](https://www.nginx.com/wp-content/uploads/2015/06/infographic-Inside-NGINX_process-model.png)
+![The NGINX (/image/nginx-proc-manage/infographic-Inside-NGINX_process-model.png) master process spawns three types of child process: worker, cache manage, and cache loader. They used shared memory for caching, session persistence, rate limits, and logging.](https://www.nginx.com/wp-content/uploads/2015/06/infographic-Inside-NGINX_process-model.png)
 
 跟进程管理相关，有如下4个全局对象：
 

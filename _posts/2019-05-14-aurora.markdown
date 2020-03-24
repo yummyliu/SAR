@@ -67,7 +67,7 @@ typora-root-url: ../../yummyliu.github.io
 
 另外，由于将尽可能多的数据操作移到后台处理，Aurora设计上能够减少前台用户写的响应时间。如下图是Aurora的存储节点上的**日志写入与数据回放**流程：
 
-![image-20190516154245961](/image/image-20190516154245961.png)
+![image-20190516154245961](/image/aurora/image-20190516154245961.png)
 
 1. 首先将redo日志写入内存中的队列
 2. 日志持久化到磁盘的更新队列中后，向上层回ack（注意这里不是commit ok）。
@@ -143,7 +143,7 @@ Aurora中的事务提交同样是异步的。当client提交一个事务时，�
 
 在日志下沉章节的图中，可以知道1.2两步是会将接受到的记录持久化，但是这里持久化的并不一定连续；那么恢复的时候首先找到连续可用的VCL进行truncate；然后再计算VDL，进行truncate；如下图例子：
 
-![image-20190605103026176](/image/Aurora-recover.png)
+![image-20190605103026176](/image/aurora/Aurora-recover.png)
 
 在Aurora的恢复中，为了方式恢复失败，恢复前将需要truncate的LSN区间进行持久化；为了防止恢复失败并再次恢复时的歧义，持久化的truncate区间会带上epoch信息。
 

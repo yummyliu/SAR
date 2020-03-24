@@ -84,7 +84,7 @@ typora-root-url: ../../yummyliu.github.io
 
 上述算法的基本点就是先生成一个较大的HashTable，那么在内存中对HashTable的随机访问就可能造成较多的CacheMiss。因此，为减少CacheMiss，提出了将HashTable切分为若干个CacheSize大小的块，至此原HashJoin就加了一部Partition步骤，如下图：
 
-![image-20200108105050853](/image/0108-partition-hashjoin.png)
+![image-20200108105050853](/image/hashjoin/0108-partition-hashjoin.png)
 
 这个算法可称为**Partition HashJoin**，分为三步。
 
@@ -96,7 +96,7 @@ typora-root-url: ../../yummyliu.github.io
 
 但是引入的Partition阶段，可能会将各个Partition放在不同的内存页上；在虚拟内存映射表中对于每一页都需要一个条目，那么，如果有很多partition，就会有很多条目；而虚拟内存映射表也有自己的缓存，叫TLB，条目过多，TLB就会溢出，导致最终的TLB MISS；
 
-![image-20200108182527939](/image/0108-tlb.png)
+![image-20200108182527939](/image/hashjoin/0108-tlb.png)
 
 因此，可用的TLB条目大小决定了**可以高效使用的分区数**的上限，研究学者进一步考虑了Partition阶段的TLB的影响，最终提出了RadixJoin算法。
 
@@ -104,7 +104,7 @@ typora-root-url: ../../yummyliu.github.io
 
 Radix join通过多次（一般来说两到三次即可）radix-partition，得到不超过TLB容量的partition。如下图。
 
-![image-20200108110812517](/image/0108-radix-join.png)
+![image-20200108110812517](/image/hashjoin/0108-radix-join.png)
 
 #### Radix Partition
 

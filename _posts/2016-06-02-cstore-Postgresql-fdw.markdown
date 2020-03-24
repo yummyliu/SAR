@@ -50,7 +50,7 @@ void GetForeignPaths (	PlannerInfo *root,
 ```
 生成外部表扫描的路径，可能有多条路径，每条路径要有相应的cost。调用create_foreign_path来生成一个ForeignPath结构，然后add_path添加到baserel->pathlist中
 ForeignPath结构如下:
-![fdwpath](/image/fdwpath.png)
+![fdwpath](/image/cstore/fdwpath.png)
 Cstoregetforeignpath
 
 从进程的Recache中取到foreigntableid，对应的RelationData，double check
@@ -144,7 +144,7 @@ stripe footer 。
 
 #### table data file
 
-![csoredatafile](/image/cstore-file-layout.jpg)
+![csoredatafile](/image/cstore/cstore-file-layout.jpg)
 其由很多stripe构成；
 每个stripe中是按列存放的，
 每列数据包括exists序列、 value序列 物理上，exists序列是连续存放的，同样，value序列也是连续存放的，放在exists后面;

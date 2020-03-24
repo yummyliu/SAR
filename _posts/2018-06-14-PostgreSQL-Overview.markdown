@@ -16,7 +16,7 @@ typora-root-url: ../../yummyliu.github.io
 
 **图1. 数据库的主要模块（图来自论文Architecture of db）**
 
-![adb](/image/arch-db.png)
+![adb](/image/innodb-overview/arch-db.png)
 
 ## 1. 有效的存储
 
@@ -177,7 +177,7 @@ drwx------ 2 postgres postgres  12288 Jun 15 09:19 pg_xact ： commit log
 
 ##### 1.3.2.3 PostgreSQL的页的结构
 
-![h](/image/heap_file_page.jpg)
+![h](/image/pg-overview/heap_file_page.jpg)
 
 + PageHeader：page中各个部分的偏移
 + iterm，对应的tuple的（offset，length）
@@ -319,13 +319,13 @@ PostgreSQL等常见的DB中，基本都是Pull模型；
 >
 > ​	类似于数据缓存，利用数据访问的局部性，可以提高性能；代码的执行也是一行一行的，代码也是需要加载的，跳来跳去不太好；就比如在代码中，尽量少用goto控制语句，鼓励使用顺序，循环和分支来处理；
 >
-> ![nogoto](/image/nogoto.jpeg)
+> ![nogoto](/image/pg-overview/nogoto.jpeg)
 
 ##### 2.1.6.2 Push——producer driven
 
 在Push中，查询计划中有一些materialization points，也叫pipeline breaks；数据不是从前往后拉，是从后向前推，直到遇到某个pipeline breaks；如下图，原来的执行计划，分成了四段；
 
-![](/image/pipeline.jpeg)
+![](/image/pg-overview/pipeline.jpeg)
 
 ### 2.2 多个计算——并发控制
 
@@ -345,13 +345,13 @@ PostgreSQL等常见的DB中，基本都是Pull模型；
 
 + Pre-claiming Lock
 
-![](/image/pre_claiming.png)
+![](/image/pg-overview/pre_claiming.png)
 
 在事务开始执行前，请求所需要的对象上的所有的锁；请求失败，就回滚；
 
 + Two-Phase Locking 2PL
 
-![](/image/2PL.png)
+![](/image/pg-overview/2PL.png)
 
 事务关于锁有两个阶段，第一个阶段：只加锁，不放锁；当有一个锁被释放了，进入第二个阶段：只放锁，不加锁；
 
@@ -359,7 +359,7 @@ PostgreSQL等常见的DB中，基本都是Pull模型；
 
 + Strict Two-Phase Locking
 
-![](/image/strict_2PL.png)
+![](/image/pg-overview/strict_2PL.png)
 
 和2PL的不同就是，锁保持到事务结束，一次性释放；不会有cascading abort；
 
@@ -479,7 +479,7 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
 
 草草画的一个PostgreSQL启动流程
 
-![pgstartup](/image/postgres启动.jpg)
+![pgstartup](/image/pg-overview/postgres启动.jpg)
 
 ## 参考文献
 

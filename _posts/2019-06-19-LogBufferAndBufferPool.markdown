@@ -39,7 +39,7 @@ typora-root-url: ../../yummyliu.github.io
 2. logrecord从logbuffer复制到logfile：write_mutex控制logbuffer顺序的刷盘；
 3. dirtypage从bufferpool刷写到datafile：log_flush_order_mutex控制flushlist的顺序刷盘；执行CHECKPOINT或preflush。
 
-![image-20190815150922711](/image/logbuffer-flush.png)
+![image-20190815150922711](/image/mysql-8-flush/logbuffer-flush.png)
 
 InnoDB的logbuffer是双buffer设计，每个默认是16MB，可以进行伸展；
 
@@ -79,7 +79,7 @@ InnoDB的logbuffer是双buffer设计，每个默认是16MB，可以进行伸展�
   
   m_made_dirty表示产生了脏页，需要将脏页追加到flush_list中。如下mtr_commit的流程图：
   
-  ![image-20190815173343250](/image/mtr_commit.png)
+  ![image-20190815173343250](/image/innodb-log-buffer/mtr_commit.png)
 
 在mtr_commit的时候，为了保证提前释放mutex后，flush_list的dirty_page的写入是顺序的，这里加了log_flush_order_mutex锁，减下·小了临界区的大小，提高了整体的并发度。
 
@@ -121,7 +121,7 @@ log_free_check(void)
 
 `log_sys->check_flush_or_checkpoint`：该项为True，表示需要刷logbuffer、或者preflush pool page，或者做CHECKPOINT；其实任何修改了超过4个页的操作，都应该调用`log_free_check`判断是不是需要刷盘。在`log_free_check`中，按照如图逻辑进行具体处理：
 
-![image-20190726164051545](/image/log_free_check.png)
+![image-20190726164051545](/image/innodb-log-buffer/log_free_check.png)
 
 **例子：insert涉及的redo记录的拷贝**
 
@@ -192,7 +192,7 @@ log_free_check(void)
 
 ### 双buffer切换刷盘
 
-![image-20190809205526703](/image/logbuffer-detail.png)
+![image-20190809205526703](/image/innodb-log-buffer/logbuffer-detail.png)
 
 MySQL-5.7中为了提高`log_sys->mutex`这个大锁的并发，添加一个新的write_mutex与双buffer的设计（每个默认16MB大小）。事务提交进行日志刷盘时，在mutex的保护下，进行`log_buffer_switch`——双buffer的切换：
 
@@ -223,6 +223,15 @@ MySQL-5.7中为了提高`log_sys->mutex`这个大锁的并发，添加一个新�
 
    + `write_lsn`/`current_flush_lsn`/`flushed_to_disk_lsn`：buf的刷盘分为两步write和flush；每次写盘的时候都是写到log_sys->lsn，这里会将write_lsn设置为log_sys->lsn；表示当前开始从`write_lsn`开始写，`current_flush_lsn`是正在执行flush操作的lsn；flushed_to_disk_lsn是已经flush到磁盘的lsn（**注意这里是lsn，上面mtrbuf向LogBuffer中拷贝的偏移是ulint**）。
    + `n_pending_flushes`/`flush_event`：当前等待redo sync的任务，最大值为1；由`mutex`控制对flush_event的互斥访问，从而设置`n_pending_flushes`；设置了flush_event就触发相应线程进行刷盘。
+
+> write ahead优化
+>
+> 操作系统写数据是按照block（page）为单位进行刷盘，一般是4KB原子写；如果需要写出的数据满足下面两个条件：
+>
+> + 起始地址等于按page对齐的地址
+> + 数据大小等于page的整数倍
+>
+> 那么需要将对应page中的其他数据读入page cache，然后再写出，这就是read-on-write IO，InnoDB中为了避免Logbuffer刷盘时的read-on-write，添加了一个参数——**innodb_log_write_ahead_size**，一般将这个参数为操作系统写block的大小。
 
 ## 从bufferpool到datafile
 

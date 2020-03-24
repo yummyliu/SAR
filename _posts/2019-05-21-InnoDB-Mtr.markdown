@@ -12,7 +12,7 @@ typora-root-url: ../../yummyliu.github.io
 {:toc}
 # Mini-transaction
 
-![image-20191226122700730](/image/mtr.png)
+![image-20191226122700730](/image/innodb-mtr/mtr.png)
 
 InnoDB的Mini-transaction（简称mtr）是保证若干个page原子性变更的单位。一个mtr中包含若干个日志记录——mlog，每个日志记录都是对某个page——mblock；
 
@@ -74,7 +74,7 @@ enum mtr_state_t {
 
 5. 2pc-commit
 
-![image-20190826165702452](/image/optimistic_insert.png)
+![image-20190826165702452](/image/innodb-mtr/optimistic_insert.png)
 
 ## 1. 分配undo空间
 
@@ -109,7 +109,7 @@ enum mtr_state_t {
 
 + MLOG_2BYTES
 
-  ![image-20190626135555987](/image/undopage.png)
+  ![image-20190626135555987](/image/innodb-mtr/undopage.png)
 
 ## 2. 写undo记录
 
@@ -125,7 +125,7 @@ undo的操作就两种，插入和修改；
 
 + MLOG_UNDO_INSERT：在redo中，写入一条undo相关redo记录
 
-  ![image-20190626135840069](/image/mlog_undo_insert.png)
+  ![image-20190626135840069](/image/innodb-mtr/mlog_undo_insert.png)
 
 > **注意**
 >
@@ -139,7 +139,7 @@ undo的操作就两种，插入和修改；
 
 + MLOG_COMP_REC_INSERT：插入一条记录；因为表的存储模式默认是compact，这里是compact insert。
 
-  ![image-20190626140845880](/image/mlog_comp_rec_insert.png)
+  ![image-20190626140845880](/image/innodb-mtr/mlog_comp_rec_insert.png)
 
   
 
@@ -223,7 +223,7 @@ undo的操作就两种，插入和修改；
 
 申请一个新的page，然后将需要分出去的记录转移过去，最后将记录插入到正确的page中。
 
-![image-20190826205715267](/image/btr_page_split_and_insert.png)
+![image-20190826205715267](/image/innodb-mtr/btr_page_split_and_insert.png)
 
 1. 找到split_rec，节点的分裂位置，无mtr
 
@@ -298,7 +298,7 @@ undo的操作就两种，插入和修改；
 
 申请一个新的page，将原root的记录，转移到新page中；重建旧的root，作为新的root；然后对新page进行节点分裂。
 
-![image-20190827084346097](/image/btr_root_raise_and_insert.png)
+![image-20190827084346097](/image/innodb-mtr/btr_root_raise_and_insert.png)
 
 1. 申请新page
 
@@ -324,7 +324,7 @@ undo的操作就两种，插入和修改；
 
 # Btree悲观删除涉及的mtr
 
-![image-20190828202208557](/image/btr_compress.png)
+![image-20190828202208557](/image/innodb-mtr/btr_compress.png)
 
 很多MTR都是和INSERT类似的，这里只是简单表示Btree悲观删除的逻辑。
 
