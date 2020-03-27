@@ -8,8 +8,8 @@ logo_location: "/image/sar.png"
 
 github: https://github.com/layamon
 about: beware the barrenness of a busy life
-disqus_shortname: layamon
-#disqus_shortname: yummyliu
+#disqus_shortname: layamon
+disqus_shortname: yummyliu
 google_analytics: UA-80816254-1
 
 enableTags: true
