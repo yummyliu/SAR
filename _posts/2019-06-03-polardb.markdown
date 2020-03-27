@@ -5,7 +5,7 @@ date: 2019-06-03 16:17
 header-img: "img/head.jpg"
 categories: 
   - Paper
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 
 * TOC

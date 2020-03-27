@@ -4,7 +4,7 @@ title: 事务请求在MySQL内的流转
 date: 2020-02-12 08:51
 categories:
   - MySQL
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 > * TOC
 {:toc}

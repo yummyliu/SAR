@@ -5,7 +5,7 @@ date: 2019-12-10 11:21
 categories:
   - datastruct
   - Database
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 * TOC
 {:toc}

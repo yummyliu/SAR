@@ -5,7 +5,7 @@ date: 2018-08-13 11:04
 header-img: "img/head.jpg"
 categories:
   - PostgreSQL
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 
 * TOC

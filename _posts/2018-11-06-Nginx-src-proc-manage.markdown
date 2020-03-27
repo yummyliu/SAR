@@ -5,7 +5,7 @@ date: 2018-11-06 17:18
 header-img: "img/head.jpg"
 categories: 
   - nginx
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 
 * TOC
@@ -65,7 +65,7 @@ worker通过监听channel上的command，来控制Nginx Process；
 
 利用系统调用`sigaction`， 将全局信号对象`ngx_signal_t  signals`注册到系统中，其中定义了各个信号的处理函数。
 
-> `sigaction`信号注册例子：<https://github.com/yummyliu/multi-processes-demo/blob/master/sighandler.c>
+> `sigaction`信号注册例子：<https://github.com/layamon/multi-processes-demo/blob/master/sighandler.c>
 >
 > 先构造一个`sigaction`数据结构，然后当参数传进去。
 

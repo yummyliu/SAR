@@ -5,7 +5,7 @@ date: 2016-07-09 23:25
 header-img: "img/head.jpg"
 categories: 
     - DBMS
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 
 * TOC

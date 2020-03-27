@@ -1,6 +1,6 @@
 # 创建一个新的博客文件，按照 yyyy-mm-dd-title.markdown创建
 #curDir="$(cd "$(dirname "$0")"; pwd)"
-curDir="/Users/liuyangming/yummyliu.github.io"
+curDir="/Users/liuyangming/layamon.github.io"
 postpath="${curDir}/_todoblog"
 if [ $# -lt 1 ]
 then
@@ -22,7 +22,7 @@ echo "title: $blogblogfile" >> $blogfile
 echo "date: $mydate $mytime" >> $blogfile
 echo "categories:" >> $blogfile
 echo "  -" >> $blogfile
-echo "typora-root-url: ../../yummyliu.github.io" >> $blogfile
+echo "typora-root-url: ../../layamon.github.io" >> $blogfile
 shift 1
 for i in $*; do
 echo "    - $i" >> $blogfile

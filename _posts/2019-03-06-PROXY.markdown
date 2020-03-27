@@ -243,7 +243,7 @@ while True:
 
 原来建立这个项目的原因是，在高负载的应用中，单进程的Pgbouncer的CPU会成为系统瓶颈。后期打算将Pgbouncer改成多进程的。现在先在Pgbouncer中加了HAproxyProtocol支持，透传clientIP。
 
-项目地址：<https://github.com/yummyliu/pgbouncers>
+项目地址：<https://github.com/layamon/pgbouncers>
 
 主要就是添加了一个参数`cf_ha_proxy`以及一个函数`safe_accept_proxy`:
 

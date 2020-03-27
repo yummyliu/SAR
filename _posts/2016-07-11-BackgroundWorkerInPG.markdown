@@ -4,7 +4,7 @@ title: 认识postgresql的BGW
 date: 2016-07-11 21:07
 categories: 
     - PostgreSQL
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 
 * TOC
@@ -303,7 +303,7 @@ VERSION = PostgreSQL 10.3
 简单期间，直接把源码中的例子拿过来
 
 ```bash
-cd  ~/go/src/github.com/yummyliu/patrol/commander
+cd  ~/go/src/github.com/layamon/patrol/commander
 cp ~/src/postgresql-10.3/src/test/modules/worker_spi/* .
 USE_PGXS=1 make
 ll worker_spi.so

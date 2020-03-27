@@ -14,7 +14,7 @@ categories:
 
 ## 前言
 
-从做一个巡检的插件（[patrol](https://github.com/yummyliu/patrol)）开始；需要使用C++的json以及网络库，所以采用C/C++混编的方式实现，该插件分为两部分：
+从做一个巡检的插件（[patrol](https://github.com/layamon/patrol)）开始；需要使用C++的json以及网络库，所以采用C/C++混编的方式实现，该插件分为两部分：
 
 + Commander: PostgreSQL的一个background worker，维护巡检的信息表，以及与patrol通信获取数据；
 + Patrol：实现的AgentServer（Golang），Commander向这些agent服务询问db及os的巡检信息。
@@ -27,7 +27,7 @@ categories:
 
 #### 解决：Docker
 
-先做了个 [postgresql-dev-docker](https://github.com/yummyliu/postgresql-dev) 的基础镜像，基础镜像里加了一个开发的包，然后基于这个基础镜像编写Commander的Dockerfile。
+先做了个 [postgresql-dev-docker](https://github.com/layamon/postgresql-dev) 的基础镜像，基础镜像里加了一个开发的包，然后基于这个基础镜像编写Commander的Dockerfile。
 
 ```dockerfile
 FROM postgresql-dev

@@ -6,7 +6,7 @@ header-img: "img/head.jpg"
 categories: jekyll update
 tags:
   - InnoDB
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 
 * TOC

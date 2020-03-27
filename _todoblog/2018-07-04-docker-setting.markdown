@@ -5,7 +5,7 @@ date: 2018-07-04 16:22
 header-img: "img/head.jpg"
 categories: 
   - docker
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 
 * TOC
@@ -171,26 +171,26 @@ docker container stop 28ab3a9aa5e5
 ```
 $ docker login
 Login with your Docker ID to push and pull images from Docker Hub. If you don't have a Docker ID, head over to https://hub.docker.com to create one.
-Username: yummyliu
+Username: layamon
 Password:
 Login Succeeded
 
-docker tag friendlyhello yummyliu/get-started:part2
+docker tag friendlyhello layamon/get-started:part2
 
-$ docker tag friendlyhello yummyliu/get-started:part2
+$ docker tag friendlyhello layamon/get-started:part2
 $ docker image ls
 REPOSITORY             TAG                 IMAGE ID            CREATED             SIZE
 friendlyhello          latest              6cc659428c8e        15 minutes ago      132MB
-yummyliu/get-started   part2               6cc659428c8e        15 minutes ago      132MB
+layamon/get-started   part2               6cc659428c8e        15 minutes ago      132MB
 ...
 
-docker push yummyliu/get-started:part2
+docker push layamon/get-started:part2
 ```
 
 然后可以在另一个机器上，直接拉取这个镜像，并运行
 
 ```bash
-docker run -p 4000:80 yummyliu/get-started:part2
+docker run -p 4000:80 layamon/get-started:part2
 # docker run -p 4000:80 username/repository:tag
 ```
 

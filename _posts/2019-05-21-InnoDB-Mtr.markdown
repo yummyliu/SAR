@@ -5,7 +5,7 @@ date: 2019-05-21 16:35
 header-img: "img/head.jpg"
 categories: 
   - InnoDB
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 
 * TOC

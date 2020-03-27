@@ -6,7 +6,7 @@ header-img: "img/head.jpg"
 categories: 
   - Raft
   - MOOC
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 * TOC
 {:toc}

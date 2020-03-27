@@ -4,7 +4,7 @@ title: Linux AIO
 date: 2016-03-23 16:11
 categories: 
     - Linux
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 
 * TOC

@@ -5,7 +5,7 @@ date: 2018-03-15 09:08
 header-img: "img/head.jpg"
 categories: 
   - Python
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 * TOC
 {:toc}

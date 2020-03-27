@@ -5,7 +5,7 @@ date: 2016-08-10 15:58
 header-img: "img/head.jpg"
 categories: 
     - C++
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 
 * TOC
@@ -110,7 +110,7 @@ C++的初始化和赋值是两码事，类对象的引用类型以及const类型
 
 移动构造函数是相对于拷贝构造函数而言的，在C++11标准中添加的新的构造函数类型。其参数为一个**右值引用**类型，要说明移动构造函数，首先我们来了解一下C++11中对值类型的区分。
 
-![image-20200210101826672](/Users/liuyangming/yummyliu.github.io/image/cpp-memo/20200210-c++11value.png)
+![image-20200210101826672](/Users/liuyangming/layamon.github.io/image/cpp-memo/20200210-c++11value.png)
 
 > 关于左值和右值具体的判断很难归纳，就算归纳了也需要大量的解释。
 

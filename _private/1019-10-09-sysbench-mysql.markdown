@@ -5,7 +5,7 @@ date: 2019-10-09 10:20
 header-img: "img/head.jpg"
 categories: jekyll update
 tags:
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 *  TOC
 {:toc}

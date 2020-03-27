@@ -5,7 +5,7 @@ subtitle: Basic Paxos 里面存在活锁的问题，Paxos假设的环境不包�
 date: 2015-09-29 22:23
 categories: 
     - Program
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 
 * TOC

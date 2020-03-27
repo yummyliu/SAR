@@ -5,7 +5,7 @@ date: 2019-02-04 07:55
 header-img: "img/head.jpg"
 categories: 
   - algo
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 * TOC
 {:toc}

@@ -4,7 +4,7 @@ title: MySQL的TABLE_SHARE简析（5.7）
 date: 2019-10-02 16:44
 categories:
   - MySQL
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 * TOC
 {:toc}

@@ -6,9 +6,10 @@ subtitle: table yangming;
 email: sdwhlym@gmail.com
 logo_location: "/image/sar.png"
 
-github: https://github.com/yummyliu
+github: https://github.com/layamon
 about: beware the barrenness of a busy life
-disqus_shortname: yummyliu
+disqus_shortname: layamon
+#disqus_shortname: yummyliu
 google_analytics: UA-80816254-1
 
 enableTags: true
@@ -20,7 +21,7 @@ social:
     - icon: fa-linkedin
       link: "https://www.linkedin.com/in/%E9%98%B3%E6%98%8E-%E5%88%98-a0720ab7/"
     - icon: fa-github
-      link: "https://github.com/yummyliu"
+      link: "https://github.com/layamon"
 
 urls:
     - text: About Me

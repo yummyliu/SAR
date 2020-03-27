@@ -4,7 +4,7 @@ title: 分布式事务
 date: 2019-12-19 12:13
 categories:
   - DBMS
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 * TOC
 {:toc}

@@ -5,7 +5,7 @@ date: 2018-07-25 13:23
 header-img: "img/head.jpg"
 categories: 
   - SQL
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 
 SQL意思是Structured Query Language，是和数据库交互的基本语言。和常规的编程语言不通，SQL是告诉计算机你需要什么数据，而不是告诉计算机如何产生数据，如下。

@@ -6,7 +6,7 @@ date: 2018-07-14 13:46
 header-img: "img/head.jpg"
 categories: 
     - PostgreSQL
-typora-root-url: ../../yummyliu.github.io
+typora-root-url: ../../layamon.github.io
 ---
 * TOC
 {:toc}
@@ -90,7 +90,7 @@ typora-root-url: ../../yummyliu.github.io
   PostgreSQL的刷脏页有两个后台进程参与bgwriter / checkpoint :
 
   + 为了减少checkpoint对系统的影响，bgwriter定时（`bgwriter_delay`）地刷一下脏页；
-  + checkpointer定时（`checkpoint_timeout`）地，在wal日志中，记一个[checkpoint](http://yummyliu.github.io/jekyll/update/2018/05/30/checkpoints/)记录，并开始进行存档；
+  + checkpointer定时（`checkpoint_timeout`）地，在wal日志中，记一个[checkpoint](http://layamon.github.io/jekyll/update/2018/05/30/checkpoints/)记录，并开始进行存档；
     1. 找到脏页
     2. 写脏页（可能在系统文件缓存中）
     3. fsync到磁盘中 (`checkpoint_completion_target`，控制何时集中fsync)
@@ -283,7 +283,7 @@ PlanTree，基于代价估计的方式，选择节点算法和连接路径；
 
 ###### ScanNode (e.g.)
 
-各种场景下，选择哪些Scan算法：Seq 、Index、Index-Only、bitmap-index；这里注意有时候索引多了会给[PostgreSQL误导](http://yummyliu.github.io/jekyll/update/2018/06/12/%E6%B7%BB%E5%8A%A0%E7%B4%A2%E5%BC%95%E5%AF%BC%E8%87%B4PG%E7%9A%84%E6%80%A7%E8%83%BD%E6%81%B6%E5%8C%96/)
+各种场景下，选择哪些Scan算法：Seq 、Index、Index-Only、bitmap-index；这里注意有时候索引多了会给[PostgreSQL误导](http://layamon.github.io/jekyll/update/2018/06/12/%E6%B7%BB%E5%8A%A0%E7%B4%A2%E5%BC%95%E5%AF%BC%E8%87%B4PG%E7%9A%84%E6%80%A7%E8%83%BD%E6%81%B6%E5%8C%96/)
 
 ###### JoinNode (e.g.)
 
@@ -399,11 +399,11 @@ PostgreSQL等常见的DB中，基本都是Pull模型；
 
 ##### 2.2.2.2 锁类型
 
-主要有两种类型，排他和共享的；但是根据锁的粒度不同，显式的有表和行两个级别；对程序不可见的还有页上的锁，也叫闩（latch）;同时，数据并发访问大的时候，也有咨询锁；最后就是死锁了。[关于锁的另一篇](http://yummyliu.github.io/jekyll/update/2018/05/30/lock-PostgreSQL/)
+主要有两种类型，排他和共享的；但是根据锁的粒度不同，显式的有表和行两个级别；对程序不可见的还有页上的锁，也叫闩（latch）;同时，数据并发访问大的时候，也有咨询锁；最后就是死锁了。[关于锁的另一篇](http://layamon.github.io/jekyll/update/2018/05/30/lock-PostgreSQL/)
 
 #### 2.2.2.3 MVCC
 
-PostgreSQL的MVCC是PostgreSQL的诸多亮点的其中一个（[关于mvcc的另一篇](http://yummyliu.github.io/jekyll/update/2018/05/30/MvccAndVacuum/)），MVCC简单说就是数据带上了版本号，这样不同的事务只能看到自己版本的数据。关于PostgreSQL的快照隔离，有一篇论文[Serializable Snapshot Isolation](https://drkp.net/papers/ssi-vldb12.pdf)。
+PostgreSQL的MVCC是PostgreSQL的诸多亮点的其中一个（[关于mvcc的另一篇](http://layamon.github.io/jekyll/update/2018/05/30/MvccAndVacuum/)），MVCC简单说就是数据带上了版本号，这样不同的事务只能看到自己版本的数据。关于PostgreSQL的快照隔离，有一篇论文[Serializable Snapshot Isolation](https://drkp.net/papers/ssi-vldb12.pdf)。
 
 ## 3. *完备*的监控
 
@@ -473,7 +473,7 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
 
 ### 3.3 监控指标
 
-[结合pgwatch的一些常规监控指标整理](http://yummyliu.github.io/jekyll/update/2018/06/01/pgwatch2%E8%A7%A3%E6%9E%90/)
+[结合pgwatch的一些常规监控指标整理](http://layamon.github.io/jekyll/update/2018/06/01/pgwatch2%E8%A7%A3%E6%9E%90/)
 
 ### 附
 
@@ -483,7 +483,7 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
 
 ## 参考文献
 
-[PostgreSQL监控指标整理](http://yummyliu.github.io/jekyll/update/2018/06/01/pgwatch2%E8%A7%A3%E6%9E%90/)
+[PostgreSQL监控指标整理](http://layamon.github.io/jekyll/update/2018/06/01/pgwatch2%E8%A7%A3%E6%9E%90/)
 
 [**Concurrency Control**](https://www.cl.cam.ac.uk/teaching/2000/ConcSys/csig2/57.html)
 
