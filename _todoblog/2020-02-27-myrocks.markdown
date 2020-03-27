@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 认识MyRocks
+title: MyRocks概述
 date: 2020-02-27 10:51
 categories:
   - MySQL
@@ -67,6 +67,8 @@ Major feature sets in MyRocks
 - Tablespace is not supported
 - Online DDL has not been supported yet
 
+https://github.com/facebook/mysql-5.6/wiki/Manual-Compaction
+
 ## Primary & Secondary Index
 
 一二级索引对比
@@ -77,6 +79,10 @@ Major feature sets in MyRocks
 | Secondary Index | Internal Index ID（4bytes）+ secondary key columns + primary key (去重) | checksum                     | Sequence ID + flag |
 
 因为使用了Prefix Key Encoding，Internal Index ID不会存在空间代价。和InnoDB的Primary Index相同，RocksDB的Primary Index同样是聚集索引；因此，基于主键的查询可以一步到位（例如，where a=1相关记录都在一起，直接定位）；基于二级索引的查询，同样可以通过Covering Index避免对主键的二次查询。同样地，对于没有主键的表，RocksDB会创建一个隐藏主键，称之为Hidden Primary Key；
+
+如果MyRocks的表开启了TTL特性，并且没有显式指定TTL列，那么在索引记录中会有隐式的TTL列的信息；在PrimaryKey中，位于value的前8个byte。
+
+storage/rocksdb/rdb_datadic.cc
 
 在创建表和索引时，可在INDEX COMMENT中指定CF，CF与index是1：N的关系，如果没有指定CF，将放在default-CF中（注意，不要创建太多的CF，20个足以）。
 
@@ -98,6 +104,10 @@ KEY `id1_type` (`id1`,`link_type`,`visibility`,`time`,`version`,`data`) COMMENT 
 
 RocksDB前向扫描块，ORDER BY DESC慢（原因？），rev:是表示创建一个Reversed Column Family。
 
+> information_schema.ROCKSDB_CF_OPTIONS
+
+[option of rocksdb](https://smalldatum.blogspot.com/2018/07/default-options-in-myrocks.html)
+
 ## Read&Write
 
 InnoDB在数据变更时，如果page不在bufferpool中，会发生 reads on index writes。RocksDB直接put到Active MemTable中即可。
@@ -112,7 +122,28 @@ Delete会在数据上架一个tombstone，读取的时候会忽略该key所有pu
 
 ### 锁
 
-MyRocks的锁粒度是row lock，其锁信息都在内存中；暂不支持共享锁，因此对于`select * from t where id = 3 for shared`也是降级为排他锁。并且在MyRocks中，不支持自动死锁检测；
+MyRocks的锁粒度是row lock，其锁信息都在内存中；
+
+早期不支持共享锁，对于`select * from t where id = 3 for shared`也是降级为排他锁。
+
+```cpp
+ /* Type of locking to apply to rows */
+ enum { RDB_LOCK_NONE, RDB_LOCK_READ, RDB_LOCK_WRITE } m_lock_rows;
+```
+
+并且在MyRocks中，不支持自动死锁检测；
+
+**MyRocks中隔离级别不同不会影响加锁和解锁的行为**
+
+**对于无主键表的表说，RocksDB内部会有隐式主键，所加锁都在隐式主键上**
+
+总结
+
+- MyRocks只会对主键和唯一索引加锁，普通索引不会加锁。
+- 只有插入或更新了唯一索引时，才会对唯一索引加锁，对唯一索引加锁的目的是为了保证唯一性。
+- 按主键锁定查找不存在的行时，会对不存在的行主键加X锁。
+- 按二级索引查找时，只会对主键加锁，不会对二级锁引加锁。
+- S锁只应用于SELECT … IN SHARE MODE语句。
 
 相比于InnoDB的Gap lock，MyRocks的GapLock不会锁住没有找到的record；只有Gap的范围是整个Primary Key，才会使用和InnoDB相同。这也要求MyRocks的master要基于Row based进行复制；如下例，在master上，先执行delete语句，由于MyRocks的GapLock只会将ID=10的record锁住，因此update语句可以在delete之前提交，那么在实际的binlog中，如果采用statement的方式复制，slave端就先执行update后delete，这样主从数据就不一致了。
 
@@ -132,6 +163,28 @@ MyRocks事务不支持SAVEPOINT，事务隔离和PostgreSQL类似，是基于快
 > 2. prefix uniqueness
 > 3. blocking queue
 > 4. pt-table-checksum
+
+2pc
+
+https://github.com/facebook/rocksdb/wiki/Two-Phase-Commit-Implementation
+
+Group commit
+
+http://mysql.taobao.org/monthly/2017/07/05/
+
+https://mariadb.com/kb/en/myrocks-and-group-commit-with-binary-log/
+
+写入控制
+
+```cpp
+enum class WriteStallCondition {
+  kNormal,
+  kDelayed,
+  kStopped,
+};
+```
+
+
 
 ## Replication
 
@@ -196,3 +249,6 @@ compression发生在flush和Compact的过程中。decompression发生在读取�
 [RBR与SBR](http://www.ovaistariq.net/528/statement-based-vs-row-based-replication/)
 
 [Read Free Replication](https://github.com/facebook/mysql-5.6/wiki/Read-Free-Replication)
+
+[SingleDelete](https://github.com/facebook/rocksdb/wiki/Single-Delete)
+

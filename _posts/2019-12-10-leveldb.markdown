@@ -79,14 +79,19 @@ LSM-tree(Log Struct Merge tree) 其中的Log思想来源于Log Structured FileSy
 
 Compaction主要完成两件事：归并排序和垃圾收集。一般策略有两种：
 
-+ **Sized-tiered Compaction** ：该策略下，每层有若干个可以重叠的区段组成，Compaction将本层的所有区段进行归并，输出为下一层的一个区段；
-+ **Level-based Compaction** ：该策略下，每层只有一个有序的区段，Compaction将本层区段和下层区段合并，并重写下层的有序区段；
++ **Level-based Compaction** ：该策略下，每层只有一个有序的区段（**one sorted run**，可以切分，但是key值不重叠），相邻的下层比上层大若干倍（也成为扇出数，fan-out)，Compaction将本层区段和下层区段合并，并**重写下层**的有序区段；在原始的paper中的level-based compact是all-to-all，而在LevelDB/RocksDB中是some-to-some（具体见下文）；如果扇出数为N，那么一个compact需要多些N倍的数据（[该论文说明了大部分情况下还是小于N的](https://hyeontaek.com/papers/msls-fast2016.pdf)），因此能够减少空间放大，但是会带来读放大和写放大，适合的场景：
+  + Key-order insert
+  + Skewed write
 
-这两种策略都是可行的，但前者为了减小写放大，牺牲了读取速度和空间利用率；后者为了读取速度和空间利用率，带来了一定的写放大。而LevelDB的Compaction是两种策略的结合。
++ **Sized-tiered Compaction** ：该策略下，每层有若干个可以重叠的区段组成（**N sorted runs**，N类似于上面的扇出数），Compaction将本层的所有区段进行归并，输出为下一层的一个区段；这样每层compacttion的写放大就是1，减小了写放大，但是会有写放大和空间放大。
+
+> 另外针对时序数据的时序数据库，对Compact算法也有对应的优化
+
+这两种策略都是可行的，但前者为了减小写放大，牺牲了读取速度和空间利用率；后者为了读取速度和空间利用率，带来了一定的写放大。而LevelDB的Compaction是两种策略的结合，对上层使用tiered，对下层使用leveled，并且对下层进行分区，如下图：
 
 ![image-20191216103816910](/image/lsm-tree/1212-leveldb.png)
 
-在LevelDB中，$Level_0$采取的是**Sized-tiered Compaction**；其他level中将key进行分区，采取**Level-based Compaction**，需要注意的是LevelDB中合并的新block不会覆盖旧的block，因为旧的block会用在recovery中。
+在LevelDB中，$Level_0$采取的是**Sized-tiered Compaction**；其他level中将key进行分区，采取**Level-based Compaction**，需要注意的是LevelDB中合并的新block不会覆盖旧的block，因为旧的block会用在recovery中。（RocksDB也是类似的，并且内存的MemTable也有多份，取决于参数[max_write_buffer_number](https://github.com/facebook/rocksdb/blob/master/include/rocksdb/advanced_options.h#L165) ）
 
 ![image-20191216114802822](/image/lsm-tree/1212-leveldb-compact.png)
 
@@ -114,6 +119,8 @@ Compaction操作是LSM-tree很重要的操作，其执行的速率（rate）控�
   + 《Wisckey: separate key and value, key use for sorting, value use for garbage collection.》
 
 那么，有幸阿里巴巴在SIGMOD19上发表了关于X-Engine的介绍，X-Engine就是一个LSM-tree架构的存储引擎，专门针对电商场景做了深度的优化。看完之后，对LSM-tree能够加深了解，这里进行了简单的总结。
+
+> 另外，有兴趣可以了解一下MongoDB的WiredTiger， 借助Copy On Write融合了Btree和LSM-tree的思想
 
 # X-Engine
 
@@ -175,7 +182,7 @@ Compaction的过程中的merge的过程，一是读取两个段，二合并，�
 
  Compact是LSM-tree中很重的操作，在X-Engine中，将其分为不同的类型进行基于规则（层内的extent数量和整层的数据量）的调度，让数据能够及时的得到规整；并且将部分计算任务转移到FPGA中，节约了CPU资源。
 
-以上... ...Links：
+## 参考
 
 [log-structured-merge-tree](https://www.slideshare.net/ssuser7e134a/log-structured-merge-tree)
 
@@ -188,3 +195,7 @@ Compaction的过程中的merge的过程，一是读取两个段，二合并，�
 [btree and lsm](http://smalldatum.blogspot.com/2015/11/read-write-space-amplification-b-tree.html)
 
 [disk io of lsm](https://medium.com/databasss/on-disk-io-part-3-lsm-trees-8b2da218496f)
+
+[scylladb compaction](https://www.scylladb.com/2017/12/28/compaction-strategy-scylla/)
+
+[compaction method](https://smalldatum.blogspot.com/2018/08/name-that-compaction-algorithm.html)
