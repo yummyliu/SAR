@@ -1,6 +1,6 @@
 ---
 layout: post
-title: MyRocks概述
+title: MyRocks从0到1
 date: 2020-02-27 10:51
 categories:
   - MyRocks
@@ -8,7 +8,6 @@ typora-root-url: ../../layamon.github.io
 ---
 * TOC
 {:toc}
-
 在[from btree to lsm-tree](http://liuyangming.tech/12-2019/leveldb.html)中，我们了解到写B+-tree时，写一条记录就意味着写一个页；不考虑bufferpool的合并写和dwbuffer的写放大，在InnoDB中，如果业务负载随机写N条记录，最坏的情况下，就意味着要写N个页；这带来很大的**写放大**。另外，每个页中都有一些碎片空间，这些无用空间会浪费IO带宽，而针对这个，InnoDB中设计了Compressed Page；Compressed Page同样是要对齐存储（0~4kb对齐到4kb，4~8kb对齐到8kb，8~16kb对齐到16kb），只要对齐就会存在空闲空间。这又带来了**空间放大**。
 
 基于B+-tree的弊端以及目前存储介质的演化，数据库存储引擎也出现了变革。其中LSM-tree目前获得了很多目光，MySQL中也可以集成LSM-tree架构的存储引擎——RocksDB，叫MyRocks。本文是作者对MyRocks学习的总结，也会不断在此更新新的认识，希望对想了解这个产品的同学有所帮助。
@@ -35,55 +34,56 @@ typora-root-url: ../../layamon.github.io
 | range scan | 直接按照leafnode的next指针进行遍历。 | 需要合并不同层的数据。                   |
 | delete     | 标记删除                             | 标记删除，tombstone；singledelete优化。  |
 
+关于RocksDB的使用，下面通过了解MyRocks的各个操作来进行了解。
+
 # MyRocks 
 
-那么这里就对MyRocks进行介绍，MyRocks最初是由FB开发的，目前存在三个主要分支：MariaDB、Percona、FB，略有不同，但大致相似。这里以Percona版本进行介绍，如果又出入，那是笔者没学明白，欢迎指正。
+MyRocks最初是由FB开发的，目前存在三个主要分支：MariaDB、Percona、FB，略有不同，但大致相似。这里以Percona版本进行介绍，目前最新的MyRocks8+对应的RocksDB6+；
 
-相比于MySQL（InnoDB），MyRocks几点**不支持**的地方
+MyRocks的主要feature是：写优化、高压缩的事务型存储引擎（类似于PgSQL的隔离级别：Read Committed, Repeatable Read）。
 
-- Fulltext, Foreign, Spatial indexes
-- Tablespace
-- Online DDL
-- Gap Lock不完善
+> 相比于MySQL（InnoDB），MyRocks的局限：https://www.percona.com/doc/percona-server/LATEST/myrocks/limitations.html
+>
 
-而MyRocks的主要feature如下：
-
-+ 写优化
-+ 高压缩
-
-+ 事务型存储引擎
-  + 基于MVCC的隔离级别：Read Committed, Repeatable Read (PostgreSQL-style)
-
-
-## Overview
-
-同样的RocksDB引擎的表，也有一二级索引，其中索引的KV内容如下表：
+一个RockDB的数据库只能同时被一个进程打开，这是RocksDB避免乱用的策略，而在一个MyRocks进程内，不同线程可以并发访问。MyRocks的一二级索引是按照KV的方式存储在RocksDB中，其中索引的KV内容如下表：
 
 |                 | Key                                                          | Value                        | Metadata           |
 | --------------- | ------------------------------------------------------------ | ---------------------------- | ------------------ |
 | Primary Index   | Internal Index ID（4bytes）+ primary key columns             | remaining columns + checksum | Sequence ID + flag |
 | Secondary Index | Internal Index ID（4bytes）+ secondary key columns + primary key (去重) | checksum（optional）         | Sequence ID + flag |
 
-这里checksum是一个可选的选项，通过参数打开：
++ 这里checksum是一个可选的选项，通过参数打开：
 
-```sql
-set GLOBAL rocksdb_store_row_debug_checksums = 1; 
-set GLOBAL rocksdb_verify_row_debug_checksums = 1;
+  ```sql
+  set GLOBAL rocksdb_store_row_debug_checksums = 1; 
+  set GLOBAL rocksdb_verify_row_debug_checksums = 1;
+  ```
+
++ Internal Index ID是内部递增的索引号，维护在系统表`ROCKSDB_GLOBAL_INFO`中；因为使用了**Prefix Key Encoding**，Internal Index ID不会存在空间代价。另外，Metadata部分可以通过**Zero-Filling metadata**技术进行压缩。
+
+  > **Prefix Key Encoding**
+  >
+  > RocksDB中，通过多列索引支持covering secondary index，在索引中将前缀进行修整，达到压缩空间的目的。
+  >
+  > **Zero-Filling metadata**
+  >
+  > 在InnoDB的record上，有事务ID（6 bytes）和回滚段指针（7 bytes），但是不可压缩；RocksDB中每个KV上有一个sequence id（7 bytes）和操作符标识（1 bytes），是可以压缩的，并且如果sequence id在MVCC中用不到，那么可以置零。
+
+和InnoDB的Primary Index相同，RocksDB的Primary Index同样是聚集索引；因此，基于主键的查询可以一步到位（例如，where a=1相关记录都在一起，直接定位）；基于二级索引的查询，同样可以通过Covering Index避免对主键的二次查询。同样地，对于没有主键的表，RocksDB会创建一个隐藏主键，称之为Hidden Primary Key（注意，RocksDB中的隐式主键对SQL层是透明的，因此不会记录在binlog中，对提高复制速度没有帮助）；
+
+另外，如果MyRocks的表开启了TTL特性，并且没有显式指定TTL列，那么在索引记录中会有隐式的TTL列的信息；在PrimaryKey中，位于value的前8个byte。
+
+```cpp
+// bit flags which denote myrocks specific fields stored in the record
+  // currently only used for TTL.
+  enum INDEX_FLAG {
+    TTL_FLAG = 1 << 0,
+
+    // MAX_FLAG marks where the actual record starts
+    // This flag always needs to be set to the last index flag enum.
+    MAX_FLAG = TTL_FLAG << 1,
+  };
 ```
-
-Internal Index ID是内部递增的索引号，维护在系统表`ROCKSDB_GLOBAL_INFO`中；因为使用了**Prefix Key Encoding**，Internal Index ID不会存在空间代价。另外，Metadata部分可以通过**Zero-Filling metadata**技术进行压缩。可见RocksDB在空间利用上比InnoDB有很大的优势。
-
-> **Prefix Key Encoding**
->
-> RocksDB中，通过多列索引支持covering secondary index，在索引中将前缀进行修整，达到压缩空间的目的。
->
-> **Zero-Filling metadata**
->
-> 在InnoDB的record上，有事务ID（6 bytes）和回滚段指针（7 bytes），但是不可压缩；RocksDB中每个KV上有一个sequence id（7 bytes）和操作符标识（1 bytes），是可以压缩的，并且如果sequence id在MVCC中用不到，那么可以置零。
-
-和InnoDB的Primary Index相同，RocksDB的Primary Index同样是聚集索引；因此，基于主键的查询可以一步到位（例如，where a=1相关记录都在一起，直接定位）；基于二级索引的查询，同样可以通过Covering Index避免对主键的二次查询。同样地，对于没有主键的表，RocksDB会创建一个隐藏主键，称之为Hidden Primary Key；
-
-另外，如果MyRocks的表开启了TTL特性，并且没有显式指定TTL列，那么在索引记录中会有隐式的TTL列的信息；在PrimaryKey中，位于value的前8个byte，见storage/rocksdb/rdb_datadic.cc。
 
 最后，在创建表和索引时，可在INDEX COMMENT中指定CF，CF与index是1：N的关系，如果没有指定CF，将放在default-CF中（注意，不要创建太多的CF，20个足以），可以分别配置每个CF的属性，在系统表information_schema.ROCKSDB_CF_OPTIONS中查看。RocksDB有个弊端：前向扫描快，ORDER BY DESC慢（原因？），这里可以在CF上加**rev:**标记，是表示创建一个Reversed Column Family，用于优化此类查询。
 
@@ -103,13 +103,13 @@ KEY `id1_type` (`id1`,`link_type`,`visibility`,`time`,`version`,`data`) COMMENT 
 ) ENGINE=RocksDB DEFAULT COLLATE=latin1_bin;
 ```
 
-以上，对MyRocks整体上进行了简单介绍，下面分别对每个模块进行介绍。
+以上，对MyRocks整体上进行了简单介绍，下面着重对几个较重要的点进行介绍：
 
-## Read&Write
+## IO
 
-读取的时候，从按照层级从上到下定位key，这就意味很大的读放大，可以通过cache、filter等技术进行优化；关于查询计划的数据，通过`GetApproximateSizes`得到某区间的大概元组数，在MySQL optimizer中用来找最佳查询计划。
+读取的时候，从按照层级从上到下定位key，这就意味很大的读放大，可以通过cache、filter等技术进行优化；`GetApproximateSizes`得到某区间的大概元组数，在MySQL optimizer中用来找最佳查询计划。
 
-InnoDB在数据变更时，如果page不在bufferpool中，会发生 reads on index writes。RocksDB直接put到Active MemTable中即可。Delete会在数据上架一个tombstone，读取的时候会忽略该key所有put语句；如果某个key的put操作只出现了一次，那么执行delete时，做singledelete；即真正的删除数据。
+InnoDB在数据变更时，如果page不在bufferpool中，会发生 reads on index writes。RocksDB直接put到Active MemTable中即可。Delete会在数据上架一个tombstone，后续的读取会忽略该key所有put语句；如果某个key的put操作只出现了一次，那么执行delete时，做singledelete；即真正的删除数据。
 
 在MyRocks中，会通过参数主动控制写入的速率，比如下面这些：
 
@@ -128,44 +128,35 @@ enum class WriteStallCondition {
 };
 ```
 
-### Compression
-
 compression发生在flush和Compact的过程中。decompression发生在读取的时候，在内存cache中是解压后的block；decompression相比于compression更加频繁，这要求decompression应该更高效。
 
-## Concurrency
-
-MyRocks的并发事务隔离级别有两个：RC和RR，实现方式和PostgreSQL类似，分别在语句级别和事务级别取快照；并发控制实现方式一般就两个方面：Lock和MVCC，**MyRocks中隔离级别不同不会影响加锁和解锁的行为**。
-
-### Lock
-
-MyRocks的锁粒度是row lock，加锁的对象是主键key，**对于无主键表的表说，RocksDB内部会有隐式主键，所加锁都在隐式主键上** 。
-
-其锁信息都在内存中，为了不占用太多内存空间，通过参数`rocksdb_max_row_locks`对每个事务可获取的锁数量进行控制；早期不支持共享锁，对于`select * from t where id = 3 for shared`也是降级为排他锁，目前支持了共享锁。
-
-注意自动死锁检测（存疑）也是关闭的，通过参数`rocksdb_deadlock_detect`打开。
+一般**DB:GET**会传入一个string类型的指正来接受value值，为优化value的memcpy的代价，RocksDB设计了`PinnableSlice`结构，这样如果RocksDB从block cache中返回value，那么可以减少一次内存拷贝，直接从block cache中返回。直到改PinnableSlice析构或Reset才释放block cache对应数据的引用。
 
 ```cpp
+PinnableSlice pinnable_val;
+while (!stopped) { 
+   auto s = db->Get(opt, cf, key, &pinnable_val);
+   // ... use it
+   pinnable_val.Reset(); // then release it immediately
+}
+```
+
+> Benchmark:https://github.com/facebook/rocksdb/pull/1756#issuecomment-286201693
+
+### Snapshot
+
+并发控制实现方式一般就两个方面：Lock和MVCC；MyRocks的锁粒度是row lock，加锁的对象是主键key，**对于无主键表的表说，RocksDB内部会有隐式主键，所加锁都在隐式主键上** 。锁力度可支持共享锁和排它锁：
+
+```
  /* Type of locking to apply to rows */
  enum { RDB_LOCK_NONE, RDB_LOCK_READ, RDB_LOCK_WRITE } m_lock_rows;
 ```
 
-这里进行简单总结如下：
+其锁信息都在内存中，为了不占用太多内存空间，通过参数`rocksdb_max_row_locks`对每个事务可获取的锁数量进行控制；注意自动死锁检测默认也是关闭的，通过参数`rocksdb_deadlock_detect`打开。
 
-- MyRocks只会对主键和唯一索引加锁，普通索引不会加锁。
-- 只有插入或更新了唯一索引时，才会对唯一索引加锁，对唯一索引加锁的目的是为了保证唯一性。
-- 按主键锁定查找不存在的行时，会对不存在的行主键加X锁。
-- 按二级索引查找时，只会对主键加锁，不会对二级锁引加锁。
-- S锁只应用于SELECT … IN SHARE MODE语句。
-
-相比于InnoDB的Gap lock，MyRocks的GapLock不会锁住没有找到的record；只有Gap的范围是整个Primary Key，才会使用和InnoDB相同。这也要求MyRocks的master要基于Row based进行复制；如下例，在master上，先执行delete语句，由于MyRocks的GapLock只会将ID=10的record锁住，因此update语句可以在delete之前提交，那么在实际的binlog中，如果采用statement的方式复制，slave端就先执行update后delete，这样主从数据就不一致了。
+关于Gap Lock，相比于InnoDB的Gap lock，MyRocks的GapLock不会锁住没有找到的record；只有Gap的范围是整个Primary Key，才会使用和InnoDB相同。这也要求MyRocks的master要基于Row based进行复制；如下例，在master上，先执行delete语句，由于MyRocks的GapLock只会将ID=10的record锁住，因此update语句可以在delete之前提交，那么在实际的binlog中，如果采用statement的方式复制，slave端就先执行update后delete，这样主从数据就不一致了。
 
 ![image-20200303114709689](/image/20200227-gaplock.png)
-
-### Transaction
-
-MyRocks事务不支持SAVEPOINT，事务隔离和PostgreSQL类似，是基于快照的隔离，但是不支持RU和Serializable的隔离级别；因此对于locking read，PostgreSQL和MyRocks是读快照数据(存疑)，InnoDB读的是当前的数据，并且也会锁住不存在的key。有一点区别是，RR级别下PostgreSQL是在事务开始时获取的快照，MyRocks是在第一条语句获取快照。
-
-在InnoDB中，后面的事务更新了前面事务的数据，在RC、RR级别下都可以overwrite；而在MyRocks中，只有在RC级别上才可以，这和PostgreSQL相同，在RR中按照first-commit-win的方式进行rollback；
 
 因此，如果将InnoDB上的业务迁移到MyRocks上，能够减少一些锁的竞争，但是需要注意GapLock的问题；有些依赖gaplock的查询，在MyRocks中会返回Deadlock的错误，有些并不能有效完成。
 
@@ -182,23 +173,99 @@ ERROR 1105 (HY000): Using Gap Lock without full unique key in multi-table or mul
 > 3. blocking queue
 > 4. pt-table-checksum
 
-## Recovery&Replication
+综上，在MyRocks中，只有在update和delete时才会针对主键索引上的主键（无论存在与否）进行加锁，且加的是排它锁；select操作一般通过Snapshot读取数据，只有在`select ... in share mode`时，才会使用共享锁。MyRocks和PostgreSQL类似，分别在语句级别和事务级别取快照，获得RC和RR的隔离级别，但是不支持RU和Serializable的隔离级别，有一点区别是，RR级别下PostgreSQL是在事务开始时获取的快照，MyRocks是在第一条语句获取快照。
 
-上面将GapLock提到了，MyRocks的主从复制要求使用Row模式。slave通过配置`relay_log_recovery`实现“Crash Safe Slave”；master failover相对复杂点，可能如果orig master的gtid大于new master的gtid，需要trim binlog，即将prepare状态的事务进行回滚（一般recovery是前滚）。
+在InnoDB中，后面的事务更新了前面事务的数据，在RC、RR级别下都可以overwrite；而在MyRocks中，只有在RC级别上才可以，这和PostgreSQL相同，在RR中按照first-commit-win的方式进行rollback；
 
-同样可以通过命令：mysqldump--single-transaction进行逻辑备份，InnoDB是通过roll-ptr链遍历，知道找回目标行；RocksDB是通过SeqID定义某个快照，如图，假设我们需要SeqID=5的快照，在读取快照数据过程中，在5到当前新的2000之间的SeqID，可能在FLush和Compaction过程中被合并了，那么就不需要遍历过多的版本。
+RocksDB中每条数据有一个sequence number，sequence number一个作用是用在Snapshot中，通过`GetSnapshot`获得一个数据快照。如下定义：
+
+```cpp
+// 所有快照维护在DB全局的一个双向链表中，每个快照创建时根据当前的sequence number 生成一个快照的sequence number。
+class SnapshotImpl : public Snapshot {
+ public:
+  SequenceNumber number_;  // const after creation
+  // 见下节的WritePrepared
+  SequenceNumber min_uncommitted_ = kMinUnCommittedSeq;
+
+  virtual SequenceNumber GetSequenceNumber() const override { return number_; }
+
+ private:
+  friend class SnapshotList;
+
+  SnapshotImpl* prev_;
+  SnapshotImpl* next_;
+
+  SnapshotList* list_;                 // just for sanity checks
+
+  int64_t unix_time_;
+
+  // Will this snapshot be used by a Transaction to do write-conflict checking?
+  bool is_write_conflict_boundary_;
+};
+```
+
+某快照只能看到小于等于`number_`的数据。如图，假设我们需要SeqID=5的快照，在读取快照数据过程中，在5到当前新的2000之间的SeqID，可能在FLush和Compaction过程中被合并了，那么就不需要遍历过多的版本。
 
 ![image-20200303154316446](/image/20200227-snapshot.png)
 
-### 
+在RocksDB做compact会清理过期的数据，这时需要与全局快照数据进行比较，即，如果已删除数据的sequence number <= 双向链表中snapshot的最小sequence number，那么可以清理。
+
+### writebatch
+
+RocksDB事务提交时保证数据的原子写的结构，将事务数据整体原子写入到MEMTable，WriteBatch中的数据由`rep_`结构保存，格式如下：
+
+```cpp
+// WriteBatch::rep_ :=
+//    sequence: fixed64
+//    count: fixed32
+//    data: record[count]
+// record :=
+//    kTypeValue varstring varstring
+//    kTypeDeletion varstring
+//    kTypeSingleDeletion varstring
+//    kTypeRangeDeletion varstring varstring
+//    kTypeMerge varstring varstring
+//    kTypeColumnFamilyValue varint32 varstring varstring
+//    kTypeColumnFamilyDeletion varint32 varstring
+//    kTypeColumnFamilySingleDeletion varint32 varstring
+//    kTypeColumnFamilyRangeDeletion varint32 varstring varstring
+//    kTypeColumnFamilyMerge varint32 varstring varstring
+//    kTypeBeginPrepareXID varstring
+//    kTypeEndPrepareXID
+//    kTypeCommitXID varstring
+//    kTypeRollbackXID varstring
+//    kTypeBeginPersistedPrepareXID varstring
+//    kTypeBeginUnprepareXID varstring
+//    kTypeNoop
+// varstring :=
+//    len: varint32
+//    data: uint8[len]
+```
+
+具体的Memtable写入发生在什么时候取决于参数`rocksdb_write_policy`。
+
++ write_commited：在事务提交时写入，这样判断数据可见性的逻辑简单，并且回滚方便，只需要将writebatch释放即可，但是commit操作比较重。
++ write_prepared：提前到2pc的prepared阶段进行写入，但是判断事务可见性的逻辑更加复杂，并且回滚逻辑复杂，但是减轻了commit的负担。
+
+> 关于write_prepared的事务可见性判断，参考http://mysql.taobao.org/monthly/2018/08/02/
+
+## Replication
+
+上面将GapLock提到了，MyRocks的主从复制要求使用Row模式。slave通过配置`relay_log_recovery`实现“Crash Safe Slave”；
+
+master failover相对复杂点，可能如果原master的gtid大于新master的gtid，需要trim binlog；整体逻辑和基于BinLog的MySQL复制相同，可以利用Group Commit的Logical CLock实现MTS，只是需要注意MyRocks中可以通过配置参数[rocksdb_rpl_skip_tx_api](https://www.percona.com/doc/percona-server/LATEST/myrocks/variables.html#rocksdb_rpl_skip_tx_api)，跳过从库的事务冲突检查，提高性能（但要求从库是readonly的）。（不过，似乎受限于Binlog的复制架构设计，从库的复制速率存在一个瓶颈）。
 
 ### Read Free Replication
 
-之前从端进行更新删除的时候，需要从磁盘读取旧数据，由于MyRocks采用的是LSM-tree的结构，从TokuDB获得的启发，将利用Binlog的信息，从而**避免从磁盘进行随机读取**，如下图对比；这要求主端的参数`binlog_row_image=FULL`并且从端不允许变更。另外还有一个Skip Unique Checks特性，也是类似的道理。
+之前从端进行更新删除的时候，需要从磁盘读取旧数据，由于MyRocks采用的是LSM-tree的结构，从TokuDB获得的启发，将利用Binlog的信息，从而**避免从磁盘进行随机读取**，如下图对比；这要求主端的参数`binlog_row_image=FULL`并且从端不允许变更。
 
 ![image-20200303142957787](/image/20200227-readfreerepl.png)
 
-**Reference** 
+> 另外还有一个Skip Unique Checks特性，也是类似的道理。由参数`unique_checks`控制，同样要求从库没有其他变更请求。
+>
+> slave_exec_mode：当从库回放时出现冲突的处理方式；
+
+以上，此文持续整理本人在折腾MyRocks过程中，对MyRocks的一些认识和理解，介于理解的深度是由浅入深的，可能目前的版本认识浅薄，甚至有错误，欢迎指正学习。一些有用的link：
 
 [各种数据库的隔离级别对比](https://github.com/ept/hermitage)
 
@@ -219,3 +286,4 @@ https://github.com/facebook/rocksdb/wiki/Two-Phase-Commit-Implementation
 http://mysql.taobao.org/monthly/2017/07/05/
 
 https://mariadb.com/kb/en/myrocks-and-group-commit-with-binary-log/
+

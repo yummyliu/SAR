@@ -53,12 +53,13 @@ echo "show databases;" | /data/mysql-files/bin/mysql -u root -P 3306 -p111
 sysbench \
 --db-driver=mysql \
 --mysql-user=root \
---mysql-password=111  \
---mysql-socket=/data/mysql-files/tmp/mysql.sock \
+--mysql-password=123  \
+--mysql-host=10.22.190.7 \
+--mysql-port=3307 \
 --mysql-db=sbtest \
 --range_size=100  \
 --table_size=10000 \
---tables=2 \
+--tables=10 \
 --threads=1 \
 --events=0 \
 --time=60  \
@@ -69,15 +70,33 @@ sysbench \
 
 ```bash
 sysbench \
+--mysql_storage_engine=rocksdb \
 --db-driver=mysql \
 --mysql-user=root \
---mysql-password=111 \
---mysql-socket=/data/mysql-files/tmp/mysql.sock \
+--mysql-password=123  \
+--mysql-host=10.22.190.7 \
+--mysql-port=3307 \
+--mysql-db=sbtest \
+--range_size=100  \
+--table_size=10000 \
+--tables=10 \
+--threads=1 \
+--events=0 \
+--time=60  \
+--rand-type=uniform /usr/share/sysbench/oltp_read_only.lua prepare
+
+sysbench \
+--mysql_storage_engine=rocksdb \
+--db-driver=mysql \
+--mysql-user=root \
+--mysql-password=123  \
+--mysql-host=10.22.190.7 \
+--mysql-port=3307 \
 --mysql-db=sbtest \
 --range_size=100 \
 --table_size=10000 \
 --tables=2 \
---threads=8 \
+--threads=32 \
 --events=0 \
 --time=600 \
 --rand-type=uniform /usr/share/sysbench/oltp_write_only.lua run
