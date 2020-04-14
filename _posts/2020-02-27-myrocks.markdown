@@ -107,6 +107,25 @@ KEY `id1_type` (`id1`,`link_type`,`visibility`,`time`,`version`,`data`) COMMENT 
 
 ## IO
 
+IO不得不提的就是compact，在MyRocks中后台会周期性的触发compact，也可手动的compact：
+
+```sql
+mysql> set session rocksdb_manual_compaction_threads=16;
+Query OK, 0 rows affected (0.00 sec)
+
+mysql> set global rocksdb_compact_cf='default';
+Query OK, 0 rows affected (25 min 13.80 sec)
+
+MySQL [(none)]> show status like "rocksdb_manual_compaction%";
++--------------------------------------+-------+
+| Variable_name                        | Value |
++--------------------------------------+-------+
+| rocksdb_manual_compactions_processed | 0     |
+| rocksdb_manual_compactions_running   | 1     |
++--------------------------------------+-------+
+2 rows in set (0.00 sec)
+```
+
 读取的时候，从按照层级从上到下定位key，这就意味很大的读放大，可以通过cache、filter等技术进行优化；`GetApproximateSizes`得到某区间的大概元组数，在MySQL optimizer中用来找最佳查询计划。
 
 InnoDB在数据变更时，如果page不在bufferpool中，会发生 reads on index writes。RocksDB直接put到Active MemTable中即可。Delete会在数据上架一个tombstone，后续的读取会忽略该key所有put语句；如果某个key的put操作只出现了一次，那么执行delete时，做singledelete；即真正的删除数据。
