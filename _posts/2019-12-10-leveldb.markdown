@@ -82,8 +82,7 @@ Compaction主要完成两件事：归并排序和垃圾收集。一般策略有�
 + **Level-based Compaction** ：该策略下，每层只有一个有序的区段（**one sorted run**，可以切分，但是key值不重叠），相邻的下层比上层大若干倍（也成为扇出数，fan-out)，Compaction将本层区段和下层区段合并，并**重写下层**的有序区段；在原始的paper中的level-based compact是all-to-all，而在LevelDB/RocksDB中是some-to-some（具体见下文）；如果扇出数为N，那么一个compact需要多些N倍的数据（[该论文说明了大部分情况下还是小于N的](https://hyeontaek.com/papers/msls-fast2016.pdf)），因此能够减少空间放大，但是会带来读放大和写放大，适合的场景：
   + Key-order insert
   + Skewed write
-
-+ **Sized-tiered Compaction** ：该策略下，每层有若干个可以重叠的区段组成（**N sorted runs**，N类似于上面的扇出数），Compaction将本层的所有区段进行归并，输出为下一层的一个区段；这样每层compacttion的写放大就是1，减小了写放大，但是会有写放大和空间放大。
++ **Sized-tiered Compaction** ：该策略下，每层有若干个可以重叠的区段组成（**N sorted runs**，N类似于上面的扇出数），Compaction将本层的所有区段进行归并，输出为下一层的一个区段；这样每层compacttion的写放大就是1，减小了写放大，但是会有读放大和空间放大。RocksDB下称为（Universal Compaction）
 
 > 另外针对时序数据的时序数据库，对Compact算法也有对应的优化
 
@@ -199,3 +198,7 @@ Compaction的过程中的merge的过程，一是读取两个段，二合并，�
 [scylladb compaction](https://www.scylladb.com/2017/12/28/compaction-strategy-scylla/)
 
 [compaction method](https://smalldatum.blogspot.com/2018/08/name-that-compaction-algorithm.html)
+
+[https://github.com/facebook/rocksdb/wiki/Leveled-Compaction](https://github.com/facebook/rocksdb/wiki/Leveled-Compaction)
+
+[http://mysql.taobao.org/monthly/2018/09/04/](http://mysql.taobao.org/monthly/2018/09/04/)
