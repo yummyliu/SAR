@@ -58,3 +58,31 @@ https://manybutfinite.com/post/when-does-your-os-run/
 ​	+ page fault
 
 **ticks**
+
+
+
+
+
+https://manybutfinite.com/post/cpu-rings-privilege-and-protection/
+
+
+
+
+
+![Flexible Process Address Space Layout In Linux](/image/cpu/linuxFlexibleAddressSpaceLayout.png)
+
+
+
+Memory mapping is a convenient and high-performance way to do file I/O, so it is used for loading dynamic libraries. It is also possible to create an **anonymous memory mapping** that does not correspond to any files, being used instead for program data. In Linux, if you request a large block of memory via [malloc()](http://www.kernel.org/doc/man-pages/online/pages/man3/malloc.3.html), the C library will create such an anonymous mapping instead of using heap memory.
+
+
+
+
+
+**M_MMAP_THRESHOLD**
+
+For allocations greater than or equal to the limit specified (in bytes) by **M_MMAP_THRESHOLD** that can't be satisfied from the free list, the memory-allocation functions employ **[mmap](dfile:///Users/bytedance/Library/Application Support/Dash/User Contributed/Linux Man Pages/Linux.docset/Contents/Resources/Documents/man2/mmap.2.html)**(2) instead of increasing the program break using **[sbrk](dfile:///Users/bytedance/Library/Application Support/Dash/User Contributed/Linux Man Pages/Linux.docset/Contents/Resources/Documents/man2/sbrk.2.html)**(2).
+
+
+
+Allocating memory using **[mmap](dfile:///Users/bytedance/Library/Application Support/Dash/User Contributed/Linux Man Pages/Linux.docset/Contents/Resources/Documents/man2/mmap.2.html)**(2) has the significant advantage that the allocated memory blocks can always be independently released back to the system. (By contrast, the heap can be trimmed only if memory is freed at the top end.) On the other hand, there are some disadvantages to the use of **[mmap](dfile:///Users/bytedance/Library/Application Support/Dash/User Contributed/Linux Man Pages/Linux.docset/Contents/Resources/Documents/man2/mmap.2.html)**(2): deallocated space is not placed on the free list for reuse by later allocations; memory may be wasted because **[mmap](dfile:///Users/bytedance/Library/Application Support/Dash/User Contributed/Linux Man Pages/Linux.docset/Contents/Resources/Documents/man2/mmap.2.html)**(2) allocations must be page-aligned; and the kernel must perform the expensive task of zeroing out memory allocated via **[mmap](dfile:///Users/bytedance/Library/Application Support/Dash/User Contributed/Linux Man Pages/Linux.docset/Contents/Resources/Documents/man2/mmap.2.html)**(2). Balancing these factors leads to a default setting of 128*1024 for the **M_MMAP_THRESHOLD**parameter.
