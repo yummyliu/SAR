@@ -20,13 +20,15 @@ typora-root-url: ../../layamon.github.io
 
 # RocksDB
 
-> (userkey,seq,type) => uservalue
+RocksDb是一个多版本的KV存储引擎（versioned key-value store）；相比于传统数据库以块为最小单位进行IO存储，RocksDB可更细粒度的存储，可认为最小的粒度是kv pair（`(userkey,seq,type) => uservalue`）；
 
-RocksDb是一个多版本的KV存储引擎库（versioned key-value store）；我简单画了下rocksdb的大致架构图，如下图，其中省去了进行读优化的组件，比如Index、BloomFilter和Block Cache。另外，在RocksDB3.0中，引入了Column Family（下称CF，图中没有体现）的概念，通过CF将(k,v)进行了逻辑上的分区，这样不同分区可以分别写自己的MemTable和SSTTable，但是共享同一个WAL；但是RocksDB保证**跨CF的的原子写**和**一致性读**快照，以及可以分别对不同CF进行挂载、删除与配置。
+下图中省去了Index、BloomFilter、Block Cache和Column Family（下称CF）的概念，描述了RocksDB的读写路径：
+
+> 通过CF将(k,v)进行了逻辑上的分区，这样不同分区可以分别写自己的MemTable和SSTTable，但是共享同一个WAL；但是RocksDB保证**跨CF的的原子写**和**一致性读**快照，以及可以分别对不同CF进行挂载、删除与配置。
 
 ![image-20200227180548341](/image/2020-0227-rocksdb-overview.png)
 
-图中分别描述了RocksDB的读写路径，在RocksDB中写事务提交时，只需要保证Log Record落盘即可，Data只需要复制到Active MemTable中，后续的数据落盘由Compact操作进行。
+在RocksDB中，写事务提交时只需要保证Log Record落盘即可，Data只需要复制到Active MemTable中，后续的数据落盘由FLush/Compact操作进行。
 
 相比于B+-tree在写放大和空间放大上的不足，LSM-tree能够通过合并随机写减少写放大，以及通过高效的压缩减少空间放大（对每一层可以选用不同的压缩算法）。如下表，进行了简单的对比：
 
@@ -36,7 +38,7 @@ RocksDb是一个多版本的KV存储引擎库（versioned key-value store）；�
 | range scan | 直接按照leafnode的next指针进行遍历。 | 需要合并不同层的数据。                   |
 | delete     | 标记删除                             | 标记删除，tombstone；singledelete优化。  |
 
-Key存储对象：
+目前RocksDB提供了基本的KV操作，对应的Key中保存了操作类型：
 
 ```cpp
 // <user key, sequence number, and entry type> tuple.
@@ -60,15 +62,43 @@ enum EntryType {
 };
 ```
 
-EntryType中标识了RocksDB内有多少种类型的kv对。有基本常见kv操作：Put、Get、Delete等；这里介绍一些特殊的操作。
+每种操作的接口带有相应的Option，比如这些基本操作：
+
+```cpp
+DB* db;
+Options options;
+options.create_if_missing = true;
+Status s = DB::Open(options, kDBPath, &db);
+assert(s.ok());
+
+s = db->Put(WriteOptions(), "key1", "value");
+assert(s.ok());
+std::string value;
+s = db->Get(ReadOptions(), "key1", &value);
+assert(s.ok());
+
+// Atomically apply a set of updates
+{
+  WriteBatch batch;
+  batch.Delete("key1");
+  batch.Put("key2", value);
+  s = db->Write(WriteOptions(), &batch);
+}
+```
+
+> PinnableSlice:
+>
+> 将get的获取的value，将string换成PinnableSlice；如果数据已经在block cache中，可免去一次memcpy。
+
+除了基本KV操作外，RocksDB提供了了一些额外操作，比如Merge和Compact。
 
 ## Merge
 
 > Merge可看作是一个升级版的Put，Put直接给出key的新值，Merge会根据当前Val得到新值。
 
-在RocksDB中，record有三种类型：Put、Delete、Merge。一般Put，Get就可以满足读写了，但是为了减少read-modify-write时的额外IO代价，引入了Merge Operator。这是用户自定义的操作，用户将**增量更新**语义抽象在Merge操作中；
+为了减少read-modify-write时的额外IO代价，引入了Merge Operator。这是用户自定义的操作，用户将**增量更新**语义抽象在Merge操作中；
 
-Merge操作的具体执行时机可能在Get的时候，也可能在Compact清理的时候；这时Merge的操作对象可能已经累积不少了。要得到Merge记录的val，需要向前追溯，直到找到该key的一个Put或者Delete记录。
+Merge操作的具体执行时机可能在Get的时候，也可能在Compact清理的时候；这时Merge的操作对象可能已经累积不少了。要计算到Merge记录的val，需要向前追溯，直到找到该key的一个Put或者Delete记录。
 
 1. 找到一个Put/Del，FullMerge
 2. end-of-key=history
@@ -211,8 +241,6 @@ K:   OP1     OP2     OP3     OP4     OP5  ... OPn
 > NOTE:
 >
 > Before release 6.0, if there is a snapshot taken later than the key/value pair, RocksDB always try to prevent the key/value pair from being filtered by compaction filter so that users can preserve the same view from a snapshot, unless the compaction filter returns `IgnoreSnapshots() = true`. However, this feature is deleted since 6.0, after realized that the feature has a bug which can't be easily fixed. Since release 6.0, with compaction filter enabled, RocksDB always invoke filtering for any key, even if it knows it will make a snapshot not repeatable.
-
-
 
 # MyRocks 
 

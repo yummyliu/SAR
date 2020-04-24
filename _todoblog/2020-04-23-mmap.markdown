@@ -1,0 +1,60 @@
+---
+layout: post
+title: 
+date: 2020-04-23 15:04
+categories:
+  -
+typora-root-url: ../../layamon.github.io
+---
+> * TOC
+{:toc}
+
+
+
+# madvise
+
+
+
+# THP
+
+> 4KB is an increase over what early virtual memory systems used; 512 bytes was once common. But it is still small relative to the both the amount of physical memory available on contemporary systems and the working set size of applications running on those systems. That means that the operating system has more pages to manage than it did some years back.
+
+Benefit
+
++ the size of page tables decreases, as does the number of page faults required to get an application into RAM.  (decreasing page fault counts)
+
++ fewer translation lookaside buffer (TLB) slots
+
+Drawback
+
++ internal fragmentation
++ high sparsely-accessed memory cost
++ increasing page fault latency
+
+
+
+
+
+https://lwn.net/Articles/359158/
+
+![img](/image/cpu/northbridge.png)
+
+
+
+**interrupt request line**
+
+ During the [boot process](https://manybutfinite.com/post/kernel-boot-process) the kernel programs a hardware timer to issue **timer interrupts** at a periodic interval,
+
+https://manybutfinite.com/post/when-does-your-os-run/
+
+**Interrupts are the most frequent and crucial entry point into the OS kernel.**
+
+**interrupts**
+
+​	timer **interrupts**
+
+​	+ int overflow
+
+​	+ page fault
+
+**ticks**
