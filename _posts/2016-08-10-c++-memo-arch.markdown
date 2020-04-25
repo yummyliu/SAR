@@ -28,17 +28,21 @@ int main(void)
 
 ![image-20200210155950568](/image/cpp-memo/20200210-proglayout.png)
 
-**1. data**
+> 这里只是概念图，而且是虚拟地址空间，地址由下向上变大；stack是向下增长，在stack之上是kernelspace；
+>
+> 实际上heap，stack的起始地址是随机的，因为一旦地址固定，容易被被不法人员利用；
+>
+> 另外在Free部分，会包含mmap的地址空间，起始地址同样是随机的。
 
-**已经初始化**的全局变量和静态变量。
+**data & bss**
 
-**2. bss**
+> bss: block started by symbol
 
-> block started by symbol
+bss保存的是没初始化的全局变量，这段内存是匿名的；
 
-**没有初始化**的全局变量和静态变量，一般操作系统对其进行置零初始化。
+data是初始化的全局变量，这段不是匿名的，与binary文件的相应位置对应，但是是private mmap，因此对这段空间的修改不会flush到二进制中。
 
-**3. text（代码段）**
+**text（代码段）**
 
 text就是代码段。对于代码段，我们需要了解代码是如何从code到机器指令的？如[下图](https://www3.ntu.edu.sg/home/ehchua/programming/cpp/gcc_make.html)所示，中间有4个步骤：
 
@@ -73,11 +77,11 @@ SEARCH_DIR("=/usr/lib")
 
 对于动态库的全局代码段，每个进程维护通过相对寻址来执行。而对于动态库中的非常量全局变量不是共享的，每个进程一个拷贝。
 
-**4. stack**
+** stack**
 
 栈内的变量一般就是在函数内部声明的，或者是函数的形参。其作用域也是在**本次调用**内部可见。但是对于static变量，那么就是多次调用都可见。
 
-**5. heap**
+** heap**
 
 heap一般就是动态申请的空间的位置。一般有两种动态空间申请的方法：new/malloc。
 
@@ -379,3 +383,4 @@ weak_ptr的引入，我认为是智能指针概念的一个补全。一个裸指
 
 
 
+https://manybutfinite.com/post/anatomy-of-a-program-in-memory/

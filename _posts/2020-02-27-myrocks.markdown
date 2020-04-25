@@ -8,6 +8,8 @@ typora-root-url: ../../layamon.github.io
 ---
 * TOC
 {:toc}
+> 本文有点零散，类似于个人杂乱的笔记，记录了解MyRocks过程中认识到的问题。
+
 在[from btree to lsm-tree](http://liuyangming.tech/12-2019/leveldb.html)中，我们了解到写B+-tree时，写一条记录就意味着写一个页；不考虑bufferpool的合并写和dwbuffer的写放大，在InnoDB中，如果业务负载随机写N条记录，最坏的情况下，就意味着要写N个页；这带来很大的**写放大**。另外，每个页中都有一些碎片空间，这些无用空间会浪费IO带宽，而针对这个，InnoDB中设计了Compressed Page；而Compressed Page同样是要对齐存储（0~4kb对齐到4kb，4~8kb对齐到8kb，8~16kb对齐到16kb），只要对齐就会存在空闲空间。这又带来了**空间放大**。
 
 > 以上并不表示，LSM-tree比Btree优秀，各有所长；目前Btree依旧是OLTP业务中主流的存储结构。
@@ -22,7 +24,7 @@ typora-root-url: ../../layamon.github.io
 
 # RocksDB
 
-RocksDb是一个多版本的KV存储引擎库（versioned key-value store）；提供了基本的KV操作，每种操作的接口带有相应的Option，比如这些基本操作：
+RocksDb是一个多版本的KV存储引擎（versioned key-value store）；相比于传统数据库以块为最小单位进行IO存储，RocksDB可更细粒度的存储，可认为最小的粒度是kv pair（`(userkey,seq,type) => uservalue`）；KV主要结构是：(userkey,sequence number,type) => uservalue；多版本通过sequence number实现，根据不同KV操作类型产生不同type的数据，主要有kTypeValue、KTypeDelete、KTypeMerge。每种操作的接口带有相应的Option，比如这些基本操作：
 
 ```cpp
 DB* db;
@@ -50,24 +52,11 @@ assert(s.ok());
 >
 > 将get的获取的value，将string换成PinnableSlice；如果数据已经在block cache中，可免去一次memcpy。
 
-KV主要结构是：(userkey,sequence number,type) => uservalue；多版本通过sequence number实现，根据不同KV操作类型产生不同type的数据，主要有kTypeValue、KTypeDelete、KTypeMerge。
-
-```cpp
-// <user key, sequence number, and entry type> tuple.
-struct FullKey {
-  Slice user_key;
-  SequenceNumber sequence;
-  EntryType type;
-  
-  ...
-}
-```
-
-简单画了下rocksdb的大致架构图，如下图，其中省去了Index、BloomFilter和Block Cache，以及Column Family（下称CF）的概念。
-
-> RocksDB通过CF将(k,v)进行了逻辑上的分区，这样不同分区可以分别写自己的MemTable和SSTTable，但是共享同一个WAL；但是RocksDB保证**跨CF的的原子写**和**一致性读**快照，以及可以分别对不同CF进行挂载、删除与配置。
+下图中省去了Index、BloomFilter、Block Cache和Column Family（下称CF）的概念，描述了RocksDB的读写路径：
 
 ![image-20200227180548341](/image/2020-0227-rocksdb-overview.png)
+
+> 通过CF将(k,v)进行了逻辑上的分区，这样不同分区可以分别写自己的MemTable和SSTTable，但是共享同一个WAL；但是RocksDB保证**跨CF的的原子写**和**一致性读**快照，以及可以分别对不同CF进行挂载、删除与配置。
 
 图中分别描述了RocksDB的读写路径，在RocksDB中写事务提交时，只需要保证Log Record落盘即可，Data只需要复制到Active MemTable中，后续的数据落盘由Compact操作进行。
 
@@ -364,34 +353,6 @@ class SnapshotImpl : public Snapshot {
 
 RocksDB事务提交时保证数据的原子写的结构，将事务数据整体原子写入到MEMTable，WriteBatch中的数据由`rep_`结构保存，格式如下：
 
-```cpp
-// WriteBatch::rep_ :=
-//    sequence: fixed64
-//    count: fixed32
-//    data: record[count]
-// record :=
-//    kTypeValue varstring varstring
-//    kTypeDeletion varstring
-//    kTypeSingleDeletion varstring
-//    kTypeRangeDeletion varstring varstring
-//    kTypeMerge varstring varstring
-//    kTypeColumnFamilyValue varint32 varstring varstring
-//    kTypeColumnFamilyDeletion varint32 varstring
-//    kTypeColumnFamilySingleDeletion varint32 varstring
-//    kTypeColumnFamilyRangeDeletion varint32 varstring varstring
-//    kTypeColumnFamilyMerge varint32 varstring varstring
-//    kTypeBeginPrepareXID varstring
-//    kTypeEndPrepareXID
-//    kTypeCommitXID varstring
-//    kTypeRollbackXID varstring
-//    kTypeBeginPersistedPrepareXID varstring
-//    kTypeBeginUnprepareXID varstring
-//    kTypeNoop
-// varstring :=
-//    len: varint32
-//    data: uint8[len]
-```
-
 具体的Memtable写入发生在什么时候取决于参数`rocksdb_write_policy`。
 
 + write_commited：在事务提交时写入，这样判断数据可见性的逻辑简单，并且回滚方便，只需要将writebatch释放即可，但是commit操作比较重。
@@ -416,6 +377,10 @@ master failover相对复杂点，可能如果原master的gtid大于新master的g
 > slave_exec_mode：当从库回放时出现冲突的处理方式；
 
 以上，此文持续整理本人在折腾MyRocks过程中，对MyRocks的一些认识和理解，介于理解的深度是由浅入深的，可能目前的版本认识浅薄，甚至有错误，欢迎指正学习。一些有用的link：
+
+
+
+reference
 
 [各种数据库的隔离级别对比](https://github.com/ept/hermitage)
 
