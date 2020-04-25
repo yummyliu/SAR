@@ -8,35 +8,49 @@ typora-root-url: ../../layamon.github.io
 ---
 * TOC
 {:toc}
-在[from btree to lsm-tree](http://liuyangming.tech/12-2019/leveldb.html)中，我们了解到写B+-tree时，写一条记录就意味着写一个页；不考虑bufferpool的合并写和dwbuffer的写放大，在InnoDB中，如果业务负载随机写N条记录，最坏的情况下，就意味着要写N个页；这带来很大的**写放大**。另外，每个页中都有一些碎片空间，这些无用空间会浪费IO带宽，而针对这个，InnoDB中设计了Compressed Page；Compressed Page同样是要对齐存储（0~4kb对齐到4kb，4~8kb对齐到8kb，8~16kb对齐到16kb），只要对齐就会存在空闲空间。这又带来了**空间放大**。
+在[from btree to lsm-tree](http://liuyangming.tech/12-2019/leveldb.html)中，我们了解到写B+-tree时，写一条记录就意味着写一个页；不考虑bufferpool的合并写和dwbuffer的写放大，在InnoDB中，如果业务负载随机写N条记录，最坏的情况下，就意味着要写N个页；这带来很大的**写放大**。另外，每个页中都有一些碎片空间，这些无用空间会浪费IO带宽，而针对这个，InnoDB中设计了Compressed Page；而Compressed Page同样是要对齐存储（0~4kb对齐到4kb，4~8kb对齐到8kb，8~16kb对齐到16kb），只要对齐就会存在空闲空间。这又带来了**空间放大**。
 
-基于B+-tree的弊端以及目前存储介质的演化，数据库存储引擎也出现了变革。其中LSM-tree目前获得了很多目光，MySQL中也可以集成LSM-tree架构的存储引擎——RocksDB，叫MyRocks。本文是作者对MyRocks学习的总结，也会不断在此更新新的认识，希望对想了解这个产品的同学有所帮助。
+> 以上并不表示，LSM-tree比Btree优秀，各有所长；目前Btree依旧是OLTP业务中主流的存储结构。
 
-> 这里关于硬件设备，搞明白几个概念：**电气接口**、**存储协议**、**存储介质**。
->
-> 当我们有一个主机，现在要接入外接设备，设备要插到主板上，需要该设备能够满足主板上的**电气接口（总线规范）**；插上去后，操作系统上安装相应设备的驱动，驱动中有设备的**存储协议**；之后的IO就封装成相应存储协议的命令，写到外存的**存储介质**上去。电气接口主要有SATA、SAS、PCIe；存储协议有AHCI、SCSI、NVMe；存储介质有NAND、3D-Xpoint。
->
-> ![image-20200227141415425](/image/2020-0227-nand.png)
+基于B+-tree的弊端以及目前存储介质的演化，数据库存储引擎也出现了变革。这里关于硬件设备几个概念，进行简单梳理。当我们有一个主机，现在要接入外接设备，设备要插到主板上，需要该设备能够满足主板上的**电气接口（总线规范）**；插上去后，操作系统上安装相应设备的驱动，驱动中有设备的**存储协议**；之后的IO就封装成相应存储协议的命令，写到外存的**存储介质**上去。主要就这三类概念：**电气接口**、**存储协议**、**存储介质**。电气接口主要有SATA、SAS、PCIe；存储协议有AHCI、SCSI、NVMe；存储介质有NAND、3D-Xpoint等。
+
+现在常说的就是NVMe SSD，有时也叫PCIe SSD，就是按照PCIe接口（规范），基于NVMe协议，使用NAND介质的SSD；SATA SSD与其区别在于在存储协议中使用SCSI，电气接口就是SATA。
+
+![image-20200227141415425](/image/2020-0227-nand.png)
+
+基于目前存储设备的发展，存储引擎也有了一些新的变化；其中LSM-tree重新获得了很多目光，MySQL中也可以集成LSM-tree架构的存储引擎——RocksDB，叫MyRocks。本文是作者对MyRocks学习的总结，也会不断在此更新新的认识，希望对想了解这个产品的同学有所帮助。
 
 # RocksDB
 
-> (userkey,seq,type) => uservalue
+RocksDb是一个多版本的KV存储引擎库（versioned key-value store）；提供了基本的KV操作，每种操作的接口带有相应的Option，比如这些基本操作：
 
-RocksDb是一个多版本的KV存储引擎库（versioned key-value store）；我简单画了下rocksdb的大致架构图，如下图，其中省去了进行读优化的组件，比如Index、BloomFilter和Block Cache。另外，在RocksDB3.0中，引入了Column Family（下称CF，图中没有体现）的概念，通过CF将(k,v)进行了逻辑上的分区，这样不同分区可以分别写自己的MemTable和SSTTable，但是共享同一个WAL；但是RocksDB保证**跨CF的的原子写**和**一致性读**快照，以及可以分别对不同CF进行挂载、删除与配置。
+```cpp
+DB* db;
+Options options;
+options.create_if_missing = true;
+Status s = DB::Open(options, kDBPath, &db);
+assert(s.ok());
 
-![image-20200227180548341](/image/2020-0227-rocksdb-overview.png)
+s = db->Put(WriteOptions(), "key1", "value");
+assert(s.ok());
+std::string value;
+s = db->Get(ReadOptions(), "key1", &value);
+assert(s.ok());
 
-图中分别描述了RocksDB的读写路径，在RocksDB中写事务提交时，只需要保证Log Record落盘即可，Data只需要复制到Active MemTable中，后续的数据落盘由Compact操作进行。
+// Atomically apply a set of updates
+{
+  WriteBatch batch;
+  batch.Delete("key1");
+  batch.Put("key2", value);
+  s = db->Write(WriteOptions(), &batch);
+}
+```
 
-相比于B+-tree在写放大和空间放大上的不足，LSM-tree能够通过合并随机写减少写放大，以及通过高效的压缩减少空间放大（对每一层可以选用不同的压缩算法）。如下表，进行了简单的对比：
+> PinnableSlice:
+>
+> 将get的获取的value，将string换成PinnableSlice；如果数据已经在block cache中，可免去一次memcpy。
 
-|            | InnoDB                               | RocksDB                                  |
-| ---------- | ------------------------------------ | ---------------------------------------- |
-| 点查       | 从上到下按照某个分支进行定位。       | 逐层查找，可以基于bloom filter进行过滤。 |
-| range scan | 直接按照leafnode的next指针进行遍历。 | 需要合并不同层的数据。                   |
-| delete     | 标记删除                             | 标记删除，tombstone；singledelete优化。  |
-
-Key存储对象：
+KV主要结构是：(userkey,sequence number,type) => uservalue；多版本通过sequence number实现，根据不同KV操作类型产生不同type的数据，主要有kTypeValue、KTypeDelete、KTypeMerge。
 
 ```cpp
 // <user key, sequence number, and entry type> tuple.
@@ -47,48 +61,75 @@ struct FullKey {
   
   ...
 }
-// User-oriented representation of internal key types.
-enum EntryType {
-  kEntryPut,
-  kEntryDelete,
-  kEntrySingleDelete,
-  kEntryMerge,
-  kEntryRangeDeletion,
-  kEntryValueIndex,
-  kEntryMergeIndex,
-  kEntryOther,
-};
 ```
 
-EntryType中标识了RocksDB内有多少种类型的kv对。有基本常见kv操作：Put、Get、Delete等；这里介绍一些特殊的操作。
+简单画了下rocksdb的大致架构图，如下图，其中省去了Index、BloomFilter和Block Cache，以及Column Family（下称CF）的概念。
+
+> RocksDB通过CF将(k,v)进行了逻辑上的分区，这样不同分区可以分别写自己的MemTable和SSTTable，但是共享同一个WAL；但是RocksDB保证**跨CF的的原子写**和**一致性读**快照，以及可以分别对不同CF进行挂载、删除与配置。
+
+![image-20200227180548341](/image/2020-0227-rocksdb-overview.png)
+
+图中分别描述了RocksDB的读写路径，在RocksDB中写事务提交时，只需要保证Log Record落盘即可，Data只需要复制到Active MemTable中，后续的数据落盘由Compact操作进行。
+
+相比于B+-tree在写放大和空间放大上不足，LSM-tree能够通过合并随机写减少**单次写放大**，以及通过高效的压缩减少空间放大（对每一层可以选用不同的压缩算法）。如下表，进行了简单的对比；但LSM-tree结构需要重点解决读性能和后台compact操作的优化。
+
+|            | InnoDB                               | RocksDB                                  |
+| ---------- | ------------------------------------ | ---------------------------------------- |
+| 点查       | 从上到下按照某个分支进行定位。       | 逐层查找，可以基于bloom filter进行过滤。 |
+| range scan | 直接按照leafnode的next指针进行遍历。 | 需要合并不同层的数据。                   |
+| delete     | 标记删除                             | 标记删除，tombstone；singledelete优化。  |
+
+对RocksDB有了初步的认识后，下面对RocksDB的一些关键点进行了解，这些关键点与RocksDB的实现细节息息相关，出现的顺序是笔者了解到的先后顺序，与重要性无关。具体的实现细节很繁琐，本文只做原理上的阐述。
+
+## Compaction
+
+compact是rocksdb中可配置的一个后台任务，用来对sst file进行合并；
+
++ 回收垃圾：清理SST中不需要的数据；比如标记DELETE的数据，超过TTL的数据。
++ 数据转换：基于一些操作与旧数据，生成新的数据；比如MergeOperator、Compaction Filter。
+
+从前文知道，LSM-tree的compaction策略主要有两种：**Leveled-based**/**Sized-tiered** ；在RocksDB中，SST file的compact默认的是Leveled Compaction，但是每层的执行条件不同：
+
++ level0：level0_file_num_compaction_trigger，基于文件数，这些文件从内存flush而来，也是唯一一层允许overlap。
++ 其他层基于层内总大小，level_compaction_dynamic_level_bytes
+
+> 在RocksDB中，Sized-tiered称为Universal compaction。用在flush memtable中；多个overlap的memtable合并为一个ssttable。
+
+一般compact是自动运行的，用户可以手动触发一次Compaction，在线程启动后，会根据配置好的compact 策略执行，比如默认的LevelCompact；然后，基于CompactionScore对每一层进行评分，调度分数最高的。
+
+COMPACT在内部按照Job的形式处理，对于Leveled Compact，每次选取上层若干个文件与下层中有key overlap的文件进行merge；需要注意的是，L0->L1的compact每次将选取上层全部的文件，其他层可只选取与该层剩下不重叠的文件进行compact；
+
+### Compaction Filter
+
+用户可定义自己的Filter，并配置在对应的CFOption中，可看做是用户注册的一个回调函数，在做Compaction的时候进行数据过滤。
+
+实现主要有三个接口：Filter/FilterMergeOperand/FilterV2。Filter/FilterMergeOperand对Put/Delete/Merge类型的数据是否删除进行判断，只能删除不能修改数据。FilterV2返回Decision对象，允许更改value；
+
+```cpp
+  enum class Decision {
+    kKeep,
+    kRemove,
+    kChangeValue,
+    kRemoveAndSkipUntil,
+  };
+```
+
+另外，可以直接定义一个CustomCompactionFilterFactory，这样可以根据需要执行不同的Filter。
+
+flush可看作是一种特殊的Compact，但flush不会调用Compaction filter。Compaction Filter的调用时机主要有下面两个：
+
++ 只对普通value类型（未标记上delete mark）调用Compaction filter；
++ 对于merge类型，会在执行merge operator前调用Compaction filter；
+
+最后，整个Compact的执行机制可以这么描述：
+
+1. 基于不同的trigger，触发相应层进行compact；
+2. 构造一个compact job，请求进行调度
+3. compact picker选出对应job，进行处理。
 
 ## Merge
 
-> Merge可看作是一个升级版的Put，Put直接给出key的新值，Merge会根据当前Val得到新值。
-
-在RocksDB中，record有三种类型：Put、Delete、Merge。一般Put，Get就可以满足读写了，但是为了减少read-modify-write时的额外IO代价，引入了Merge Operator。这是用户自定义的操作，用户将**增量更新**语义抽象在Merge操作中；
-
-Merge操作的具体执行时机可能在Get的时候，也可能在Compact清理的时候；这时Merge的操作对象可能已经累积不少了。要得到Merge记录的val，需要向前追溯，直到找到该key的一个Put或者Delete记录。
-
-1. 找到一个Put/Del，FullMerge
-2. end-of-key=history
-
-```
-K:   OP1    OP2   OP3   ....    OPk  .... OPn
-            Put  Merge  Merge  Merge
-                                 ^
-                                 |
-                              Get.seq
-             -------------------->
-```
-
-为避免这个问题，用户的使用场景中，如果Merge语义能够级联（即，Merge的输出可以作为另一个Merge的输入），那么可以定义`PartialMerge`接口，这样可以提前进行Merge，而最后只做`FullMerge`。将IO代价进行均摊，这样得到一个线性扩展的性能曲线。
-
-> `PartialMerge`
->
-> it should be known that PartialMerge() is an optional function, used to combine two merge operations (operands) into a single operand. For example, combining OP(k-1) with OPk to produce some OP', which is also a merge-operation type. 
-
-用户一般继承子类`AssociativeMergeOperator`，`AssociativeMergeOperator`将`FullMerge`和`PartialMere`合并为一个Merge，如下这些Operator都有增量更新的特点。
+前面提到了RocksDB的key有多重类型，其中有一个特殊的类型叫：Merge。Merge可看作是一个升级版的Put，Put直接给出key的新值，Merge会根据当前Val得到新值。这是为了减少read-modify-write时的额外IO代价，引入了Merge Operator。这是用户自定义的操作，用户将**增量更新**语义抽象在Merge操作中；如下这些Operator都有增量更新的特点。
 
 ```cpp
 storage/rocksdb/terarkdb/utilities/merge_operators/bytesxor.h <<GLOBAL>>
@@ -99,120 +140,32 @@ storage/rocksdb/terarkdb/utilities/merge_operators/uint64add.cc <<GLOBAL>>
              class UInt64AddOperator : public AssociativeMergeOperator {
 ```
 
-注意，由于Merge 记录的存在，会影响原来[Compact对旧数据的回收](https://github.com/facebook/rocksdb/wiki/Merge-Operator-Implementation#compaction)。
+Merge操作的具体执行时机可能在Get的时候，也可能在Compact清理的时候；这时Merge的操作对象可能已经累积不少了。要得到Merge记录的val，需要向前追溯，直到：
 
-## Compaction
+1. 找到一个Put/Del，FullMerge
+2. end-of-key=history
 
-默认的是Leveled Compaction，用来sst file compact中；但是触发条件不同：
+为避免累积过多merge key这个问题，用户的使用场景中，如果Merge语义能够级联（即，Merge的输出可以作为另一个Merge的输入），那么可以定义`PartialMerge`接口，这样可以提前进行Merge，而最后只做`FullMerge`。将IO代价进行均摊，这样得到一个线性扩展的性能曲线。
 
-+ level0：level0_file_num_compaction_trigger，也是唯一一层允许overlap
-+ Total file size for other
-
-> Universal compaction(sized-tiered)用在flush memtable中；多个overlap的memtable合并为一个ssttable。
-
-在`ShouldFormSubcompactions`决定是否将当前的compact划分成 Sub-Compaction。L0->L1的compact没办法并行，其他都可以并行；执行区间左开右闭，
-
-> Algorithm
+> `PartialMerge`
 >
-> ```c
-> Compaction(snaps, files):
->   // <snaps> is the set of snapshots (i.e.: a list of sequence numbers)
->   // <files> is the set of files undergoing compaction
->   Let input = a file composed of the union of all files
->   Let output = a file to store the resulting entries
-> 
->   Let stack = [];			// in reality, this should be a "deque", but stack is simpler to conceptualize in this pseudo-code
->   for each v from newest to oldest in input:
->     clear_stack = false
->     if v.sequence_number is in snaps:
->       clear_stack = true
->     else if stack not empty && v.key != stack.top.key:
->       clear_stack = true
-> 
->     if clear_stack:
->       write out all operands on stack to output (in the same order as encountered)
->       clear(stack)
-> 
->     if v.type is "merge_operand":
->       push v to stack
->         while (stack has at least 2 elements and (stack.top and stack.second_from_top can be partial-merged)):
->           v1 = stack.pop();
->           v2 = stack.pop();
->           result_v = client_merge_operator.PartialMerge(v1,v2)
->           push result_v to stack
->     if v.type is "put":
->       write client_merge_operator.FullMerge(v, stack) to output
->       clear stack
->     if v.type is "delete":
->       write client_merge_operator.FullMerge(nullptr, stack) to output
->       clear stack
-> 
->   If stack not empty:
->     if end-of-key-history for key on stack:
->       write client_merge_operator.FullMerge(nullptr, stack) to output
->       clear(stack)
->     else
->       write out all operands on stack to output
->       clear(stack)
-> 
->   return output
-> ```
+> it should be known that PartialMerge() is an optional function, used to combine two merge operations (operands) into a single operand. For example, combining OP(k-1) with OPk to produce some OP', which is also a merge-operation type. 
 
-类似于Vacuum，Compaction主要作用也是回收旧版本并清理已删除的数据；
+用户在实现自己的MergeOperator时，简单的话一般继承子类`AssociativeMergeOperator`，`AssociativeMergeOperator`将`FullMerge`和`PartialMere`合并为一个Merge，注意，由于Merge 类型的key存在，会影响原来[Compact对旧数据的回收](https://github.com/facebook/rocksdb/wiki/Merge-Operator-Implementation#compaction)。如果没有Merge类型，那么对于每个snapshot只需要保留最近的一个OP数据；有了Merge后，SnapShot的最近OP是Merge的话，进行回溯。
 
-在过滤数据的时候，可以通过两种方式定义Compaction filter，前一种注意并发安全性。
+### Merge & Compact
 
-```cpp
-options.compaction_filter = new CustomCompactionFilter();
-// or
-options.compaction_filter_factory.reset(new CustomCompactionFilterFactory());
-```
+Compact和Get类似都是从new->old扫描数据，如果碰到merge类型，则先暂存起来，直到可以执行FullMerge；
 
-调用时机：
+但Compact和Get不同，Compact是针对某一个sst file操作，Get可以全局扫描；Compact如果遇到end-of-file还没结束，那么这次就不能执行FullMerge；另外，如果碰到有Supporting Operation的SnapShot，Supporting Operation如果是Merge，那么该Merge操作暂时不可执行；可将扫过的栈清零后，继续向前compact。
 
-+ flush可看作是一种特殊的Compact，但flush不会调用Compaction filter。
-+ 只对普通value类型（未标记上delete mark）调用Compaction filter；
-+ 对于merge类型，会在执行merge operator前调用Compaction filter；
+> Supporting Operation就是SnapShot最近的OP
 
-compaction_filter的实现主要有三个接口：
-
-+ Filter
-
-+ FilterMergeOperand
-
-+ FilterV2：返回Decision对象，允许更改value，前两者只是返回是否过滤的bool；
-
-  ```cpp
-    enum class Decision {
-      kKeep,
-      kRemove,
-      kChangeValue,
-      kRemoveAndSkipUntil,
-    };
-  ```
-
-回收旧版本数据，需要注意是否有快照还在使用。对于某个Key有如下快照：
-
-```
-K:   OP1     OP2     OP3     OP4     OP5  ... OPn
-              ^               ^                ^
-              |               |                |
-           snapshot1       snapshot2       snapshot3
-```
-
-如果没有Merge类型，那么对于每个snapshot只需要保留最近的一个OP数据；有了Merge后，Compact和Get类似都是从new->old扫描数据，将扫过的merge操作暂存，直到可以执行FullMerge；
-
-但Compact和Get不同，Compact是针对某一个sst file操作，Get可以全局扫描；Compact如果遇到end-of-file还没结束，那么这次就不能执行FullMerge；
-
-另外，如果碰到有Supporting Operation的SnapShot，Supporting Operation暂时不可删除，那么清理到当前的栈后，可以从Supporting Operation开始继续compact。
-
-由于经常存在上面两个情况，导致merge经常不能FullMerge，可以通过`PartialMerge`缓解。
+由于经常存在上面两个情况，导致merge经常不能FullMerge，可以通过`PartialMerge`暂时将Merge操作合并。
 
 > NOTE:
 >
 > Before release 6.0, if there is a snapshot taken later than the key/value pair, RocksDB always try to prevent the key/value pair from being filtered by compaction filter so that users can preserve the same view from a snapshot, unless the compaction filter returns `IgnoreSnapshots() = true`. However, this feature is deleted since 6.0, after realized that the feature has a bug which can't be easily fixed. Since release 6.0, with compaction filter enabled, RocksDB always invoke filtering for any key, even if it knows it will make a snapshot not repeatable.
-
-
 
 # MyRocks 
 
