@@ -10,7 +10,7 @@ typora-root-url: ../../layamon.github.io
 {:toc}
 在[from btree to lsm-tree](http://liuyangming.tech/12-2019/leveldb.html)中，我们了解到写B+-tree时，写一条记录就意味着写一个页；不考虑bufferpool的合并写和dwbuffer的写放大，在InnoDB中，如果业务负载随机写N条记录，最坏的情况下，就意味着要写N个页；这带来很大的**写放大**。另外，每个页中都有一些碎片空间，这些无用空间会浪费IO带宽，而针对这个，InnoDB中设计了Compressed Page；Compressed Page同样是要对齐存储（0~4kb对齐到4kb，4~8kb对齐到8kb，8~16kb对齐到16kb），只要对齐就会存在空闲空间。这又带来了**空间放大**。
 
-基于B+-tree的弊端以及目前存储介质的演化，数据库存储引擎也出现了变革。其中LSM-tree目前获得了很多目光，MySQL中也可以集成LSM-tree架构的存储引擎——RocksDB，叫MyRocks。本文是作者对MyRocks学习的总结，也会不断在此更新新的认识，希望对想了解这个产品的同学有所帮助。
+基于B+-tree的弊端以及目前存储介质的演化（HDD->SSD，iops更快，但是如果每次写的放大严重，那么会浪费ssd的写性能？），数据库存储引擎也出现了变革。其中LSM-tree目前获得了很多目光，MySQL中也可以集成LSM-tree架构的存储引擎——RocksDB，叫MyRocks。本文是作者对MyRocks学习的总结，也会不断在此更新新的认识，希望对想了解这个产品的同学有所帮助。
 
 > 这里关于硬件设备，搞明白几个概念：**电气接口**、**存储协议**、**存储介质**。
 >
@@ -90,35 +90,23 @@ assert(s.ok());
 >
 > 将get的获取的value，将string换成PinnableSlice；如果数据已经在block cache中，可免去一次memcpy。
 
-除了基本KV操作外，RocksDB提供了了一些额外操作，比如Merge和Compact。
+除了基本KV操作外，RocksDB提供了了一些额外操作，关键的有：Merge和Compact。
 
 ## Merge
 
 > Merge可看作是一个升级版的Put，Put直接给出key的新值，Merge会根据当前Val得到新值。
 
-为了减少read-modify-write时的额外IO代价，引入了Merge Operator。这是用户自定义的操作，用户将**增量更新**语义抽象在Merge操作中；
+为了减少read-modify-write时的额外IO代价，引入了Merge Operator。这是用户自定义的回调操作，用户将**增量更新**语义抽象在Merge操作中；
 
-Merge操作的具体执行时机可能在Get的时候，也可能在Compact清理的时候；这时Merge的操作对象可能已经累积不少了。要计算到Merge记录的val，需要向前追溯，直到找到该key的一个Put或者Delete记录。
+Merge操作的具体执行时机可能在Get的时候，也可能在Compact清理的时候；这时Merge的操作对象可能已经累积不少了。要计算到Merge记录的val，需要向前追溯，直到找到该key的一个Put或者Delete记录；将Put的val和merge的val进行合并，最后得到正确的值；（这叫FullMerge）
 
-1. 找到一个Put/Del，FullMerge
-2. end-of-key=history
-
-```
-K:   OP1    OP2   OP3   ....    OPk  .... OPn
-            Put  Merge  Merge  Merge
-                                 ^
-                                 |
-                              Get.seq
-             -------------------->
-```
-
-为避免这个问题，用户的使用场景中，如果Merge语义能够级联（即，Merge的输出可以作为另一个Merge的输入），那么可以定义`PartialMerge`接口，这样可以提前进行Merge，而最后只做`FullMerge`。将IO代价进行均摊，这样得到一个线性扩展的性能曲线。
+但有可能merge的链很长，这个操作就很耗时；为避免这个问题，用户的使用场景中，如果Merge语义能够级联（即，Merge的输出可以作为另一个Merge的输入），那么可以定义`PartialMerge`接口，这样可以提前对多个Merge操作进行部分合并成一个merge；减少了最后`FullMerge`时的merge量。将IO代价进行均摊，这样得到一个线性扩展的性能曲线。
 
 > `PartialMerge`
 >
 > it should be known that PartialMerge() is an optional function, used to combine two merge operations (operands) into a single operand. For example, combining OP(k-1) with OPk to produce some OP', which is also a merge-operation type. 
 
-用户一般继承子类`AssociativeMergeOperator`，`AssociativeMergeOperator`将`FullMerge`和`PartialMere`合并为一个Merge，如下这些Operator都有增量更新的特点。
+用户一般继承子类`AssociativeMergeOperator实现自己的逻辑，`AssociativeMergeOperator`将`FullMerge`和`PartialMere`合并为一个Merge，比如下这些Operator都有增量更新的特点。
 
 ```cpp
 storage/rocksdb/terarkdb/utilities/merge_operators/bytesxor.h <<GLOBAL>>
@@ -129,82 +117,29 @@ storage/rocksdb/terarkdb/utilities/merge_operators/uint64add.cc <<GLOBAL>>
              class UInt64AddOperator : public AssociativeMergeOperator {
 ```
 
-注意，由于Merge 记录的存在，会影响原来[Compact对旧数据的回收](https://github.com/facebook/rocksdb/wiki/Merge-Operator-Implementation#compaction)。
+## Compact
 
-## Compaction
+Compact是lsm-tree的一个关键操作，之前说过了。rocksdb默认的策略是Leveled Compaction，用在sst file compact中；但是不同层触发条件不同：
 
-默认的是Leveled Compaction，用来sst file compact中；但是触发条件不同：
-
-+ level0：level0_file_num_compaction_trigger，也是唯一一层允许overlap
++ level0：level0_file_num_compaction_trigger，也是唯一一层允许overlap。
 + Total file size for other
 
-> Universal compaction(sized-tiered)用在flush memtable中；多个overlap的memtable合并为一个ssttable。
+> Universal compaction(sized-tiered)可认为用在flush memtable中；多个overlap的memtable合并为一个ssttable。？
 
-在`ShouldFormSubcompactions`决定是否将当前的compact划分成 Sub-Compaction。L0->L1的compact没办法并行，其他都可以并行；执行区间左开右闭，
+其实我们可以发现，由于L0的key是重叠的，那么L0到L1的Compact不能并发进行；这里通过sub-compaction进行优化，即，先收集文件信息，将单个文件按offset进行分割，最后每个range交由一个subCompact进行处理。
 
-> Algorithm
+> 见`ShouldFormSubcompactions`决定是否将当前的compact划分成 Sub-Compaction。
+
+rocksdb相比Btree类型，正式因为不需要in-place-update才能有较好的写入速度；但是也正是因为不in-place-update，就存在空间膨胀的问题；就需要进行空间收缩；类似于Vacuum，Compaction主要作用也是回收旧版本并清理已删除的数据；注意，由于Merge 记录的存在，会影响原来[Compact对旧数据的回收](https://github.com/facebook/rocksdb/wiki/Merge-Operator-Implementation#compaction)。关于Compact更详细的逻辑，决定等后面专门整理一篇。
+
+在rocksdb的Compact中，值得一提的是——在过滤数据的时候，可以定义Compaction filter，按照用户定义的逻辑，进行数据整理，比如删除过期（过期时间自定义）数据，转换数据内容等等；Compact filter只对普通value类型（未标记上delete mark）调用，对于merge类型，会在执行merge operator前调用Compaction filter。
+
+> flush可看作是一种特殊的Compact，但flush不会调用Compaction filter。
 >
-> ```c
-> Compaction(snaps, files):
->   // <snaps> is the set of snapshots (i.e.: a list of sequence numbers)
->   // <files> is the set of files undergoing compaction
->   Let input = a file composed of the union of all files
->   Let output = a file to store the resulting entries
-> 
->   Let stack = [];			// in reality, this should be a "deque", but stack is simpler to conceptualize in this pseudo-code
->   for each v from newest to oldest in input:
->     clear_stack = false
->     if v.sequence_number is in snaps:
->       clear_stack = true
->     else if stack not empty && v.key != stack.top.key:
->       clear_stack = true
-> 
->     if clear_stack:
->       write out all operands on stack to output (in the same order as encountered)
->       clear(stack)
-> 
->     if v.type is "merge_operand":
->       push v to stack
->         while (stack has at least 2 elements and (stack.top and stack.second_from_top can be partial-merged)):
->           v1 = stack.pop();
->           v2 = stack.pop();
->           result_v = client_merge_operator.PartialMerge(v1,v2)
->           push result_v to stack
->     if v.type is "put":
->       write client_merge_operator.FullMerge(v, stack) to output
->       clear stack
->     if v.type is "delete":
->       write client_merge_operator.FullMerge(nullptr, stack) to output
->       clear stack
-> 
->   If stack not empty:
->     if end-of-key-history for key on stack:
->       write client_merge_operator.FullMerge(nullptr, stack) to output
->       clear(stack)
->     else
->       write out all operands on stack to output
->       clear(stack)
-> 
->   return output
-> ```
+> Before release 6.0, if there is a snapshot taken later than the key/value pair, RocksDB always try to prevent the key/value pair from being filtered by compaction filter so that users can preserve the same view from a snapshot, unless the compaction filter returns `IgnoreSnapshots() = true`. However, this feature is deleted since 6.0, after realized that the feature has a bug which can't be easily fixed. Since release 6.0, with compaction filter enabled, RocksDB always invoke filtering for any key, even if it knows it will make a snapshot not repeatable.
+>
 
-类似于Vacuum，Compaction主要作用也是回收旧版本并清理已删除的数据；
-
-在过滤数据的时候，可以通过两种方式定义Compaction filter，前一种注意并发安全性。
-
-```cpp
-options.compaction_filter = new CustomCompactionFilter();
-// or
-options.compaction_filter_factory.reset(new CustomCompactionFilterFactory());
-```
-
-调用时机：
-
-+ flush可看作是一种特殊的Compact，但flush不会调用Compaction filter。
-+ 只对普通value类型（未标记上delete mark）调用Compaction filter；
-+ 对于merge类型，会在执行merge operator前调用Compaction filter；
-
-compaction_filter的实现主要有三个接口：
+Compactfilter的实现主要有三个接口：
 
 + Filter
 
@@ -221,26 +156,13 @@ compaction_filter的实现主要有三个接口：
     };
   ```
 
-回收旧版本数据，需要注意是否有快照还在使用。对于某个Key有如下快照：
+## Q&A
 
-```
-K:   OP1     OP2     OP3     OP4     OP5  ... OPn
-              ^               ^                ^
-              |               |                |
-           snapshot1       snapshot2       snapshot3
-```
+看代码时的一些小问题的自问自答😂：
 
-如果没有Merge类型，那么对于每个snapshot只需要保留最近的一个OP数据；有了Merge后，Compact和Get类似都是从new->old扫描数据，将扫过的merge操作暂存，直到可以执行FullMerge；
+1. WAL按理说是顺序写的，每次只需要刷最后一个log就行了，为啥要foreach呢？
 
-但Compact和Get不同，Compact是针对某一个sst file操作，Get可以全局扫描；Compact如果遇到end-of-file还没结束，那么这次就不能执行FullMerge；
-
-另外，如果碰到有Supporting Operation的SnapShot，Supporting Operation暂时不可删除，那么清理到当前的栈后，可以从Supporting Operation开始继续compact。
-
-由于经常存在上面两个情况，导致merge经常不能FullMerge，可以通过`PartialMerge`缓解。
-
-> NOTE:
->
-> Before release 6.0, if there is a snapshot taken later than the key/value pair, RocksDB always try to prevent the key/value pair from being filtered by compaction filter so that users can preserve the same view from a snapshot, unless the compaction filter returns `IgnoreSnapshots() = true`. However, this feature is deleted since 6.0, after realized that the feature has a bug which can't be easily fixed. Since release 6.0, with compaction filter enabled, RocksDB always invoke filtering for any key, even if it knows it will make a snapshot not repeatable.
+![image-20200428141052855](/image/rocksdb/logs.png)
 
 # MyRocks 
 
@@ -490,25 +412,4 @@ master failover相对复杂点，可能如果原master的gtid大于新master的g
 >
 > slave_exec_mode：当从库回放时出现冲突的处理方式；
 
-以上，此文持续整理本人在折腾MyRocks过程中，对MyRocks的一些认识和理解，介于理解的深度是由浅入深的，可能目前的版本认识浅薄，甚至有错误，欢迎指正学习。一些有用的link：
-
-[各种数据库的隔离级别对比](https://github.com/ept/hermitage)
-
-[RBR与SBR](http://www.ovaistariq.net/528/statement-based-vs-row-based-replication/)
-
-[Read Free Replication](https://github.com/facebook/mysql-5.6/wiki/Read-Free-Replication)
-
-[SingleDelete](https://github.com/facebook/rocksdb/wiki/Single-Delete)
-
-https://github.com/facebook/mysql-5.6/wiki/Manual-Compaction
-
-[option of rocksdb](https://smalldatum.blogspot.com/2018/07/default-options-in-myrocks.html)
-
-https://mariadb.com/kb/en/differences-between-myrocks-variants/#gap-lock-detector
-
-https://github.com/facebook/rocksdb/wiki/Two-Phase-Commit-Implementation
-
-http://mysql.taobao.org/monthly/2017/07/05/
-
-https://mariadb.com/kb/en/myrocks-and-group-commit-with-binary-log/
-
+以上，此文持续整理本人在折腾MyRocks过程中，对MyRocks的一些认识和理解，介于理解的深度是由浅入深的，可能目前的版本认识浅薄，甚至有错误，欢迎指正学习。

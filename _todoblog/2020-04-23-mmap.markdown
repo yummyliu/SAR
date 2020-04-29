@@ -13,6 +13,31 @@ typora-root-url: ../../layamon.github.io
 
 # madvise
 
+![image-20200428112832621](/image/lsm-tree/image-20200428112832621.png)
+
+
+
+![image-20200428113318878](/image/lsm-tree/wasted-space.png)
+
+
+
+
+
+回收旧版本数据，需要注意是否有快照还在使用。对于某个Key有如下快照：
+
+```
+K:   OP1     OP2     OP3     OP4     OP5  ... OPn
+              ^               ^                ^
+              |               |                |
+           snapshot1       snapshot2       snapshot3
+```
+
+如果没有Merge类型，那么对于每个snapshot只需要保留最近的一个OP数据；有了Merge后，Compact和Get类似都是从new->old扫描数据，将扫过的merge操作暂存，直到可以执行FullMerge；
+
+但Compact和Get不同，Compact是针对某一个sst file操作，Get可以全局扫描；Compact如果遇到end-of-file还没结束，那么这次就不能执行FullMerge；
+
+另外，如果碰到有Supporting Operation的SnapShot，Supporting Operation暂时不可删除，那么清理到当前的栈后，可以从Supporting Operation开始继续compact。
+
 
 
 # THP
@@ -74,6 +99,50 @@ https://manybutfinite.com/post/cpu-rings-privilege-and-protection/
 
 
 Memory mapping is a convenient and high-performance way to do file I/O, so it is used for loading dynamic libraries. It is also possible to create an **anonymous memory mapping** that does not correspond to any files, being used instead for program data. In Linux, if you request a large block of memory via [malloc()](http://www.kernel.org/doc/man-pages/online/pages/man3/malloc.3.html), the C library will create such an anonymous mapping instead of using heap memory.
+
+```
+Compaction(snaps, files):
+// <snaps> is the set of snapshots (i.e.: a list of sequence numbers)
+// <files> is the set of files undergoing compaction
+Let input = a file composed of the union of all files
+Let output = a file to store the resulting entries
+
+Let stack = [];			// in reality, this should be a "deque", but stack is simpler to conceptualize in this pseudo-code
+for each v from newest to oldest in input:
+ clear_stack = false
+ if v.sequence_number is in snaps:
+   clear_stack = true
+ else if stack not empty && v.key != stack.top.key:
+   clear_stack = true
+
+ if clear_stack:
+   write out all operands on stack to output (in the same order as encountered)
+   clear(stack)
+
+ if v.type is "merge_operand":
+   push v to stack
+     while (stack has at least 2 elements and (stack.top and stack.second_from_top can be partial-merged)):
+       v1 = stack.pop();
+       v2 = stack.pop();
+       result_v = client_merge_operator.PartialMerge(v1,v2)
+       push result_v to stack
+ if v.type is "put":
+   write client_merge_operator.FullMerge(v, stack) to output
+   clear stack
+ if v.type is "delete":
+   write client_merge_operator.FullMerge(nullptr, stack) to output
+   clear stack
+
+If stack not empty:
+ if end-of-key-history for key on stack:
+   write client_merge_operator.FullMerge(nullptr, stack) to output
+   clear(stack)
+ else
+   write out all operands on stack to output
+   clear(stack)
+
+return output
+```
 
 
 

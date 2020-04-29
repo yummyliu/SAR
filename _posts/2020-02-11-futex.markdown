@@ -9,7 +9,7 @@ typora-root-url: ../../layamon.github.io
 ---
 * TOC
 {:toc}
-前段时间看了MySQL8中的redolog无锁优化，对其中c++11的并发框架的运用影响深刻，基于这个出发点，有了本文；
+一直就是野路子c++，主要就是以c++98的方式写代码；前段时间看了MySQL8中的redolog无锁优化，对其中c++11的并发框架的运用印象深刻，决定要了解一下C++11的新东西了，跟上潮流😂。这里就从并发这块开始看吧，先补补基础知识！
 
 # 关于锁
 
@@ -91,7 +91,17 @@ typora-root-url: ../../layamon.github.io
   ```
   
 
-自旋锁需要占用CPU资源进行不断的检查，对于比较耗时的操作，通常不建议使用，会浪费太多的CPU资源。
+一般来说，自旋锁需要占用CPU资源进行不断的检查，对于比较耗时的操作，通常不建议使用，会浪费太多的CPU资源。
+
+自旋锁通常是第一种实现，会使用一个volatile变量：lockvar，表示该变量极易改变，这样编译器就不会对该变量进行任何优化，比如乱序， 避免影响原有逻辑。在执行中，lockvar是由load加载到cpu  core的寄存器中，然后通过store指令写到磁盘中，尽管编译器不会乱序优化，但是流水线执行的时候还是可能会乱序重排。
+
+因为cpu的流水线会乱序执行，但是为了保证memory order正确性，需要保证store之后的load，不会提前执行；
+
+> memory order：指的是load和store指令的相对顺序。Memory Order Violation: A load is executed before a prior store, reads the wrong value
+
+因此，在实际执行中，如果某个core load了某个地址的内容后，并且按照乱序重排了指令；那么，在这之后，另一个core对同一地址执行了store；那么执行load指令的原core的流水线顺序可能发生memory order violate，需要重排（这是很费时的）。
+
+在spin lock场景中，这经常发生；等锁的core不断执行load，执行了几次都失败后，系统按照常理推测出后续应该都失败，就按照失败的逻辑排列了load指令；但是可能刚排列好，另一个core就解锁了，即，执行了store命令；那么spink lock 对应的load流水线，就得重排；为了避免这个代价，intel的cpu引入了pause指令，这样load先不着急预测排列。
 
 ## atomic
 
