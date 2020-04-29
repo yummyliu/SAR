@@ -8,6 +8,8 @@ typora-root-url: ../../layamon.github.io
 ---
 * TOC
 {:toc}
+> 本文类似于一个杂乱的笔记，记录认识myrocks过程中的问题
+
 在[from btree to lsm-tree](http://liuyangming.tech/12-2019/leveldb.html)中，我们了解到写B+-tree时，写一条记录就意味着写一个页；不考虑bufferpool的合并写和dwbuffer的写放大，在InnoDB中，如果业务负载随机写N条记录，最坏的情况下，就意味着要写N个页；这带来很大的**写放大**。另外，每个页中都有一些碎片空间，这些无用空间会浪费IO带宽，而针对这个，InnoDB中设计了Compressed Page；Compressed Page同样是要对齐存储（0~4kb对齐到4kb，4~8kb对齐到8kb，8~16kb对齐到16kb），只要对齐就会存在空闲空间。这又带来了**空间放大**。
 
 基于B+-tree的弊端以及目前存储介质的演化（HDD->SSD，iops更快，但是如果每次写的放大严重，那么会浪费ssd的写性能？），数据库存储引擎也出现了变革。其中LSM-tree目前获得了很多目光，MySQL中也可以集成LSM-tree架构的存储引擎——RocksDB，叫MyRocks。本文是作者对MyRocks学习的总结，也会不断在此更新新的认识，希望对想了解这个产品的同学有所帮助。

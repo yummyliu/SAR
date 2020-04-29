@@ -1,7 +1,7 @@
 ---
 layout: post
-title: MySQL并行复制（MTS）解析
-date: 2020-01-29 13:40
+title: MySQL并行复制（MTS）简介
+date: 2020-03-29 13:40
 categories:
   - MySQL
 typora-root-url: ../../layamon.github.io
@@ -9,7 +9,7 @@ typora-root-url: ../../layamon.github.io
 > * TOC
 {:toc}
 
-在[另一个blog]()中，阐述了binlog以及group commit的机制，binlog在MySQL中主要是用来做主从同步的，为了提高从库的性能，在5.6中引入了基于database的并行复制，之后又有了基于Logical_clock（group commit）的并行复制。本文基于笔者对MySQL5.7代码的阅读，阐述MySQL基于binlog的主从同步的内部机理。
+在[另一个blog]()中，阐述了binlog以及group commit的机制，binlog在MySQL中主要是用来做主从同步的，为了提高从库的性能，在5.6中引入了基于database的并行复制，之后又有了基于Logical_clock（group commit）的并行复制。本文基于笔者对MySQL5.7代码的阅读，阐述MySQL基于binlog的主从同步基本原理。
 
 # GTID-based replication
 
