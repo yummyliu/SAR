@@ -155,7 +155,7 @@ set global slave_parallel_workers=10;
 start slave;
 ```
 
-`slave_parallel_type`有DATABASE、LOGICAL_CLOCK两种机制，区别如何确保worker的并发事务之间不冲突。database就是很直观，不同db的事务肯定不冲突；Logical Clock就是按照commit_order/Lock interval/write set等方式确定了一个逻辑的时间顺序；下面逐个介绍。
+`slave_parallel_type`有DATABASE、LOGICAL_CLOCK两种机制，区别如何确保worker的并发事务之间不冲突。database就是很直观，不同db的事务肯定不冲突；Logical Clock就是按照commit_order/Lock interval/write set等方式确定了一个逻辑的时间顺序；下面逐个介绍（MySQL 8.0.19）。
 
 ### Database 
 
