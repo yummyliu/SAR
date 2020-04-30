@@ -3,8 +3,7 @@ layout: post
 title: 了解MySQL绕不过的坎——Binlog
 date: 2019-06-11 18:28
 header-img: "img/head.jpg"
-categories: jekyll update
-tags:
+categories: 
   - MySQL
 typora-root-url: ../../layamon.github.io
 ---
