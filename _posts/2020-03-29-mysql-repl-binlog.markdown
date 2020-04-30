@@ -1,15 +1,15 @@
 ---
 layout: post
-title: MySQL并行复制（MTS）简介
-date: 2020-03-29 13:40
+title: MySQL并行复制（MTS）解析
+date: 2020-01-29 13:40
 categories:
   - MySQL
 typora-root-url: ../../layamon.github.io
 ---
-> * TOC
+* TOC
 {:toc}
 
-在[另一个blog]()中，阐述了binlog以及group commit的机制，binlog在MySQL中主要是用来做主从同步的，为了提高从库的性能，在5.6中引入了基于database的并行复制，之后又有了基于Logical_clock（group commit）的并行复制。本文基于笔者对MySQL5.7代码的阅读，阐述MySQL基于binlog的主从同步基本原理。
+在[另一个blog](http://liuyangming.tech/06-2019/MySQL-binlog.html)中，阐述了binlog以及group commit的机制，binlog在MySQL中主要是用来做主从同步的，为了提高从库的性能，在5.6中引入了基于database的并行复制，之后又有了基于Logical_clock（group commit）的并行复制。本文基于笔者对MySQL5.7代码的阅读，阐述MySQL基于binlog的主从同步的内部机理。
 
 # GTID-based replication
 
@@ -94,49 +94,29 @@ typora-root-url: ../../layamon.github.io
    SLAVE_OK=$(mysql -h $SLAVE_HOST "-u$USER" -e "SHOW SLAVE STATUS\G;" | grep 'Waiting for master')
    ```
 
-关于配置个人操作不是很熟练，这里有个脚本[https://github.com/Layamon/mysql-bash/blob/master/rpl_conf.sh]
+关于配置个人操作不是很熟练，这里有个[脚本](https://github.com/Layamon/mysql-bash/blob/master/rpl_conf.sh)。
 
 ## 基本介绍
 
-MySQL的GTID是全局事务ID，每个事务由GTID标识，在master上跟踪事务状态并在slave上应用。gtid在整个复制集群中是唯一的，slave中如果重做了某个gtid标识的事务，那么后续该gtid标识的事务则不予理睬（参数enforce-gtid-consistency）。
-
-GTID具体就是由冒号连接的两个ID的组合：
+MySQL的GTID是全局事务ID，每个事务由GTID标识，在master上跟踪事务状态并在slave上应用。GTID具体就是由冒号连接的两个ID的组合：
 
 ```ini
 GTID = source_id:transaction_id
 ```
 
-source_id就是master的server_id（server_uuid上面配置中体现）。transaction_id是一个序列值，表示哪些事务在master上commit成功了。比如，`3E11FA47-71CA-11E1-9E33-C80AA9429562:23`表示在uuid=3E11FA47-71CA-11E1-9E33-C80AA9429562的server上事务号23的事务提交成功了。
+source_id就是master的server_id（server_uuid上面配置中体现）。transaction_id是一个序列值，表示哪些事务在master上commit成功了。比如，`3E11FA47-71CA-11E1-9E33-C80AA9429562:23`表示在`uuid=3E11FA47-71CA-11E1-9E33-C80AA9429562`的server上事务号23的事务提交成功了。
+
+GTID在整个复制集群中是唯一的，slave中如果重做了某个GTID标识的事务，那么后续该GTID标识的事务则不予理睬（参数enforce-gtid-consistency）。
 
 > **GTID set**
 >
-> ```
-> 2174B383-5441-11E8-B90A-C80AA9429562:1-3:11:47-49, 24DA167-0C0C-11E8-8442-00059A3C7B00:1-19
-> ```
+> 一组gtid可以表示为一个gtid set，如`2174B383-5441-11E8-B90A-C80AA9429562:1-3:11:47-49, 24DA167-0C0C-11E8-8442-00059A3C7B00:1-19`。
+> 
+> 关于实例历史gtid的状态，可以查看参数：gtid_executed和gtid_purged，前者表示当前实例已经执行的gtid，后者是前者的子集，其中的gtid已经不再binlog中了（binlog会回收）。通常查看`[GTID_SUBTRACT(@@GLOBAL.gtid_executed, @@GLOBAL.gtid_purged)`，得知在复制过程中binlog中的gtid。
 >
-> 一组gtid可以表示为一个gtid set；如上例，具体语法如下。
->
-> ```
-> gtid_set:
->  uuid_set [, uuid_set] ...
->  | ''
-> 
-> uuid_set:
->  uuid:interval[:interval]...
-> 
-> uuid:
->  hhhhhhhh-hhhh-hhhh-hhhh-hhhhhhhhhhhh
-> 
-> h:
->  [0-9|A-F]
-> 
-> interval:
->  n[-n]
-> 
->  (n >= 1)
-> ```
+> 关于当前gtid的状态，可以查看参数：gtid_owned；这是全局只读的参数；查看全局的值：**@@global.gtid_owned**，可以看到线程和GTID的绑定关系；查询session的值，看当前线程对应的GTID；并且我们可以设置gtid_next，指定当前session的要执行事务的gtid。
 
-在master上的binlog中，一个事务的binlog前会带有一个gtid event，标识该事务的gtid；并且gtid的生成确保是单调的，并且是没有空隙的。如果事务没有写入到binlog中，那么就不会生成gtid（比如事务是只读的）。如下面的binlog日志：
+在master上的binlog中，是按照事务为单位进行存储；一个事务的binlog前会带有一个gtid event，标识该事务的gtid；并且gtid的生成确保是单调的，并且是没有空隙的。如果事务没有写入到binlog中，那么就不会生成gtid（比如事务是只读的）。通过mysqlbinlog工具可以查看binlog的内容，如下面的binlog日志中的gtid的状态相关的event（Gtid_log_event）：
 
 ```bash
 mysqlbinlog --no-defaults mysql-bin.091309 | grep GTID -A 5 -B 6
@@ -158,54 +138,15 @@ COMMIT/*!*/;
 ...
 ```
 
-系统表`mysql.gtid_executed`维护了已经应用过的gtid。如下：
-
-```sql
-root@127.0.0.1 [sbtest]
-> show master status;
-+---------------+----------+--------------+------------------+------------------------------------------+
-| File          | Position | Binlog_Do_DB | Binlog_Ignore_DB | Executed_Gtid_Set                        |
-+---------------+----------+--------------+------------------+------------------------------------------+
-| binlog.000005 |      194 |              |                  | 3acb9a39-74b8-11ea-8821-fa163e02960f:1-3 |
-+---------------+----------+--------------+------------------+------------------------------------------+
-1 row in set (0.00 sec)
-
-root@127.0.0.1 [sbtest]
-> select * from mysql.gtid_executed;
-+--------------------------------------+----------------+--------------+
-| source_uuid                          | interval_start | interval_end |
-+--------------------------------------+----------------+--------------+
-| 3acb9a39-74b8-11ea-8821-fa163e02960f |              1 |            2 |
-| 3acb9a39-74b8-11ea-8821-fa163e02960f |              3 |            3 |
-+--------------------------------------+----------------+--------------+
-2 rows in set (0.00 sec)
-```
-
-在slave端，如果某个gtid对应的binlog正在执行，那么此时如果执行相同gtid的binlog会被block。binlog中也有gtid的状态相关的event（Gtid_log_event），如果崩溃的时候没有及时更新gtid_executed的数据，那么恢复的时候会从binlog中读取。
-
-### GTID的生命周期
-
-1. 当事务提交需要写binlog时，分配一个gtid；并将这个gtid事件写盘（Gtid_log_event），并且该gtid在事务日志之前。
-
-2. 当binlog要rotate或者server关闭时，server将之前的binlog的所有事务的gtid写入到gtid_executed中。
-
-3. 事务提交后，将gtid非原子性地更新在全局变量`@@GLOBAL.gtid_executed`中；在复制机制中，该变量表示了服务的当前状态。
-
-4. slave收到binlog并落盘为relaylog后，读取gtid然后设置全局变量`gtdi_next`；该变量表示下一个事务必须使用这个gtid（slave可在session级别设置该变量）。
-
-5. slave确认该gtid当前没人正在使用；
-
-   > 这里可以了解一下gtid_owned变量，这是全局只读的参数；如果要确保只有一个线程在执行该gtid事务相关的日志，可以在session级别设置，标明了每个gtid和threadid的对应关系。
-
-6. 某线程获得gtid_next的gtid的所有权后，slave开始恢复对应事务；这里slave不会产生新的事务。
-
-7. 如果slave开启了binlog，事务提交时，会在之前写入Gtid_log_event的日志；如果binlog轮转，那么就在系统表gtid_executed中写入之前日志所有的gtid。
-
-8. 如果slave没有开启binlog，gtid会原子性地写入到gtid_executed表中；然后再事务日志中加一条插入系统表的操作。这时gtid_executed表在主从上都是完整的记录。（这里在5.7中，DML事务是原子的，DDL不是；那么在DDL事务中，可能GTID不一致）。
+在slave端，如果某个gtid对应的binlog正在执行，那么此时如果执行相同gtid的binlog会被block。系统表`mysql.gtid_executed`维护了已经应用过的gtid，如果崩溃的时候没有及时更新gtid_executed的数据，那么恢复的时候会从binlog中读取。
 
 ## 并行复制
 
-并发复制时，last_master_timestamp的更新是在从库事务执行结束后，如果出现一个很大的事务，主从延迟的时间就会变大，可以通过如下操作开启MTS，提高复制速度；
+Gtid的一大作用就是用在replication中，下面讨论的内容，配置为：`gtid_mod = on/gtid_next = AUTOMATIC`；下图简单罗列了基于Gtid主从同步的过程，Master在binlogcommit的时候产生gtid，记为GTID_LOG_EVENT；Slave按照事务为单位进行恢复，每次读取GTID，按照该GTID执行事务；这样保证整个复制集群的GTID的一致性。
+
+![image-20200430090447224](/image/mysql-repl/gtid-life.png)
+
+并发复制时，last_master_timestamp的更新是在从库事务执行结束后，如果出现一个很大的事务，主从延迟的时间就会变大，可以通过如下操作开启MTS，提高Slave的Replay速度；
 
 ```sql
 stop slave;
@@ -214,11 +155,19 @@ set global slave_parallel_workers=10;
 start slave;
 ```
 
-`slave_parallel_type`有DATABASE、LOGICAL_CLOCK，这里主要介绍Logical_clock的机制。Logical clock原来是基于commit order，在5.7中是基于lock interval的；原理是类似的，只不过无冲突区更宽，使得并发程度更高。
+`slave_parallel_type`有DATABASE、LOGICAL_CLOCK两种机制，区别如何确保worker的并发事务之间不冲突。database就是很直观，不同db的事务肯定不冲突；Logical Clock就是按照commit_order/Lock interval/write set等方式确定了一个逻辑的时间顺序；下面逐个介绍。
+
+### Database 
+
+TODO
+
+### Logical Clock
+
+这里主要介绍Logical_clock的机制。Logical clock原来是基于commit order，在5.7中是基于lock interval的；原理是类似的，只不过无冲突区更宽，使得并发程度更高。
 
 由于在MySQL中写入是基于两阶段锁的并发控制（读是通过ReadView或锁），并且我们知道锁的释放是在XA-engine-commit阶段（InnoDB）；那么，在Master端**同时处于prepare阶段且未提交**的事务就不会存在锁冲突，在Slave端执行时都可以并行执行，这就是基于commit order的Logical clock。
 
-### Master
+#### Master
 
 MySQL的master在MYSQL_BIN_LOG中，维护一个递增的全局事务号：
 
@@ -295,7 +244,7 @@ SET @@SESSION.GTID_NEXT= '5fde1f05-9ef2-11e9-ba63-6c92bf69212a:99002410374'/*!*/
 
 最后，在GroupCommit的commit阶段，将该Group中Transaction_ctx.sequence_number最大的更新到MYSQL_BIN_LOG.max_committed_transactions中。
 
-### Slave
+#### Slave
 
 在Slave端IO线程不断收binlog，写relaylog；SQL Coordinator读binlog，并决定是自己串行回放，还是分发给worker并行回放。具体使用那种并行方式，参见 `class Mts_submode_logical_clock : public Mts_submode`。Coordinator和Worker的信息都保存在以Relay_log_info为父类的结构中。在Slave端，Coordinator按事务为单位，将读出的event用`Slave_job_group`分装，然后，追加到gaq（Group Append Queue？）中；
 
@@ -318,30 +267,8 @@ SET @@SESSION.GTID_NEXT= '5fde1f05-9ef2-11e9-ba63-6c92bf69212a:99002410374'/*!*/
 
 + Coordinator决定自己串行回放Event，同样要等待
 
-  ```
+  ```cpp
   wait_for_workers_to_finish
   ```
-
-ref：
-
-http://mysql.taobao.org/monthly/2016/03/09/
-
-http://mysql.taobao.org/monthly/2017/12/03/
-
-http://frodo.looijaard.name/article/mysql-backups-mysqldump
-
-https://mysqlhighavailability.com/multi-threaded-replication-performance-in-mysql-5-7/
-
-https://cloud.tencent.com/developer/article/1429685
-
-http://yoshinorimatsunobu.blogspot.com/2015/01/performance-issues-and-fixes-mysql-56.html
-
-https://bugs.mysql.com/bug.php?id=73066
-
-http://mysql.taobao.org/monthly/2018/05/09/
-
-http://mysql.taobao.org/monthly/2015/08/09/
-
-http://mysql.taobao.org/monthly/2018/06/02/
-
-[5.7 MTS]([https://github.com/eurekaka/wiki/wiki/MySQL-5.7-MTS%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90](https://github.com/eurekaka/wiki/wiki/MySQL-5.7-MTS源码分析))
+  
+  
