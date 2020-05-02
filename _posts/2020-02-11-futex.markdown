@@ -233,22 +233,30 @@ int main()
 
 ### 内存顺序模型
 
-内存顺序模型分两类：软件层面和硬件层面。硬件层面上，CPU在超标量流水线执行中，一个时钟周期会执行多条指令。对于一些硬件上没有相关性的指令，这会造成代码执行顺序与原来不一样；软件层面上，在代码编译中，编译器也会会执行重新排列指令，进行乱序执行的优化；这都会造成实际执行顺序与原来编写的顺序不一致的问题。
+内存顺序模型分两类：软件层面和硬件层面。
 
-而如果我们要求某些语句的执行顺序需要和看到的一样，这就叫顺序一致的内存模型（Sequential consistent）。不同的处理器架构的内存模型不一样。如果指令严格按照顺序执行，这叫强顺序的架构（x86），否则叫弱顺序（PowerPC，ArmV7等）。那么对于弱顺序的机器，为了保障执行的顺序，在汇编指令中有内存栅栏(memory barrier）的指令，比如PowerPC的sync，在执行到内存栅栏时，会等待之前的指令都执行完成后再执行后面的指令。
+硬件层面上，CPU在超标量流水线（**Superscalar**）执行中，一个时钟周期会执行多条指令。对于一些硬件上没有相关性的指令，这会造成代码执行顺序与原来不一样；软件层面上，在代码编译中，编译器也会会执行重新排列指令，进行乱序执行的优化；(多喝)
 
-memory barrier可认为有三种，一是full memory barrier，二是acquire memory barrier，三是release memory barrier。对于原子类型默认是full memory barrier，这可能会限制并发性能的提升。而如果我们可以对于某些场景并不需要原子类型保证顺序一致性，在C++11中，通过`memory_order`来让程序员为原子操作指定内存顺序，有6种：
+这都会造成实际执行顺序与原来编写的顺序不一致的问题。而如果我们要求某些语句的执行顺序需要和看到的一样，这就叫顺序一致的内存模型（Sequential consistent）。不同的处理器架构的内存模型不一样。如果指令严格按照顺序执行，这叫强顺序的架构（比如x86），否则叫弱顺序（比如PowerPC，ArmV7等）。
+
+那么对于弱顺序的机器，为了保障执行的顺序，在汇编指令中有内存栅栏(**memory barrier**）的指令，比如PowerPC的sync，在执行到内存栅栏时，会等待之前的指令都执行完成后再执行后面的指令。memory barrier可认为有三种：
+
+1. full memory barrier：该指令前的acquire(read)/release(write)指令全部完成后，才能执行后面的指令。
+2. acquire(read, load) memory barrier：该指令前的acquire指令全部完成后，才能执行后面的指令。
+3. release(write, store) memory barrier:该指令前的release指令全部完成后，才能执行后面的指令。
+
+对于原子类型默认是full memory barrier，这可能会限制并发性能的提升。而如果我们可以对于某些场景并不需要原子类型保证顺序一致性，在C++11中，通过`memory_order`来让程序员为原子操作指定内存顺序，这里的顺序对应的操作都是原子类型的存取操作，有如下6种：
 
 + `memory_order_relaxed`：不对执行顺序做任何保证；
-+ `memory_order_acquire`：本线程中，后续的读操作需要在当前指令结束后执行；
-+ `memory_order_release`：本线程中，之前的写操作都完成后，才能执行当前指令；
++ `memory_order_acquire`：本线程中，后续的**所有**读操作需要在当前指令结束后执行；
++ `memory_order_release`：本线程中，之前的**所有**写操作都完成后，才能执行当前指令；
 + `memory_order_acq_rel`：结合上两条；
-+ `memory_order_consume`：本线程中，后续与本原子变量相关的操作，必须在本指令完成后执行；
++ `memory_order_consume`：本线程中，后续与**本原子变量相关**的读写操作，必须在本指令完成后执行；
 + `memory_order_seq_cst`：全部读写都按顺序执行，默认值；
 
-可以看出这里的顺序对应的操作都是原子类型的存取操作。`memory_order_acquire`和`memory_order_release`经常结合使用，这种内存顺序成为**release-acquire内存模型**。而`memory_order_consume`是`memory_order_acquire`的更加弱化版本，`memory_order_release`和`memory_order_consume`可以建立关于某原子变量的生产者-消费者顺序，这称为**release-consume内存模型**。加上`memory_order_relaxed`的**松散内存模型**和默认的**顺序一致型内存模型**，是c++11中典型的四种内存模型。
+具体使用的时候，是通过多者的语义结合，完成多线程间的内存存取的语义，常见的就四种：`memory_order_acquire`和`memory_order_release`经常结合使用，这种内存顺序成为**release-acquire内存模型**；而`memory_order_consume`是`memory_order_acquire`的更加弱化版本，`memory_order_release`和`memory_order_consume`可以建立关于某原子变量的生产者-消费者顺序，这称为**release-consume内存模型**。加上`memory_order_relaxed`的**松散内存模型**和默认的**顺序一致型内存模型**，是c++11中典型的四种内存模型。
 
-另外，对于`memory_order_acq_rel`常用在实现CAS（compare and swap）同步原语，也称之为**acquire-release内存顺序模型**。
+> 另外，对于`memory_order_acq_rel`常用在实现CAS（compare and swap）同步原语，也称之为**acquire-release内存顺序模型**。
 
 在MySQL8中，对log模块进行了大量的重构，其中就包括异步无锁刷盘的逻辑，其中使用了大量的c++11的并行编程的特性，可作为学习C++11很好参考，比如这里就通过`memory_order_release`进行内存顺序的保证：
 
