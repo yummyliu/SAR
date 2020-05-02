@@ -108,6 +108,12 @@ purge对索引的操作是IBUF_OP_DELETE，delete是IBUF_OP_DELETE_MARK。那么
 
 # ibuf合并
 
+InnoDB读写锁上的X锁所有权是可以在不同线程间转移的，主要用于支持Change Buffer的场景。Change Buffer是一棵全局共享的B+树，存储在系统表空间中。在读取二级索引Page的时候Change Buffer需要与二级索引Page进行合并，这时如果所有IO线程都在读取二级索引Page，将没有IO线程读取Change Buffer Page，因此Change Buffer Page的读取被放到单独的IO线程。
+
+InnoDB读写锁上的X锁所有权是可以在不同线程间转移的，主要用于支持Change Buffer的场景。Change Buffer是一棵全局共享的B+树，存储在系统表空间中。在读取二级索引Page的时候Change Buffer需要与二级索引Page进行合并，这时如果所有IO线程都在读取二级索引Page，将没有IO线程读取Change Buffer Page，因此Change Buffer Page的读取被放到单独的IO线程。而读取二级索引Page的时候，已经对Page加上了X锁，当在异步IO线程需要把Change Buffer合并到二级索引的Page的时候，必须在不解锁的情况下让异步线程获得Page的X锁，这就是X锁所有权转移需要实现的功能。
+
+实现函数是rw_lock_x_lock_move_ownership，实现的逻辑也非常简单，使用CAS原子操作把读写锁的write_thread字段设置为当前线程。
+
 当leafpage不在bufferpool中，NUSI的page操作会缓存在ibuf中。当咋如下情况下，会进行合并：
 
 + 当page读取到bufferpool中时，index scan、lookup或者预读等情况。
