@@ -260,47 +260,106 @@ binlog的提交先通过binlog cache和临时文件(IO_cache)暂存，最后提�
   };
 ```
 
-在MySQL的事务执行过程中，会不断的产生事务日志；binlog event就暂存在IO_CACHE中，redo log就暂存在logbuffer中；最后，在事务2pc的时候，依然要保证上下两层日志的顺序一致（保留prepare_commit_mutex的语义），即，保证在binlog刷盘前，将engine的prepare相关的redolog刷盘；可以看代码处理flush逻辑的时候（`process_flush_stage_queue`）,就调用了`ha_flush_logs`将prepare的redo日志刷盘（**同步点**）。
+在MySQL的事务执行过程中，会不断的产生事务日志；binlog event就暂存在**IO_CACHE**中，redo log就暂存在**logbuffer**中；
 
-组提交中，每个阶段都有一个执行队列，进入某阶段的第一个thread作为leader，后续进来的都是follower；leader将该阶段的threads注册到下一阶段中，然后统一负责处理该阶段的任务（如果下一阶段不为空，那么该leader成为下一阶段的follower，最慢的sync阶段可能会累积很多任务），此时follower就是等待处理完成的通知；
+最后，在事务2pc组提交的时候，要保证上下两层日志的顺序一致（保留prepare_commit_mutex的语义），即，**保证在binlog刷盘前，将engine的prepare相关的redolog刷盘**；可以看代码处理flush逻辑的时候（`process_flush_stage_queue`）,就调用了`ha_flush_logs`将prepare的redo日志刷盘（**同步点**）。
+
+为提高binlog的吞吐，MySQL支持了binlog的组提交；其中每个阶段都有一个执行队列，进入某阶段的第一个thread作为leader，后续进来的都是follower；leader将该阶段的threads注册到下一阶段中，然后统一负责处理该阶段的任务（如果下一阶段不为空，那么该leader成为下一阶段的follower，最慢的sync阶段可能会累积很多任务），此时follower就是等待处理完成的通知。
+
+以显示事务为例，比如这个简单例子，笔者在ha_prepare_low和order_commit处打上断点（读者可以自己debug跟踪，了解一下）：
+
+```cpp
+> begin;
+Query OK, 0 rows affected (0.00 sec)
+
+root@127.0.0.1 [mysql]
+> insert into t1 values ( 1,9); ------------ ha_prepare_low
+Query OK, 1 row affected (2.50 sec)
+
+root@127.0.0.1 [mysql]
+> insert into t1 values ( 5,9); ------------ ha_prepare_low
+Query OK, 1 row affected (1.71 sec)
+
+root@127.0.0.1 [mysql]
+> insert into t1 values ( 0,9); ------------ ha_prepare_low
+Query OK, 1 row affected (1.70 sec)
+
+root@127.0.0.1 [mysql]
+> commit;	------------ ordered_commit
+Query OK, 0 rows affected (13.10 sec)
+```
 
 那么binlog事务处理的整体流程如下：
 
-1. 之前的DML语句都通过`ha_prepare_low(HA_IGNORE_DURABILITY)`执行了，数据暂存在IO_CACHE中。
+1. 之前的DML语句都通过`ha_prepare_low(HA_IGNORE_DURABILITY)`执行了，数据由`binlog_cache_data::write_event`（其实就是各个event分别调用自己的write接口）暂存在**IO_CACHE**中。
 
-2. SLAVE COMMIT ORDER，CommitOrderManager有自己的一个队列。
+2. Group Commit
 
-   1. 若slave-preserve-commit-order打开，则要求applier线程有序进队列，保证提交顺序。
+   1. *SLAVE COMMIT ORDER*：CommitOrderManager有自己的一个队列。
 
-3. **FLUSH**：binlog event从THD cache转移到binlog，执行binlog write；engine此时会将事务日志刷盘，此时事务状态为prepare。调用栈
+      1. 若slave-preserve-commit-order打开，则要求applier线程有序进队列，保证提交顺序。
 
-   1. `ha_flush_logs`：引擎层sync；
+   2. **FLUSH**：binlog event从THD cache转移到binlog，执行binlog write；engine此时会将事务日志刷盘，此时事务状态为prepare。调用栈
 
-      ```cpp
-      ha_flush_log
-      -innobase_flush_logs
-      --log_buffer_flush_to_disk
-      ```
+      1. `ha_flush_logs`：引擎层sync；
 
-   2. 对队列中每个事务生成GTID。
+         ```cpp
+         ha_flush_log
+         -innobase_flush_logs
+         --log_buffer_flush_to_disk
+         ```
 
-   3. 取LOCK_log锁，并将IO_CACHE(session cache)中的内容复制到binlog中。
+      2. 对队列中每个事务生成GTID。
 
-   4. prepared XIDs的计数器递增
+      3. 取LOCK_log锁，并将IO_CACHE(session cache)中的内容复制到binlog中。
 
-4. **SYNC**：取决于sync_binlog参数，将组内事务日志同步到磁盘中。执行binlog fsync。此时MySQL的事务可以认为是提交了。按照recovery逻辑，engine中prepare会前滚。
+      4. prepared XIDs的计数器递增
 
-5. **COMMIT**：由leader取LOCK_commit锁，并将所有事务在engine 按序提交（如果binlog_order_commits=0，那么该步骤并行执行，因此binlog的提交顺序和引擎层可能不一样；默认是1），
+   3. **SYNC**：取决于sync_binlog参数，将组内事务日志同步到磁盘中。执行binlog fsync。此时MySQL的事务可以认为是提交了。按照recovery逻辑，engine中prepare会前滚。
 
-   基于recovery逻辑，已经不会产生数据丢失；这样，InnoDB的commit可以不用刷盘也可以。事实上确实是这样的，在引擎层提交时，调用`trx_commit_in_memory` 在内存中就将锁释放了，然后才基于参数**`innodb_flush_log_at_trx_commit`**判断是否进行刷redo（*trx_flush_log_if_needed*）。
+   4. **COMMIT**：由leader取LOCK_commit锁，并将所有事务在engine 按序提交（如果binlog_order_commits=0，那么该步骤并行执行，因此binlog的提交顺序和引擎层可能不一样；默认是1）；此处大概的执行逻辑：
 
-   1. 调用after_sync回调
-   2. 更新dependency_tracker中的max_committed；（Logical Clock用）
-   3. ha_commit_low
-   4. 调用after_commit回调
-   5. 更新gtids
-   6. prepared XIDs递减
+      1. 调用after_sync回调
+      2. 更新dependency_tracker中的max_committed；（Logical Clock用）
+      3. ha_commit_low
+      4. 调用after_commit回调
+      5. 更新gtids
+      6. prepared XIDs递减
+
+以上，是笔者对MySQL事务提交过程的初步了解，有很多逻辑分支并没有深入去了解，如果读者有发现问题，希望能指正出来。
 
 > Q&A
 >
 > InnoDB的事务状态有个特殊的：TRX_STATE_COMMITTED_IN_MEMORY. 关于InnoDB如何在违反WAL的前提下，还能保证数据一致?
+>
+> 基于recovery逻辑，已经不会产生数据丢失；这样，InnoDB的commit可以不用刷盘也可以。事实上确实是这样的，在引擎层提交时，调用`trx_commit_in_memory` 在内存中就将锁释放了，然后才基于参数**`innodb_flush_log_at_trx_commit`**判断是否进行刷redo（*trx_flush_log_if_needed*）。
+
+### BinLog Cache
+
+上节提到在ordered_commit之前，Log_event调用自己的write接口将自己的数据写出。
+
+```cpp
+  virtual bool write(Basic_ostream *ostream) {
+    return (write_header(ostream, get_data_size()) ||
+            write_data_header(ostream) || write_data_body(ostream) ||
+            write_footer(ostream));
+  }
+```
+
+最终是调用`IO_CACHE_binlog_cache_storage::write`将数据写出到IO_CACHE；
+
+IO_CACHE由一个固定大小的内存空间（`binlog_cache_size`）和一个临时文件组成；当内存写满会写到临时文件中，参见`_my_b_write`；可通过监控参数`Binlog_cache_disk_use`查看当前是否有事务使用了临时文件，如果有很多事务使用了临时文件，那么应该考虑增大`binlog_cache_size`。
+
+> 临时文件的大小也是有上限的，但是默认值特别大，见`max_binlog_cache_size`
+
+```cpp
+mysql> SHOW GLOBAL STATUS like 'Binlog_cache%';
++-----------------------+------------+
+| Variable_name         | Value      |
++-----------------------+------------+
+| Binlog_cache_disk_use | 156        |
+| Binlog_cache_use      | 1354001342 |
++-----------------------+------------+
+2 rows in set (0.01 sec)
+```
+
