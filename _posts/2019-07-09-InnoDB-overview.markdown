@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 从四个方面了解InnoDB
+title: InnoDB综述
 date: 2019-07-09 17:06
 header-img: "img/head.jpg"
 categories: 
@@ -11,11 +11,11 @@ typora-root-url: ../../layamon.github.io
 
 * TOC
 {:toc}
-InnoDB首先是MySQL的一个可拔插存储引擎，提供事务型存储特性。在一个经典的RDBMS架构中，分为如下几个部分：
+在一个经典的RDBMS架构中，数据库分为如下几个部分：
 
 ![adb](/image/innodb-overview/arch-db.png)
 
-MySQL即主要提供了Relational Query Procesor的功能，InnoDB就是上图的Transaction Storage Manager部分。那么本文就从四个方面阐述我所了解到的InnoDB，希望想了解InnoDB的人，看到这篇文章能有所收获。
+MySQL即主要提供了Relational Query Procesor的功能，InnoDB就是上图的Transaction Storage Manager部分。那么本文就从这四个方面阐述我所了解到的InnoDB，希望想了解InnoDB的人，看到这篇文章能有所收获。
 
 # Access Method
 
@@ -340,6 +340,8 @@ enum lock_mode {
 在MySQL中，表锁有排他X和共享S两种力度。
 
 当我们要对某个page中的一行记录进行锁定时，需要对上层的table加意向锁——IS/IX，意为该事务中有意向对表中的某些行加X、S锁。意向锁是InnoDB存储引擎自己维护的，用户无法手动添加意向锁。
+
+> 意向锁主要方便了检查表级别和行级别锁的冲突
 
 注意意向锁是表级别的锁，和表锁X/S有相应的兼容性判断如下：
 
