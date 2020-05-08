@@ -346,7 +346,7 @@ Query OK, 0 rows affected (13.10 sec)
   }
 ```
 
-最终是调用`IO_CACHE_binlog_cache_storage::write`将数据写出到IO_CACHE；
+最终是调用`IO_CACHE_binlog_cache_storage::write`将数据**暂时**写出到IO_CACHE；
 
 IO_CACHE由一个固定大小的内存空间（`binlog_cache_size`）和一个临时文件组成；当内存写满会写到临时文件中，参见`_my_b_write`；可通过监控参数`Binlog_cache_disk_use`查看当前是否有事务使用了临时文件，如果有很多事务使用了临时文件，那么应该考虑增大`binlog_cache_size`。
 
@@ -362,4 +362,24 @@ mysql> SHOW GLOBAL STATUS like 'Binlog_cache%';
 +-----------------------+------------+
 2 rows in set (0.01 sec)
 ```
+
+那么现在，我们知道MySQL的binlog同样有类似于logbuffer的机构——IO_CACHE，只不过IO_CACHE不仅仅用在binlog这一个场景中。
+
+只要事务没有提交，我们并不知道事务数据有多大；最后，在group commit时，才将IO_CACHE中的数据转移到binlog中。这里会将事务数据memcpy两次，在代码中有个值得关注的TODO，不知道是否可行呢？
+
+```cpp
+/*
+  TODO use mmap instead of IO_CACHE for binlog
+  (mmap+fsync is two times faster than write+fsync)
+*/
+
+class MYSQL_BIN_LOG: public TC_LOG
+```
+
+> TODO
+>
+> 暂时不考虑超大事务，假设binlog的文件大小固定大小，可以先简单做个小实验：
+>
+> + 实验一：将1G的binlog文件mmap到内存中，模拟随机写入不同长度的事务数据，对该段数据msync。
+> + 试验二：同样是1G大小的binlog，但是我们在fsync之前，先将数据写入到额外的临时buffer中（固定大小，模拟io_cache），当事务commit后，再copy到binlog中。binlog文件采用buffer io打开，因此，还需要fsync。这和group commit逻辑相同， 先flush到page cache中，再sync到文件中。
 

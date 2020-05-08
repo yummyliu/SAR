@@ -1,0 +1,15 @@
+---
+layout: post
+title: 奇怪的CPP（c++11）
+date: 2020-05-08 10:11
+categories:
+  - C++
+typora-root-url: ../../layamon.github.io
+---
+> * TOC
+{:toc}
+
+最近看了一些代码，里面充斥着各种奇怪的C++用法；之前写C++就是把他当成带class的c来用，一些特别c++范的语法几乎没用过；出于此，本文持续整理一些c++奇怪的语法，以及应用场景。
+
+# ::
+
