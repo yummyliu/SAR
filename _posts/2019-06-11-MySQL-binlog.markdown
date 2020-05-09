@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 了解MySQL绕不过的坎——Binlog
+title: Binlog源码解析与思考
 date: 2019-06-11 18:28
 header-img: "img/head.jpg"
 categories: 
