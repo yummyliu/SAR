@@ -38,6 +38,8 @@ typora-root-url: ../../layamon.github.io
    EOSQL
    ```
 
+   > FLUSH TABLES WITH READ LOCK; 传说中的FTWRL
+
 2. 导出数据
 
    ```bash

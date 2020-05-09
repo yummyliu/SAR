@@ -65,7 +65,11 @@ InnoDB中只支持Btree一种索引类型（index_type字段只有一种选择�
 
 ![image-20191118143812556](/image/index-create-mysql/online-create-index.png)
 
-在该函数中，首先通过调用`create_table_impl`，**创建一个临时的frm文件**。然后通过`ha_innobase::check_if_supported_inplace_alter`检查该表对应的存储引擎是否支持inplace的alter table（create index 属于alter table的一种）；InnoDB返回`HA_ALTER_INPLACE_NO_LOCK_AFTER_PREPARE`，表示支持在prepare阶段之后不加锁，然后进入了`mysql_inplace_alter_table`。分为以下几步：
+在该函数中，首先通过调用`create_table_impl`，**创建一个临时的frm文件**。
+
+然后通过`ha_innobase::check_if_supported_inplace_alter`检查该表对应的存储引擎是否支持inplace的alter table（create index 属于alter table的一种）；InnoDB返回`HA_ALTER_INPLACE_NO_LOCK_AFTER_PREPARE`，表示支持在prepare阶段之后不加锁。
+
+然后进入了`mysql_inplace_alter_table`。分为以下几步：
 
 1. `mdl_context.upgrade_shared_lock`；根据InnoDB的返回信息，将MDL的共享**锁升级**为互斥的。
 
@@ -86,6 +90,8 @@ InnoDB中只支持Btree一种索引类型（index_type字段只有一种选择�
 8. `ha_innobase::commit_inplace_alter_table`：设置data dictionary中关于这个index的标记，并标记为commited。最后提交事务，释放锁资源。
 
 9. `mysql_rename_table`：将临时的**frm**重命名回去；
+
+> 可在系统表performance_schema.metadata_locks中观察MDL的状态。
 
 总结来说，上述步骤除了在sql层的操作外，在InnoDB层，这里主要有三步：
 
