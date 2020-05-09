@@ -376,10 +376,22 @@ mysql> SHOW GLOBAL STATUS like 'Binlog_cache%';
 class MYSQL_BIN_LOG: public TC_LOG
 ```
 
-> TODO
->
 > 暂时不考虑超大事务，假设binlog的文件大小固定大小，可以先简单做个小实验：
 >
 > + 实验一：将1G的binlog文件mmap到内存中，模拟随机写入不同长度的事务数据，对该段数据msync。
 > + 试验二：同样是1G大小的binlog，但是我们在fsync之前，先将数据写入到额外的临时buffer中（固定大小，模拟io_cache），当事务commit后，再copy到binlog中。binlog文件采用buffer io打开，因此，还需要fsync。这和group commit逻辑相同， 先flush到page cache中，再sync到文件中。
+>
+> 试验结果，好像确实是大概两倍：
+>
+> ```bash
+> $ ./io-cache-test
+> Time taken by MmapWriter: 683619382 microseconds
+> Time taken by CacheWriter: 1325482912 microseconds
+> 
+> $ ./io-cache-test
+> Time taken by MmapWriter: 450675438 microseconds
+> Time taken by CacheWriter: 1116882141 microseconds
+> ```
+>
+> [代码在这](https://github.com/Layamon/binlog-io-mock)，欢迎review，有问题，欢迎留言指正
 
