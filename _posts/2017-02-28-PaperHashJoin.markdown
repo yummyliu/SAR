@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 读Paper《面向硬件优化的内存HashJoin》
+title: 读Paper——《面向硬件优化的内存HashJoin》
 date: 2017-02-28 10:23
 header-img: "img/head.jpg"
 categories: 
