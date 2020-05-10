@@ -39,7 +39,7 @@ typora-root-url: ../../layamon.github.io
 2. logrecord从logbuffer复制到logfile：write_mutex控制logbuffer顺序的刷盘；
 3. dirtypage从bufferpool刷写到datafile：log_flush_order_mutex控制flushlist的顺序刷盘；执行CHECKPOINT或preflush。
 
-![image-20190815150922711](/image/mysql-8-flush/logbuffer-flush.png)
+![image-20190729194135905](/image/mysql-8-redo/logbuffer-flush.png)
 
 InnoDB的logbuffer是双buffer设计，每个默认是16MB，可以进行伸展；
 

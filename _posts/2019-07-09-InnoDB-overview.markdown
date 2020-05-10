@@ -11,21 +11,21 @@ typora-root-url: ../../layamon.github.io
 
 * TOC
 {:toc}
-在一个经典的RDBMS架构中，数据库分为如下几个部分：
+之前搞PostgreSQL的时候，针对PostgreSQL写了一个[总结性的概述](http://liuyangming.tech/07-2018/PostgreSQL-Overview.html)，最近搞了一段时间MySQL，主要是关注引擎层，这里抽空进行总结，希望想了解InnoDB的人，看到这篇文章能有所收获。
 
 ![adb](/image/innodb-overview/arch-db.png)
 
-MySQL即主要提供了Relational Query Procesor的功能，InnoDB就是上图的Transaction Storage Manager部分。那么本文就从这四个方面阐述我所了解到的InnoDB，希望想了解InnoDB的人，看到这篇文章能有所收获。
+在一个经典的RDBMS架构中，数据库分为如上几个部分：MySQL即主要提供了Relational Query Procesor的功能，InnoDB就是上图的Transaction Storage Manager部分。那么本文就从这四个方面阐述我所了解到的InnoDB。
+
+> 图片来自architecture of db
 
 # Access Method
 
-AccessMethod可以理解为数据在外存的组织形式，也可以简单理解为索引。在PostgreSQL内核中自带有6种，InnoDB目前有三种Btree，Rtree（spatial index）,倒排索引（Full-Text Search Index）。
+AccessMethod可以理解为数据在外存的组织形式，也可以简单理解为索引。在PostgreSQL内核中自带有6种，InnoDB目前有三种Btree，Rtree（spatial index）,倒排索引（Full-Text Search Index）。这里介绍最常用的Btree。
 
-这里以最常用的Btree为例进行介绍。
+## 文件组织
 
-## 文件组织方式
-
-那么我们首先了解一下InnoDB的外存文件组织，在外存中，按照表空间（space）进行组织；当启动了`innodb_file_per_table`参数后，每个数据表对应一个文件（参看系统表：`INFORMATION_SCHEMA.INNODB_SYS_DATAFILES`）。而对于全局共享的对象，需要放在共享的表空间space0（全局变量`：innodb_data_file_path，默认为ibdata1）中。ibdata1中除了每个表空间都有的对象（ibuf_bitmap、inode等）外，其中还有如下信息：
+了解Btree之前，那么我们首先了解一下InnoDB的外存文件组织，在外存中，按照表空间（space）进行组织；当启动了`innodb_file_per_table`参数后，每个数据表对应一个文件（参看系统表：`INFORMATION_SCHEMA.INNODB_SYS_DATAFILES`）。而对于全局共享的对象，需要放在共享的表空间ibdata1（全局变量：innodb_data_file_path，默认为ibdata1）中，ibdata1中除了每个表空间都有的对象——ibuf_bitmap、inode等之外，其中还有如下信息，其中每一部分都很重要，这里不做展开：
 
 + Change buf
 + Transaction sys
@@ -33,22 +33,22 @@ AccessMethod可以理解为数据在外存的组织形式，也可以简单理�
 + Rollback seg
 + Double write buf
 
-> 除了space0是共享的以外，我们还可以通过create tablespace创建[General Tablespace](https://dev.mysql.com/doc/refman/5.7/en/general-tablespaces.html)，同样是全局共享的。
+> 除了ibdata1是共享的以外，我们还可以通过create tablespace创建[General Tablespace](https://dev.mysql.com/doc/refman/5.7/en/general-tablespaces.html)，同样是全局共享的。
 >
 > InnoDB Instrinsic Tables：InnoDB引擎内部的表，没有undo和redo，用户不可创建，只供引擎内部使用。
 
-### 宏观上物理与逻辑的对应
+----------
 
 ![image-20190726103704241](/image/innodb-overview/InnoDB-macro.png)
 
-物理上，在每个space中，有若干个文件或者磁盘分区；每个file分为若干个segment，其中有LeafNodeSegment、NonLeafNodeSegment、rollbacksegment三种类型。每个segment是按照extent为单位进行伸缩，每个extent中有若干个固定大小的page，如下 图：
+如上图：物理上，在每个space中，有若干个文件或者磁盘分区；每个file分为若干个segment，其中有LeafNodeSegment、NonLeafNodeSegment、rollbacksegment三种segment类型。每个segment是按照extent为单位进行伸缩，每个extent中又有若干个固定大小的page：
 
 - 对于uncompressed的表空间，page是16Kb；
 - 对于compressed的表空间，page是1~16Kb。
 
 逻辑上，由若干page组织成一个Btree Index，分为聚簇(一级)索引和二级索引，二级索引的val为聚簇索引的key。
 
-> 两个文件：
+> 其他两个文件：
 >
 > **ib_buffer_pool**：`SET GLOBAL innodb_buffer_pool_dump_at_shutdown=ON;`，MySQL退出的时候将buffer中的spaceid+pageid缓存下来：
 >
@@ -63,50 +63,69 @@ AccessMethod可以理解为数据在外存的组织形式，也可以简单理�
 
 ### IO最小单元——Page
 
-在InnoDB的代码中，有三个需要区分的名称：
+我们都是在块设备上进行IO，文件表空间划分的最小单位就是Page，但是Page的大小与块设备的最小块不一定是一样的。Page需要加载到bufferpool中进行读写，因此，在InnoDB的bufferpool代码中，有三个需要区分的名称：
 
-+ frame是内存地址，指向具体的数据；
-+ page是frame指向数据的状态信息，其中是需要写回到磁盘的数据；
-+ Block代表一个Control Block（`buf_block_t`），对于每个frame对应一个ControlBlock结构进行控制信息管理，但这些信息不写回内存。
+```cpp
+struct buf_block_t {
+  /** @name General fields */
+  /* @{ */
 
-在InnoDB中有多种页类型，下面展示了FIL_PAGE_INDEX这个类型的结构。
+  buf_page_t page; /*!< page information; this must
+                   be the first field, so that
+                   buf_pool->page_hash can point
+                   to buf_page_t or buf_block_t */
+  byte *frame;     /*!< pointer to buffer frame which
+                   is of size UNIV_PAGE_SIZE, and
+                   aligned to an address divisible by
+                   UNIV_PAGE_SIZE */
+...
+}
+```
+
++ **frame**是内存地址，指向具体的数据；
++ **page**是frame指向数据的状态信息，其中是需要写回到磁盘的数据；
++ **Block**代表一个Control Block（`buf_block_t`），对于每个frame对应一个ControlBlock结构进行控制信息管理，但这些信息不写回内存。
+
+而我这里说的Page就笼统指表空间中的16k的页，在在InnoDB中有多种页类型，下面展示了FIL_PAGE_INDEX这个类型的结构，这是最常见的也是构成Btree的页类型。
 
 ![image-20190726104115317](/image/innodb-overview/page-logical-vs-physical.png)
 
-上图左侧是一个物理Page的结构，前面有三个头部信息：文件头部信息，索引头部信息，段头部信息；另外，还有两个虚拟系统记录：
+上图左侧是一个**物理Page的结构**，前面有三个头部信息：文件头部信息，索引头部信息，段头部信息；另外，还有两个虚拟系统记录：
 
-+ infimum，该记录表示比该页所有记录都小。
-+ supremum，该记录表示比改业所有记录都大。
++ *infimum*：该记录表示比该页所有记录都小。
++ *supremum*：该记录表示比改业所有记录都大。
 
 文件头部信息包含了前向和后向的Page的偏移，以及该页最后一次修改的LSN。
 
 索引头部信息包含了PageDirectory数组的大小，而PageDirectory则是从Page尾部开始分配。PageDirectory中维护了该页**部分**元组的偏移，在每个元组中通过n_owned字段，表示该记录前向有几个字段没在PageDirectory中。
 
->dict_index_t->**n_uniq**：在dict_index_t->n_fields中，从前向后，足够用来判断键唯一的列数。
-
 > **n_owned**
 >
-> 在InnoDB中，表是按照B+Tree的方式存储。每个页中，都有一个PageDirectory(如下图)。其中保存了该页内的record的偏移量。由于不是每个record在PageDirectory中都有一个slot（这称为sparse slots），因此每个record中就有了一个n_owned变量，保存了该recored所own的record数，类似于前向元组数。
+> 在InnoDB中，表是按照B+Tree的方式存储。每个页中，都有一个PageDirectory。其中保存了该页内的record的偏移量。由于不是每个record在PageDirectory中都有一个slot（这称为sparse slots），因此每个record中就有了一个n_owned变量，保存了该recored所own的record数，类似于前向元组数。
+>
+> 区分**n_uniq**：
+>
+> dict_index_t->**n_uniq**：在dict_index_t->n_fields中，从前向后，足够用来判断键唯一的列数。
 
-### 读写最小单元——Record
+### 变更最小单元——Record
 
-在innobase/include/rem0rec.ic；列出了record中各个值的偏移，如下图
+在上述Page中，我们可以看到每个Record记录了其后向Record的偏移，可以认为page中的record按照链表的形式组织起来。注意这个偏移是真实Record的**数据部分**的起始位置，如下图的指针位置所示：
 
 ![image-20190726105136952](/image/innodb-overview/InnoDB-io-unit.png)
 
-在上述Page中，我们可以看到每个Record记录了其后向Record的偏移，可以看出page中的record按照链表的形式组织起来。注意这个偏移是真实Record的**数据部分**的起始位置，如上图所示。另外，在每个Record中都有两(三)个隐藏列：
+> 在innobase/include/rem0rec.ic；列出了record中各个值的偏移
+
+在每个Record中都有两(三)个隐藏列：
 
 - DB_TRX_ID：区别于GTID按照事务提交顺序排列，这是按照事务创建顺序排列。非锁定读的事务不会产生。
 - DB_ROLL_PTR：指向该记录的前一个版本的undolog record。
 - （DB_ROW_ID：如果没有主键，会创建一个。）
 
-对于记录中的变长字段，InnoDB采用overflow page的方式进行存储，这也分为4中类型，如下：
+对于记录中的变长字段，InnoDB采用overflow page的方式进行存储，这也分为4中类型，默认的rowformat由参数**`innodb_default_row_format`**控制，默认值是`DYNAMIC`，如下：
 
 ![image-20190726105556341](/image/innodb-overview/rowformat.png)
 
-默认的rowformat由参数**`innodb_default_row_format`**控制，默认值是`DYNAMIC`。
-
-- `REDUNDANT`：对于VARBINARY,VARCHAR,BLOB和 TEXT类型等类型，当长度超过767byte时，超过的部分会存储在额外的溢出页中。
+- `REDUNDANT`：对于VARBINARY、VARCHAR、BLOB和 TEXT类型等类型，当长度超过767byte时，超过的部分会存储在额外的溢出页中。
 - `COMPACT`：和REDUNANT类似，只是溢出也的存储更加紧凑，节省20%的空间。
 - `DYNAMIC`：和上两个不同，当列值超过40byte时，那么行中只存储一个指针，指向附加页；然后每个附加页内还有一个指针指向后续数据，指针大小20byte。
 - `COMPRESSED`：存储方式和DYNAMIC相似，只是该方式支持压缩表。在系统表空间中不可用，因此该参数不能设置为默认。
@@ -119,26 +138,22 @@ AccessMethod可以理解为数据在外存的组织形式，也可以简单理�
 > CREATE TABLE t1 (c1 INT PRIMARY KEY, c2 VARCHAR(5000), KEY i1(c2(3070)));
 > ```
 
-## Btree的操作
+## B+-tree
 
 在InnoDB中，Btree是B+tree的变种，有以下特征：
 
-+ 分为三类结构：Root、Internal、Leaf
++ 节点分为三类：Root、Internal、Leaf；
 
-+ Leaf的level=0，往上递增
++ Leaf的level=0，往上递增；
 
-+ 除root层，每层都由两个prev和next指针，指向Brother
++ 除root层，每层都由两个prev和next指针，指向Brother；
 
-+ 在节点内部，按照key值组织成一个**单向链表**
-
-+ 链表的头部永远是Infimum，表示比所有key都小；尾部永远是Supremum，表示比所有key都大。
++ 在节点内部，按照key值组织成一个**单向链表**；链表的头部永远是Infimum，表示比所有key都小；尾部永远是Supremum，表示比所有key都大。
 
 + Non-Leaf节点中的记录叫node_pointer（对应叶子节点的key最小值，叶子节点的指针）
 + 没有固定的M值，不是通过M值来判断是否分裂；因为每个Btree的Page都是固定大小(16K)，其中由链表维护一个已用的Record，另外还有一个Heap空间，等待分配；在`page_cur_parse_insert_rec`进行插入，当Heap空间不够插入一个Record时，那么就插入失败，进行分裂。
 
-### Btree的创建
-
-创建一级索引，就是重建一个表。这里主要讨论创建二级索引。
+那么这里就简单了解下InnoDB中B+-tree的操作，创建一个B+-tree，就是创建索引。一级索引就是重建一个表，这里主要讨论创建二级索引。
 
 版本<5.5，创建一个索引相当于重建一个表（**CopyTable**）。
 
@@ -146,7 +161,7 @@ AccessMethod可以理解为数据在外存的组织形式，也可以简单理�
 
 版本>=5.6.7，加入了Online Create Index的特性，创建二级索引的时候可读可写（还是会短暂block一下，但是已经影响很小了）；对于创建索引过程中对表进行的修改，放在RowLog（不是redolog）中；如果创建过程中，MySQL故障了；故障恢复时，会丢弃未完成的Index。
 
-### Btree的插入
+### 节点分裂——insert
 
 在插入的时候，当前page放不下了。那么，按照next指针找到下一个page，如果下一个page已经满了；这时就需要进行节点分裂，大概有4步:
 
@@ -155,7 +170,7 @@ AccessMethod可以理解为数据在外存的组织形式，也可以简单理�
 3. 移动记录
 4. 修改next和prev指针等节点信息。
 
-通过如下监控信息，可以统计InnoDB中节点分裂的次数。
+通过如下监控信息，可以统计InnoDB中**节点分裂**的次数。
 
 ```sql
 SET GLOBAL innodb_monitor_enable = index_page_splits;
@@ -166,7 +181,7 @@ select * from INFORMATION_SCHEMA.INNODB_METRICS where name = 'index_page_splits'
 
 当节点分裂后，在父节点中插入一个node_ptr，父节点也需要分裂是；还是递归的调用节点分裂函数，直到不产生分裂为止；如果分裂到根节点，那么根节点产生一个新的根节点，老根节点因为满了，还是会一分为二；最终提升树高。
 
-### Btree的删除
+### 节点合并——delete
 
 首先Btree的删除不等于SQL的delete，SQL的delete只是标记删除，执行的是delete_mark操作；具体的Btree的删除，由purge线程调度执行(或者是rollback)。
 
@@ -174,7 +189,7 @@ select * from INFORMATION_SCHEMA.INNODB_METRICS where name = 'index_page_splits'
 
 可以的话，就会和相邻节点进行合并；将后续节点的数据复制到前面的节点中，那么另一个节点就成空节点了，可以用来放新的数据。
 
-通过如下监控，查看btree的merge操作统计。
+通过如下监控，查看btree的**节点合并**操作统计。
 
 ```sql
 SET GLOBAL innodb_monitor_enable = index_page_merge_successful;
@@ -189,11 +204,13 @@ select * from INFORMATION_SCHEMA.INNODB_METRICS where name = 'index_page_merge_s
 
 在InnoDB中，有如下一些缓冲区；大类上和PgSQL相似都有一个放数据页的BufferPool，和一个放日志记录的LogBuffer。在CHECKPOINT的调度下，进行BufferPool刷盘；每次事务commit进行LogBuffer刷盘。
 
+除了这两个之外，还有为了减小二级索引的写放大，引入的Change Buffer机制；为了避免数据部分写，引入的DoubleWrite Buffer，如下图：
+
 ![image-20190726110915433](/image/innodb-overview/InnoDB-caching.png)
 
-除了这两个之外，还有为了减小二级索引的写放大，引入的Change Buffer机制；为了避免数据部分写，引入的DoubleWrite Buffer。
+本节对关键的几个buffer进行介绍：
 
-> 另外，还有存储元数据目录与其他内部结果的Memory Pool，由参数`innodb_additional_mem_pool_size`控制，默认8MB；这个如果不够就会动态申请，这会在日志中写warning记录。
+> 另外，还有存储元数据目录与其他内部结果的Memory Pool，由参数`innodb_additional_mem_pool_size`控制，默认8MB；这个如果不够就会动态申请，会在日志中写warning记录。
 
 ## Change Buffer
 
@@ -201,7 +218,7 @@ select * from INFORMATION_SCHEMA.INNODB_METRICS where name = 'index_page_merge_s
 
 Change Buffer是二级索引变更的缓存，其不仅仅是一个内存结构，内存中的changebuffer需要确保外存的changebuffer能够全部load进内存；因此，ChangeBuffer同样可通过Recovery恢复。
 
-ChangeBuffer也是一个Btree，Key为(spaceid,pageno,counter)三元组，其中counter在每个page有一次变更后加一。Value为该page上的操作，之前其中只有insert操作，后来也支持了delete/update/purge操作，成为ChangeBuffer；但是命名上没有改变，在代码中还是叫InsertBuffer；
+ChangeBuffer也是一个Btree，Key为(spaceid,pageno,counter)三元组，其中counter在每个page有一次变更后加一。Value为该page上的操作，之前其中只有insert操作，后来也支持了delete/update/purge操作，成为ChangeBuffer；但是命名上没有改变，在代码中还是叫**InsertBuffer**；
 
 > 注意只是当**非唯一的二级索引**的块不在缓存中时，才会缓存相关操作。
 >
@@ -218,17 +235,17 @@ ChangeBuffer也是一个Btree，Key为(spaceid,pageno,counter)三元组，其中
 
 存放表和索引的数据，由`innodb_buffer_pool_size`设置，默认是128MB；推荐配置为系统物理内存的80%。
 
-### 刷脏
-
 任何BufferPool都逃不过一个刷脏的问题；在数据库中，为了保证恢复及时；那么每间隔一段时间，会在日志中写入一个检查点。
 
-CHECKPOINT在DBMS都是同一个概念，其为redo日志中的一条记录，内容为CHECKPOINTLSN，其表示在CHECKPOINT_LSN之前的脏页已经从缓冲区写入磁盘了。而完成CHECKPOINT的方式主要有两种类型：
+CHECKPOINT在DBMS是指一种操作，也是指redo日志中的一条记录，记录的内容为CHECKPOINT_LSN。其表示在CHECKPOINT_LSN之前的脏页已经从缓冲区写入磁盘了。而完成CHECKPOINT操作的方式主要有两种类型：
 
 + **sharp checkpoint**: 只将commited的事务修改的页进行刷盘，并且记下最新Commited的事务的LSN。这样恢复的时候，redo日志从CHECKPOINT发生的LSN开始恢复即可。由于所有刷盘的数据都是在同一个点(CHECKPOINT LSN)之后，所以称之为sharp。
 
-+ **fuzzy checkpoint:**如果脏页滞留到一定时间，就可能会刷盘。
++ **fuzzy checkpoint** ：如果脏页滞留到一定时间，就可能会刷盘。
 
-在InnoDB中，除了shutdown的时候，正常时候都是fuzzy CHECKPOINT。刷盘前，能够多次修改，这样省去了很多IO。BufferPool中的页由三个list维护，分别是：
+在InnoDB中，除了shutdown的时候，正常时候都是fuzzy CHECKPOINT。刷盘前，能够合并多次修改，这样省去了很多IO。
+
+BufferPool中的页由三个list维护，分别是：
 
 + free_list：可用的页
 + LRU_list：最近使用的页
@@ -256,25 +273,33 @@ coordinator持续设置标记位触发worker进行刷盘，自己触发后也会
 
 > 另外，在Percona版本的XtraDB中，提供了一种基于代价的 adaptive CHECKPOINT；以及InnoDB后来也有了[adaptive flushing](https://dev.mysql.com/doc/refman/8.0/en/innodb-parameters.html#sysvar_innodb_adaptive_flushing)。
 
-## AHI
+### Adaptive Hash Index
 
 ![image-20200106154013692](/image/innodb-overview/ahi.png)
 
 在Buffer Pool中，缓存了IndexPage。在二级索引中，存储的是一级索引的键；因此每次查询需要两个索引查询。为了减少寻路开销，打开参数[`innodb_adaptive_hash_index`](https://dev.mysql.com/doc/refman/5.7/en/innodb-parameters.html#sysvar_innodb_adaptive_hash_index)后，可以启动AHI功能。
 
-每次查询后，将tuple与page的映射关系存储在一个HashTable中，那么后续查询可以通过内存的HashTable进行定位，如上图，提高检索性能。现在在5.7中，避免锁的竞争，将AHI分成几块。
+每次查询后，将tuple与page的映射关系存储在一个HashTable中，那么后续查询可以通过内存的HashTable进行定位，如上图，提高检索性能。在5.7中，避免锁的竞争，将AHI进行分区。
 
-## Doublewrite Buffer(disk)
+## Doublewrite Buffer
 
-通过[`innodb_doublewrite`](https://dev.mysql.com/doc/refman/5.7/en/innodb-parameters.html#sysvar_innodb_doublewrite)参数打开dwbuffer，默认打开。InnoDB的页大小是16k，但是OS每次是按照4K写入，因此可能存在16K只写了一部分的情况下，系统crash了。为了避免这一问题，设计了doublewrite_buffer。
+虽然叫Buffer，但是这是个磁盘中的结构。
 
-dwbuffer可以看做是存在于**系统表空间**中的一个短期的日志文件，它包含了100个页。当InnoDB刷页时，会先将页**顺序**写入到dwbuffer中，并将dwbuffer刷盘；然后，将页刷到真正的数据文件中。
+InnoDB的页大小是16k，但是OS每次是按照4K写入，因此可能存在16K只写了一部分的情况下，系统crash了，发生了部分写，为了避免这一问题，设计了doublewrite_buffer，通过[`innodb_doublewrite`](https://dev.mysql.com/doc/refman/5.7/en/innodb-parameters.html#sysvar_innodb_doublewrite)参数打开，默认打开。
 
-当recovery时，InnoDB检查dwbuffer中页和其本来位置的页的内容；如果通过检查页的checksum，发现数据表中的页是不一致的，那么从dwbuffer中恢复。
+dwbuffer可以看做是存在于**系统表空间**中的一个短期的日志文件，默认2Mb。double是指表空间的page写了两次，当InnoDB刷页时，**第一次**先将页**顺序**写入到dwbuffer中，dwbuffer刷盘后，**第二次**将页刷到真正的数据文件中。
+
+当recovery时，InnoDB检查dwbuffer中页和其本来位置的页的内容；如果通过检查页的checksum，发现数据表中的页是不一致的，那么从dwbuffer中恢复。而如果double write buffer中的页也是不完整的，那么丢弃。
 
 性能上，尽管每次写页的时候需要写两次；但是由于将dwbuffer的写是顺序的，并且不会每个page调用一次fsync，而是一起fsync；整体性能比原来损失经验值是5%。
 
-> 如果你不在乎数据丢失，或者OS级别保证了不会有部分写，那么可以`innodb_doublewrite=0` 关闭double write。
+> 为什么要保证数据页的完整性？
+>
+> InnoDB采用的事physiological类型的日志，这样的日志需要写的数据少，但是要求数据页是一致的，否则不能保证数据页恢复的正确性。
+>
+> double write buffer本身发生了部分写怎么办？
+>
+> 没事，因为对应的表空间的数据页还没开始写，恢复的时候也不会用dwbuffer中的进行覆盖。
 
 ## Log Buffer
 
@@ -288,13 +313,13 @@ SELECT name, subsystem, status FROM INFORMATION_SCHEMA.INNODB_METRICS;
 
 # Lock Manager
 
-在MySQL中，事务的并发控制是通过InnoDB实现的；而在MySQL层中，会有一个MDL维护元数据信息，主要用在DDL场景中。但是DML中的锁，都在InnoDB实现；可以分为两部分：事务锁和线程锁。
+在MySQL中，在SQL层中，会有一个MDL维护元数据信息，主要用在DDL场景中。对于InnoDB作为引擎的表，表上的DML操作的锁，在InnoDB内实现；可以分为两部分：事务锁（mutex/rwlock）和线程锁（latch）。
 
-![image-20190726115031799](/image/innodb-overview/innodb-lockmanager.png)
+![image-20200510095508957](/image/innodb-overview/innodb-lockmanager.png)
 
-## 显式事务锁
+## MGL
 
-一般从两个维度描述一个锁：粒度和力度。在InnoDB中，从粒度上分为表锁和行锁；在不同的粒度上，又根据力度的不同分为不同类型。但都是在一个结构中表示`lock_t`，根据`is_record_lock`（提取type_mode的标记位）来判断锁的粒度：表还是行。
+一般从两个维度描述一个锁：粒度和力度。在InnoDB中，从粒度上分为表锁和行锁；在不同的粒度上，又根据力度的不同分为不同类型。但都是在一个结构中表示`lock_t`，根据`is_record_lock`（提取type_mode的标记位）来判断锁的粒度：表or行。
 
 type_mode是一个无符号的32位整型，从低位排列，第1字节为lock_mode，有如下5中类型；
 
@@ -398,7 +423,7 @@ innodb_autoinc_lock_mode=0是为了和前向版本行为兼容的参数。
 > show full processlist;
 > ```
 
-### MVCC：ReadView
+## MVCC：ReadView
 
 InnoDB中一方面通过锁来进行并发控制（**一致性锁定读**，select for update/select for shared/update where / delete where）；另外，在默认情况下。事务第一次读的时候会通过undo空间提供的多版本，构建一个readview，提供**一致性非锁定读**（这就是RR级别下，可重复读的实现方式，比如，`mysqldump --single-transaction`时，就是基于RR级别的读快照进行导出），这样能够提高读写之间的并发，读不阻塞写。
 
@@ -414,11 +439,13 @@ ReadView是在某一时刻（语句开始，或者事务开始）获取可以看
 
 对于每个RECORD，其中有一个回滚段指针；通过该指针可以构建该record的历史版本链。那么定位到某个元组，则通过该链，遍历直到找到第一个可见的数据版本，就是最新可见的数据。
 
-## 隐式线程锁
+## Latch
 
-区别于事务锁是和Transaction相关的并发控制，对象是record或者table；线程锁的对象是buf_page中的page，即`buf_pool->page_hash`；page_hash是`hash_table_t`类型的hash表；其中的sync_obj就是该hash表中的元素的锁，放在一个union类型中，有两种类型：mutex和rw_lock。
+以上的事务锁是和Transaction相关的并发控制，对象是record或者table；作为多线程服务，MySQL内部还有线程锁；对象是内存中的共享单元，比如buf_page中的page，即`buf_pool->page_hash`；
 
-**mutex**，实际上是基于Futex机制实现的FutexMutex（Linux Fast userspace mutex）；用在内存共享结构的串行访问上，如下例子：
+page_hash是`hash_table_t`类型的hash表；其中的sync_obj就是该hash表中的元素的锁，放在一个union类型中，有两种类型：mutex和rw_lock。
+
++ **mutex**，实际上是基于Futex机制实现的FutexMutex（Linux Fast userspace mutex）；用在内存共享结构的串行访问上。
 
 - Dictionary mutex（Dictionary header)
 - Transaction undo mutex，Transaction system header的并发访问，在修改indexpage前，在Transaction system的header中写入一个undo log entry。
@@ -435,74 +462,14 @@ ReadView是在某一时刻（语句开始，或者事务开始）获取可以看
 - Memory pool mutex 
 - …...
 
-**rw_lock（sync0rw.h）**，读写操作的并发访问，其中有两种锁粒度：index和block。有三种力度：S，X，SX（5.7新加的）。主要用在如下些场景中：
++ **rw_lock（sync0rw.h）**，读写操作的并发访问，其中有两种锁粒度：index和block。有三种力度：S，X，SX（5.7新加的）。主要用在如下些场景中：
+  + Secondary index tree latch ，Secondary index non-leaf 和 leaf的读写
+  + Clustered index tree latch，Clustered index non-leaf 和 leaf的读写
+  + Purge system latch，Undo log pages的读写，
+  + Filespace management latch，file page的读写
+  + 等等
 
-- Secondary index tree latch ，Secondary index non-leaf 和 leaf的读写
-- Clustered index tree latch，Clustered index non-leaf 和 leaf的读写
-- Purge system latch，Undo log pages的读写，
-- Filespace management latch，file page的读写
-- 等等
-
-这里主要介绍rwlock的机制。
-
-### rw_lock
-
-在MySQL中主要就是针对Btree的并发访问，这里简单讨论一下rw_lock在Btree读写中的操作：
-
-- 对于读操作，在Index上加s_latch，在定位的block上加s_latch。
-- 如果是写操作，在5.7之后，在index上加SX即可，在需要修改的page上加X。
-
-rw_lock基于如下结构实现的自旋锁。多个readthread可以持有一个s模式的rw_lock。但是，x模式的rw_lock只能被一个writethread持有；为了避免writethread被多个readthread饿死，writethread可以通过排队的方式阻塞新的readthread，每排队一个writethread将lockword减X_LOCK_DECR（新的SX锁等待时，减X_LOCK_HALF_DECR）
-
-> 在[wl6363](https://dev.mysql.com/worklog/task/?id=6363)中，标明了加了SX锁后lock_word不同取值的意思；其中lock_word=0表示加了xlock；lock_word= 0x20000000没有加锁；
-
-在5.7中，rw_lock共有三种类型。
-
-```c
-enum rw_lock_type_t {
-	RW_S_LATCH = 1,
-	RW_X_LATCH = 2,
-	RW_SX_LATCH = 4,
-	RW_NO_LATCH = 8
-};
-/*
- LOCK COMPATIBILITY MATRIX
-    S SX  X
- S  +  +  -
- SX +  -  -
- X  -  -  -
- */
-```
-
-> 思考？这个新加的SX锁，从功能上可以由一个S锁加一个X锁代替，S锁住index，X锁住修改的Page；这样别的线程更新index时，遍历的时候检查page上有没有加X锁，这样索引变更的时候也能进行读取，那么，为什么要加呢？
-
-在对Btree操作时，针对如下Btree的不同操作，对Btree的Index(内存dict_cache中的dict_index_t结构)或者Page(buf_pool->page)加不同模式的rw_lock。
-
-```c
-/** Latching modes for btr_cur_search_to_nth_level(). */
-enum btr_latch_mode {
-	/** Search a record on a leaf page and S-latch it. */
-	BTR_SEARCH_LEAF = RW_S_LATCH,
-	/** (Prepare to) modify a record on a leaf page and X-latch it. */
-	BTR_MODIFY_LEAF	= RW_X_LATCH,
-	/** Obtain no latches. */
-	BTR_NO_LATCHES = RW_NO_LATCH,
-	/** Start modifying the entire B-tree. */
-	BTR_MODIFY_TREE = 33,
-	/** Continue modifying the entire B-tree. */
-	BTR_CONT_MODIFY_TREE = 34,
-	/** Search the previous record. */
-	BTR_SEARCH_PREV = 35,
-	/** Modify the previous record. */
-	BTR_MODIFY_PREV = 36,
-	/** Start searching the entire B-tree. */
-	BTR_SEARCH_TREE = 37,
-	/** Continue searching the entire B-tree. */
-	BTR_CONT_SEARCH_TREE = 38
-};
-```
-
-该变量作为btr_cur_search_to_nth_level的参数latch_mode（无符号32位整型）的低字节；而高字节放一些标记位，对Btree进行检索。那么，btr_cur_search_to_nth_level基本就是作为任何Btree的操作定位cursor的入口，可以在检索的同事加锁，然后返回一个cursor；返回之后的cursor，也可以在升级或降级latch的类型。
+这里主要介绍rwlock的机制：参见另一篇blog——[《Btree与rwlock》](http://liuyangming.tech/07-2019/InnoDB-Lock.html)。
 
 # Log Manager
 
@@ -532,33 +499,8 @@ MTR是保证InnoDB对若干个page变更的原子性的机制，一个mtr中包�
 
 + 对若干page的修改的**logrecord**
 
-+ 相应index/tablespace/page上的**lock**，或者**buffer-fixes**（对bufferpage的引用），见如下枚举类型。
++ 相应index/tablespace/page上的**lock**，或者**buffer-fixes**（对bufferpage的引用）；
 
-  ```c
-  /** Types for the mlock objects to store in the mtr memo; NOTE that the
-  first 3 values must be RW_S_LATCH, RW_X_LATCH, RW_NO_LATCH */
-  enum mtr_memo_type_t {
-  #ifndef UNIV_INNOCHECKSUM
-  	MTR_MEMO_PAGE_S_FIX = RW_S_LATCH,
-  
-  	MTR_MEMO_PAGE_X_FIX = RW_X_LATCH,
-  
-  	MTR_MEMO_PAGE_SX_FIX = RW_SX_LATCH,
-  
-  	MTR_MEMO_BUF_FIX = RW_NO_LATCH,
-  #endif /* !UNIV_CHECKSUM */
-  
-  #ifdef UNIV_DEBUG
-  	MTR_MEMO_MODIFY = 32,
-  #endif /* UNIV_DEBUG */
-  
-  	MTR_MEMO_S_LOCK = 64,
-  
-  	MTR_MEMO_X_LOCK = 128,
-  
-  	MTR_MEMO_SX_LOCK = 256
-  };
-  ```
 
 由于MTR是一个原子操作，只有在mtr.commit()时，会将用户线程的mtr复制到logbuffer中（mtr.commit()时，还会释放持有的锁）。因此不存在完成一半的mtr，也就不存在mtr的rollback。
 
@@ -567,7 +509,7 @@ MTR是保证InnoDB对若干个page变更的原子性的机制，一个mtr中包�
 + 一个mtr中，只能变更一个index；
 + 只能前向遍历：获取下一个page的锁时，必须释放前一个page的锁。
 
-> 🤔 死锁的发生条件，如何避免？
+关于MTR更多内容，参见另一篇blog——[《MTR与Btree》](http://liuyangming.tech/05-2019/InnoDB-Mtr.html)。
 
 ## Redo LOG
 
@@ -575,7 +517,7 @@ MTR是保证InnoDB对若干个page变更的原子性的机制，一个mtr中包�
 
 ![innodb-redo-rec](/image/innodb-overview/innodb-redo-rec.png)
 
-redo日志是按照磁盘扇区大小（**512byte**）的块，存储日志记录，而不是是page大小，redolog位于`$innodb_log_group_home_dir/ib_logfile`中，可能有多个文件。
+redo日志是按照磁盘扇区大小（**512byte**）的块存储日志记录，redolog位于`$innodb_log_group_home_dir/ib_logfile`中，可能有多个文件。
 
 ```sql
 mysql> show global variables like '%innodb_log_file%';
@@ -602,29 +544,7 @@ mysql> show global variables like '%innodb_log_file%';
 
 > 这里理解就是服务的吞吐量而不是响应时间，因为如果组没有满，就不刷盘的话，是不是就影响了前面事务的响应时间。在PostgreSQL中通过`commit_siblings`配置一个组提交启用的下限，避免系统负载比较低的时候的刷盘等待。
 
-### LogBuffer的写入/写出
-
-![image-20190729194135905](/image/mysql-8-redo/logbuffer-flush.png)
-
-`log_t*	log_sys`是redo日志系统的关键全局变量。通过log_sys中的三个锁，来确保log_sys的并发访问正确性：
-
-+ mutex：对log_sys这个共享结构的变更的互斥
-+ write_mutex：日志有序刷盘的保证。
-+ log_flush_order_mutex：数据有序写入到flush_list中的保证。
-
-当**mtr_commit**时，需要写该mtr对应的日志和数据。首先获取mutex，用户线程将redo record，按照buf_free写入到LogBuffer中，并更新buf_free值；然后获取log_flush_order_mutex，释放mutex，将修改的数据页，按照LSN写入到flush_list中，然后释放log_flush_order_mutex。
-
-当满足**LogBuffer刷盘**条件，触发刷盘时，首先获取mutex，进行双Buffer切换；然后获取write_mutex，释放mutex，此时一个Buffer继续接受用户线程的写入，另一个在write_mutex的保护下将日志刷盘。
-
-另外，**数据的刷盘**，即flush_list和LRU_list是通过计算一些阈值；根据阈值的紧急程度，执行对应的刷盘操作，preflush还是checkpoint，异步还是同步等。
-
-综上，log_sys主要完成了三个功能：
-
-+ mtr_commit的mtr_buf_t到logbuffer的日志数据拷贝，这里涉及ulint为单位的两个偏移量：redo record可拷贝写入的buffer的位置（buf_free）；redo缓冲区将要向磁盘刷盘的位置（buf_next_to_write）。
-+ 然后是LogBuffer的刷盘，这里涉及lsn为单位的三个偏移量：write_lsn、current_flush_lsn、flushed_lsn。
-+ 然后是flush_list的刷盘，这里涉及几个阈值的计算。
-
-（关于这一节的代码细节，有另一个blog）
+关于Logbuffer更详尽的介绍，参见另一篇blog——[《LogBuffer与事务提交过程》](http://liuyangming.tech/06-2019/LogBufferAndBufferPool.html)。
 
 ## Undo LOG
 
@@ -643,7 +563,7 @@ InnoDB中可以有专门的UNDO表空间（5.6之后可以启用独立undo表空
 >
 > + [33,+)，如果没有开启独立表空间，那么用户回滚段都在ibdata1这个系统表空间中。
 
-![image-20190718161534628](/image/innodb-overview/undo-map.png)
+![image-20200510095111559](/image/innodb-overview/undo-map.png)
 
 如上图，一个事务如果只对应一个UNDOpage（实际上可能不止），那么最多支持96*1024个事务并发。
 
