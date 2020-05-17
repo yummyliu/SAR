@@ -30,7 +30,7 @@ int main(void)
 
 > 这里只是概念图，而且是虚拟地址空间，地址由下向上变大；stack是向下增长，在stack之上是kernelspace；
 >
-> 实际上heap，stack的起始地址是随机的，因为一旦地址固定，容易被被不法人员利用；
+> 实际上[heap，stack的起始地址是随机的](https://manybutfinite.com/post/anatomy-of-a-program-in-memory/)，因为一旦地址固定，容易被被不法人员利用；
 >
 > 另外在Free部分，会包含mmap的地址空间，起始地址同样是随机的。
 
@@ -381,6 +381,6 @@ weak_ptr的引入，我认为是智能指针概念的一个补全。一个裸指
 
 因此，`weak_ptr`是对裸指针的使用中的不拥有对象的这类场景进行模拟，当需要访问的时候借助升级为shared_ptr并lock进行访问；举个🌰，在连接超时释放的场景中([http://kernelmaker.github.io/TimingWheel])，用一个固定大小的数据维护最近N秒的连接，其中数组元素都是shared_ptr，在连接对象`Conn`中维护了weak_ptr（这里的场景就是不拥有对象，而只是观察对象的状态）；当有了新的请求，那么需要移动Conn的槽位，那么，首先将weak_ptr升级为一个shared_ptr，然后放到相应槽位中；这样在释放旧连接时，如果之前发生过拷贝，那么相应shared_ptr释放的时候，不会释放真正的连接对象。
 
+# 内存检查工具
 
-
-https://manybutfinite.com/post/anatomy-of-a-program-in-memory/
+目前了解的有两种主要的[Address Sanitizer和Valgrind](https://stackoverflow.com/questions/47251533/memory-address-sanitizer-vs-valgrind)。

@@ -135,7 +135,7 @@ PostgreSQL类似的原子操作有：
 对于少部分情况下，获取锁时确实存在竞争，此时通过原子操作获取锁可能会失败。如果锁获取失败，有两种处理方案：
 
 + 方案一是不断自旋检查锁资源是否可用，但是这样会浪费CPU资源；
-+ 方案二就可用先将当前线程（进程）状态变为sleep，等到锁资源释放了，再唤醒处理，那么如何进行sleep/wakeup呢？这里就需要`futex`了。
++ 方案二就可用先将当前线程（进程）状态变为sleep，等到锁资源释放了，再唤醒处理，那么如何进行sleep/wakeup呢？这里就需要[`futex`]([futex overview](https://eli.thegreenplace.net/2018/basics-of-futexes/#id9))了。
 
 ```c
 #include <linux/futex.h>
@@ -270,6 +270,8 @@ int main()
 
 ## 数据的共享与互斥
 
+线程间的数据共享需要保证并发执行的正确性，需要[同步原语](https://www.modernescpp.com/index.php/c-core-guidelines-be-aware-of-the-traps-of-condition-variables)进行同步，而对于一些共享数据当不存在并发冲突的可以基于线程的本地存储。
+
 ### 线程本地存储
 
 对于栈内变量，肯定就是线程本地的；但是对于全局变量，一般就是全局共享的，而如果我们想将一些全局变量变成线程本地存储的，在一个编译器中可以加`__thread`前缀，而在c++11中，对其进行了统一，使用`thread_local`关键字：
@@ -344,16 +346,29 @@ if (rc != 0) {
 >
 > 首先这两个概念没有任何包含关系，一个函数可以满足两者也可以两者都不满足，或只满足其中一个。
 >
-> 可重入概念的提出是在单进程单线程的背景下，意思是函数在执行的过程中，可以中断当前执行，再次调用该函数，而不会出错，当前的执行函数也不一定会等待。其常见的场景是发生了硬件中断或函数递归调用，
+> 可重入([reentrance func](https://en.wikipedia.org/wiki/Reentrancy_(computing)))概念的提出是在单进程单线程的背景下，意思是函数在执行的过程中，可以中断当前执行，再次调用该函数，而不会出错，当前的执行函数也不一定会等待。其常见的场景是发生了硬件中断或函数递归调用，
 
+# Boost:Fiber
 
+关于并发，还有个值得一提的概念——协程；在go和python等语言中都提出了协程的概念，比如goroutine；Boost:Fiber可认为是C++中的协程，但是[提供的功能更多](https://stackoverflow.com/questions/35992854/difference-between-goroutines-and-boost-fiber)。
 
-**参考**
+> 当然还有很多别的C++协程实现，这里就只了解下Boost中的，毕竟Boost是C++中很强大的库，甚至可以约等于基础库了😂
 
-[futex overview](https://eli.thegreenplace.net/2018/basics-of-futexes/#id9)
+Fiber相比于thread的好处在于可以主动让出CPU（yield），这样在同一个thread中，可以有多条执行任务**互相协作**完成整体工作，因此Fiber的调度方式是主动的，并且是用户态进行context switch，更加轻量级（需要更少的CPU指令）；
 
-[trap of mutex&condition_var](https://www.modernescpp.com/index.php/c-core-guidelines-be-aware-of-the-traps-of-condition-variables)
+> 从另外一个角度也可以认为协程的concurrency问题少一些，毕竟是自己定义协作方式，主动让出资源。
 
-[reentrance func](https://en.wikipedia.org/wiki/Reentrancy_(computing))
+[fiber的调度](The fibers in a thread are coordinated by a fiber manager. Fibers trade control cooperatively, rather than preemptively: the currently-running fiber retains control until it invokes some operation that passes control to the manager. Each time a fiber suspends (or yields), the fiber manager consults a scheduler to determine which fiber will run next.)通过fiber_manager管理，当fiber执行yield或者suspend等让出控制权的操作时，manager就会调度下一个fiber执行。具体的调度算法可以有多重，继承自algorithm类：
 
-[condition value](http://mysql.taobao.org/monthly/2017/01/01/)
+```cpp
+struct algorithm {
+    virtual ~algorithm();
+    virtual void awakened( context *) noexcept = 0;
+    virtual context * pick_next() noexcept = 0;
+    virtual bool has_ready_fibers() const noexcept = 0;
+    virtual void suspend_until(        std::chrono::steady_clock::time_point const&) noexcept = 0;
+    virtual void notify() noexcept = 0;
+};
+```
+
+> Boost:Fiber需要C++11的支持
