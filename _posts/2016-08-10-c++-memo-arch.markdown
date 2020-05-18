@@ -10,11 +10,11 @@ typora-root-url: ../../layamon.github.io
 
 * TOC
 {:toc}
-了解C++运行时的内存管理，能深入的了解你的程序实际的操作，是定位问题所在以及进行调优基本。本文作者根据个人的了解简述c++运行时的内存布局，以及一些需要了解的点。
+了解C++运行时的内存管理，能深入的了解你的程序实际的操作，是定位问题所在以及进行调优基本。本文作者根据个人的了解简述c++运行时的内存布局，希望能有帮助。
 
-# C++内存布局
+# 进程内存布局
 
-从如下一个简单的代码开始分析。
+如下一个简单的代码：
 
 ```c
 #include <stdio.h> 
@@ -24,40 +24,34 @@ int main(void)
 }
 ```
 
-通过`size`命令，我们知道文件的布局如下所示，分为三部分：text/data/bss。而当代码运行起来，这三部分就是进程所占地址空间的全局区域，另外加上栈和堆就是一个应用进程的整体布局。下面就分别从这几部分进行梳理。
+通过`size`命令，我们知道文件的布局如下所示，分为三部分：text/data/bss；当代码运行起来，这三部分就是进程所占地址空间的全局区域，另外加上stack、heap以及可能的mmap内存就是一个**应用进程的内存布局，如下图所示**
 
-![image-20200210155950568](/image/cpp-memo/20200210-proglayout.png)
+![Flexible Process Address Space Layout In Linux](/image/cpp-memo/linuxFlexibleAddressSpaceLayout.png)
 
-> 这里只是概念图，而且是虚拟地址空间，地址由下向上变大；stack是向下增长，在stack之上是kernelspace；
->
-> 实际上[heap，stack的起始地址是随机的](https://manybutfinite.com/post/anatomy-of-a-program-in-memory/)，因为一旦地址固定，容易被被不法人员利用；
->
-> 另外在Free部分，会包含mmap的地址空间，起始地址同样是随机的。
+这里是虚拟地址空间，地址由下向上变大；stack是向下增长，在stack之上是kernel space；实际上[heap，stack的起始地址是随机的](https://manybutfinite.com/post/anatomy-of-a-program-in-memory/)，因为一旦地址固定，容易被被不法人员利用；另外在Free部分，会包含mmap的地址空间，起始地址同样是随机的。
 
-**data & bss**
+## data & bss
 
 > bss: block started by symbol
 
 bss保存的是没初始化的全局变量，这段内存是匿名的；
 
-data是初始化的全局变量，这段不是匿名的，与binary文件的相应位置对应，但是是private mmap，因此对这段空间的修改不会flush到二进制中。
+data是初始化的全局变量，这段不是匿名的，与binary文件的相应位置进行映射，但是是private mmap，因此对这段空间的修改不会flush到二进制中。
 
-**text（代码段）**
+## text
 
 text就是代码段。对于代码段，我们需要了解代码是如何从code到机器指令的？如[下图](https://www3.ntu.edu.sg/home/ehchua/programming/cpp/gcc_make.html)所示，中间有4个步骤：
 
-1. Preprocessor：宏展开，引用头文件；
-2. Compiler：源代码转成汇编代码；
-3. Assembler：将汇编代码转成二进制代码文件；
-4. Linker：将多个目标文件和库文件进行链接，生成一整个可执行文件（注意这里的库文件分为静态库和动态库）。
+1. **Preprocessor**：宏展开，引用头文件；
+2. **Compiler**：源代码转成目标CPU的汇编代码；
+3. **Assembler**：将汇编代码转成二进制代码文件；
+4. **Linker**：将多个目标文件和库文件进行链接，生成一整个可执行文件（注意这里的库文件分为静态库和动态库）。
 
 ![img](../image/cpp-memo/GCC_CompilationProcess.png)
 
-其中在第4步中，如果是静态库那么每个可执行文件中都会有一个静态库的代码拷贝。这样最终的可执行文件就会比较臃肿；因此，提出了另一个动态（共享）库的链接方式，基于动态库的链接并不会将库代码整合到可执行文件中，而是在可执行文件执行的时候，如果调用了动态库，那么才进行加载。这样可执行文件比较小，并且可以动态更新模块，更加灵活；但是由于具体调用的时候需要对函数入口进行**相对寻址**，这样效率上比静态库会慢一些；而且动态库是在系统中单独存放，存在被人误删等异常操作，从而影响可执行文件的稳定。
+其中在第4步中，如果是静态库那么每个可执行文件中都会有一个静态库的代码拷贝。这样最终的可执行文件就会比较臃肿；因此，提出了另一个动态（共享）库的链接方式；具体调用的时候需要对函数入口进行**相对寻址**，这样效率上比静态库可能会慢一些；
 
-**动态连接库的系统共享**
-
-在Linux中，比如libc.so就是一个常用的动态库，该动态库被系统大多数进程共享使用。在链接过程中，可执行文件中会创建一个**符号映射表**。在app执行的时候，OS将控制权先给`ld.so`，而不是先给app。`ld.so`会找到并引入的lib；然后将控制权转给app。通过以下命令，可看到ld搜索库文件的路径。
+在Linux中，比如libc.so就是一个常用的动态库，该动态库被系统大多数进程共享使用。在链接过程中，可执行文件中会创建一个**符号映射表**。在app执行的时候，OS将控制权先给`ld.so`，而不是先给app。`ld.so`会找到并引入lib；然后将控制权转给app。通过以下命令，可看到ld搜索库文件的路径。
 
 ```bash
 # ld --verbose | grep SEARCH_DIR | tr -s ' ;' \\012
@@ -71,17 +65,19 @@ SEARCH_DIR("=/lib")
 SEARCH_DIR("=/usr/lib")
 ```
 
-> 在写MakeFile的时候，常常在文件中定义了`LDFLAGS`变量(描述定义了使用了哪些库，以及相应的参数)。但是最后连接的时候，将`*.o`和`LDFLAGS`进行连接，出现undefine-reference问题，因为库中明明有这些符号，但是却没有找到，奇怪了，原因如下：
+> *NOTE1*：在写MakeFile的时候，常常在文件中定义了`LDFLAGS`变量(描述定义了使用了哪些库，以及相应的参数)。但是最后连接的时候，将`*.o`和`LDFLAGS`进行连接，出现undefine-reference问题，因为库中明明有这些符号，但是却没有找到，奇怪了，原因如下：
 >
 > **在UNIX类型的系统中，编译连接器，当命令行指定了多个目标文件，连接时按照自左向右的顺序来搜索外部函数的定义。也就是说，当所有调用这个函数的目标文件名列出后，再出现包含这个函数定义的目标文件或库文件。否则，就会出现找不到函数的错误，连接是必须将库文件放在引用它的所有目标文件之后**
 
-对于动态库的全局代码段，每个进程维护通过相对寻址来执行。而对于动态库中的非常量全局变量不是共享的，每个进程一个拷贝。
+> *NOTE2*：对于动态库的全局代码段，每个进程维护通过相对寻址来执行。而对于动态库中的非常量全局变量不是共享的，每个进程一个拷贝。
 
-**stack**
+## stack
 
 栈内的变量一般就是在函数内部声明的，或者是函数的形参。其作用域也是在**本次调用**内部可见。但是对于static变量，那么就是多次调用都可见。
 
-**heap**
+stack与函数的执行相关，[更好的理解栈应与函数的执行结合看](https://manybutfinite.com/post/journey-to-the-stack/)。
+
+## heap
 
 heap一般就是动态申请的空间的位置。一般有两种动态空间申请的方法：new/malloc。
 
@@ -108,53 +104,17 @@ C++的初始化和赋值是两码事，类对象的引用类型以及const类型
 
 值得注意的是，如果类的成员变量有和资源相关的类型，比如堆内存、文件句柄等；默认的拷贝构造函数只是提供类似memcpy的按位进行拷贝，通常称为浅拷贝（shallow copy），这时需要自己实现拷贝构造函数实现深拷贝。值得注意的是，这类拷贝构造函数一般比较重，对于一些场景可能有性能问题，比如作为函数返回值。在c++11中，引入了右值引用，同时类也有默认的移动构造函数。
 
+## mmap
+
+上面的data区域， 我们提到了private mmap，这是二进制可执行文件的部分映射；对于读写文件，我们也可以通过mmap进行文件读写；mmap是将page cache中映射到user space中，这样对文件的读写可以直接变成内存操作；但是会带来缺页换页的开销。
+
+TODO
+
 # 右值引用(C++11)
 
-## **std::move**
+在C++11标准中吗，添加了新的构造函数类型——移动构造函数；其参数为一个**右值引用**类型，如下：
 
-移动构造函数是相对于拷贝构造函数而言的，在C++11标准中添加的新的构造函数类型。其参数为一个**右值引用**类型，要说明移动构造函数，首先我们来了解一下C++11中对值类型的区分。
-
-![image-20200210101826672](/Users/liuyangming/layamon.github.io/image/cpp-memo/20200210-c++11value.png)
-
-> 关于左值和右值具体的判断很难归纳，就算归纳了也需要大量的解释。
-
-在C++中，广泛被认可的说法是可以取地址的、有名字的就是左值；不能取地址、没有名字的就是右值。由于右值通常没有名字，在C++11中，通过**右值引用**来找到他的存在，区别于常规引用（左值引用），用`&&`来标识，如下：
-
-```c++
-T && a = returnRvalue();
-```
-
-右值引用和左值引用都属于引用，只是一个别名，其不拥有绑定对象的内存，不存在拷贝的开销；只不过一个具名对象的别名，一个时匿名对象的别名。
-
-使用右值引用的好处是将本将要消亡（返回值在函数结束后，过了自己的生命期，这就是一种**亡值**）的变量重获新生，并且相比于`T a = returnRvalue();`，少了重新析构与构造的代价。
-
-值得注意的是，右值引用是C++11标准的；在C++98中，左值引用无法引用右值的。而**常量左值引用**是一个万能的引用类型，如下编译是没有问题的，但是之后该变量只能是只读的。
-
-```c++
-const T & a = returnRvalue();
-```
-
-这样在C++98中，通常我们使用常量引用类型作为函数参数，可以避免函数传递右值时的析构构造代价，如下：
-
-```c++
-void func(const T & a){
-	// do something
-}
-func(returnRvalue());
-```
-
-在C++11中，可以直接使用右值引用作为参数：
-
-```c++
-void func(T && a){
-	// do something
-}
-func(returnRvalue());
-```
-
-在C++11中，标准库<utility>中提供了一个函数`std::move`，该函数可认为是一个强制类型转换，将左值转换为右值。move结合移动构造函数可以应用在即将消亡的大对象的移动中，如下：
-
-```c++
+```cpp
 class BigObj1 {
 public:
   BigObj1(BigObj1 && b1):
@@ -165,10 +125,51 @@ public:
   
   int* c;
 }
-class BigObj2 {
-  // ...
-}
+```
 
+而什么是右值呢？值类型的分为左值和右值，广泛被认可的说法是**可以取地址的、有名字**的就是左值；**不能取地址、没有名字**的就是右值。
+
+![image-20200210101826672](/image/cpp-memo/20200210-c++11value.png)
+
+> 关于左值和右值具体的判断很难归纳，就算归纳了也需要大量的解释。
+
+由于右值通常没有名字，在C++11中，通过**右值引用**（加一个别名）来找到他的存在；区别于常规引用（左值引用），用`&&`来标识，如下：
+
+```c++
+T && a = returnRvalue();
+```
+
+右值引用和左值引用都属于引用，只是一个别名，其不拥有绑定对象的内存，不存在拷贝的开销；只不过一个具名对象的别名，一个时匿名对象的别名。
+
+> 值得注意的是，右值引用是C++11标准的；在C++98中，左值引用无法引用右值的，而**常量左值引用**是一个万能的引用类型，如下编译是没有问题的，但是之后该变量只能是只读的。
+>
+> ```cpp
+> const T & a = returnRvalue();
+> ```
+>
+> 这样在C++98中，通常我们使用常量引用类型作为函数参数，可以避免函数传递右值时的析构构造代价，如下：
+>
+> ```cpp
+> void func(const T & a){
+> 	// do something
+> }
+> func(returnRvalue());
+> ```
+
+使用右值引用的一个好处是将本将要消亡（返回值在函数结束后，过了自己的生命期，这就是一种**亡值**）的变量重获新生，并且相比于`T a = returnRvalue();`，少了重新析构与构造的代价，如下直接使用右值引用作为参数：
+
+```c++
+void func(T && a){
+	// do something
+}
+func(returnRvalue());
+```
+
+## std::move
+
+该函数可认为是一个强制类型转换（`static_cast<T&&>()`），将左值转换为右值。move结合移动构造函数可以应用在即将消亡的大对象的移动中，如下：
+
+```c++
 class ResouceManager {
 public:
   ResourceManager(ResourceManager && r):
@@ -192,15 +193,29 @@ int main() {
 }
 ```
 
-在gettemp返回时，本来即将消亡了ResourceManager通过ResourceManager的移动构造函数转移给了新的ResourceManager对象，而原ResourceManager中的成员变量通过std::move强制转换为右值引用，同样通过相应的移动构造函数进行了移动。**这样通过std::move保证了移动语义向成员变量的传递**。
+在gettemp返回时，本来即将消亡了ResourceManager通过ResourceManager的移动构造函数转移给了新的ResourceManager对象，而原ResourceManager中的成员变量通过std::move强制转换为右值引用，同样通过相应的移动构造函数进行了移动。
 
-因此，在编写类的移动构造函数时，注意使用std::move来转换资源类型的成员变量，比如堆内存，文件句柄等。
+> NOTE: 在程序中，如果我们确定某个对象将要放弃其拥有的资源，通过`std::move`将其变成右值，从而可以调用移动构造函数进行资源转移。
 
-在C++11中，会有默认的拷贝构造函数和移动构造函数，如果需要自己实现的话，拷贝构造函数和移动构造函数必须要一起提供，否则就只有一种语义。一般来说，很少有类只有一种语义，一般只有移动类语义的都是一些资源类的对象，比如智能指针里的`unique_ptr`。
+**这样通过std::move保证了移动语义向成员变量的传递**；因此，在编写类的移动构造函数时，注意使用std::move来转换资源类型的成员变量，比如堆内存，文件句柄等。
+
+在C++11中，会有默认的拷贝构造函数和移动构造函数，如果需要自己实现的话，拷贝构造函数和移动构造函数必须要一起提供，否则就只有一种语义。
+
+> 一般来说，很少有类只有一种语义，而智能指针里的`unique_ptr`确实就只有一种语义，由于其没有拷贝的语义，导致之前不能将unique_ptr放到vector中，因为vector扩展的时候需要拷贝其中的对象。
+>
+> 而C++11有了移动语义，那么vector可以直接使用移动的方式扩展，这时就可以将unique_ptr放在vector中了，大大方便的编程。
 
 另外，为保证移动的过程中不会因为抛出异常而中断，可在移动构造上加一个`noexcept`关键字，并使用std::move_if_noexcept，当有except时，降级为拷贝构造函数，这是一种牺牲性能保证安全的做法。
 
-> 值得注意的是，编译器会默认进行返回值的优化（Return Value Optimization），可以通过`-fno-elide-constructors`关闭这个优化。
+> 关于返回值，值得注意的是，编译器会默认进行返回值的优化（Return Value Optimization）：
+>
+> ```cpp
+>    -fno-elide-constructors
+>        The C++ standard allows an implementation to omit creating a
+>        temporary which is only used to initialize another object of the
+>        same type.  Specifying this option disables that optimization, and
+>        forces G++ to call the copy constructor in all cases.
+> ```
 
 ## **std::forward**
 
@@ -222,7 +237,9 @@ int main() {
 
 # RAII
 
-C++代码应该最头疼的一个问题，如下一个简单的例子。
+**"RAII: Resource Acquisition Is Initialization"**，这时OOD中的一个约定，意思是资源的获取与释放应该和对象的生命周期绑定，资源不限于内存资源，包括file handles, mutexes, database connections, transactions等。这样确保资源不会泄露，最常见的资源就是内存。
+
+我们分配内存后要判断，内存是否分配成功，失败就结束该程序；其次要注意**野指针/悬垂指针问题（Wild pointer/Dangling pointer）**：指针没有初始化，或者指针free后，没有置NULL。如下一个简单的例子。
 
 ``` c
 typedef char CStr[100];
@@ -256,12 +273,7 @@ int main()
 
 当`delete a_string`的时候,就会发生内存泄露，最终内存耗尽（memory exhausted）；
 
-首先我们分配内存后要判断，内存是否分配成功，失败就结束该程序；其次要注意**野指针/悬垂指针问题（Wild pointer/Dangling pointer）**：指针没有初始化，或者指针free后，没有置NULL。
-
-**"RAII: Resource Acquisition Is Initialization"**
-意思就是任何资源的获取，不管是不是在初始化阶段，都是被一个对象获得，而相应的释放资源就在该对象的析构函数中,资源不限于内存资源，包括file handles, mutexes, database connections, transactions等。
-
-智能指针就是基于RAII的思想实现的。
+在C++11中，提供了智能指针，其就是基于RAII的思想实现的。
 
 > Smart pointers are used to make sure that an object is deleted if it is no longer used (referenced).
 
