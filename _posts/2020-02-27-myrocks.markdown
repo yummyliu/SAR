@@ -123,8 +123,8 @@ storage/rocksdb/terarkdb/utilities/merge_operators/uint64add.cc <<GLOBAL>>
 
 Compact是lsm-tree的一个关键操作，之前说过了。rocksdb默认的策略是Leveled Compaction，用在sst file compact中；但是不同层触发条件不同：
 
-+ level0：level0_file_num_compaction_trigger，也是唯一一层允许overlap。
-+ Total file size for other
++ level0：唯一一层允许sstfile的keyrange有overlap，基于该层文件个数level0_file_num_compaction_trigger。
++ 其他：Total file size for other
 
 > Universal compaction(sized-tiered)可认为用在flush memtable中；多个overlap的memtable合并为一个ssttable。？
 
@@ -397,6 +397,17 @@ RocksDB事务提交时保证数据的原子写的结构，将事务数据整体�
 + write_prepared：提前到2pc的prepared阶段进行写入，但是判断事务可见性的逻辑更加复杂，并且回滚逻辑复杂，但是减轻了commit的负担。
 
 > 关于write_prepared的事务可见性判断，参考http://mysql.taobao.org/monthly/2018/08/02/
+
+## 2PC
+
+```
+    // currently only optimistic transactions use callbacks
+    // and optimistic transaction do not support 2pc
+```
+
+> PreparedHeap prepared_txns_;
+>
+> The TransactionDB also keeps track of a min heap of all log numbers containing a prepared section. When a transaction is 'prepared' its WriteBatch is written to a log, this log number is then stored in the transaction object and subsequently the min heap. When a transaction is committed its log number is deleted from the min heap, but it is not forgotten! It is now the duty of each memtable to keep track of the oldest log it needs to keep around until his is successfully flushed to L0.
 
 ## Replication
 
