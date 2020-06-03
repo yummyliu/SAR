@@ -9,22 +9,29 @@ typora-root-url: ../../layamon.github.io
 ---
 * TOC
 {:toc}
-# 简述
+> 本文基于5.7版本代码
+
+# InnoDB的线程锁简述
 
 线程锁的对象是程序运行过程中bufferPool中的page，或其他cache中的对象；有两种类型：mutex和rw_lock。
 
 + mutex：基于系统提供的原子操作，用在内存共享结构的串行访问上，比如：
 
-  + Dictionary Cache
-  + Transaction System的并发访问；比如，在修改indexpage前，在Transaction system的header中写入一个undo log entry。
-  + Rollback segment mutex，Rollback segment header的并发访问，当需要在回滚段中添加一个新的undopage时，需要申请这个mutex。
-  + 一些共享的对象：lock_sys_mutex、trx_sys_mutex、trx_mutex等等。
+  > 关于Mutex具体的实现方式有很多种，见文件ut0mutex.h；想了解更多这里有一篇好文章——[InnoDB mutex 变化历程](http://baotiao.github.io/2020/03/29/innodb-mutex/)。
 
-+ rw_lock：rw_lock是InnoDB实现的读写锁，不依赖与pthread_rwlock_t。
+  + free、LRU、flush List的互斥
+  + buf_block_t的mutex，该结构是page在内存的元信息，包括io_fix、state、buf_fix_count等，更新这些信息，需要互斥；
+  + 一些共享的对象：lock_sys_mutex、trx_sys_mutex、trx_mutex等等：
+    + Dictionary Cache
+    + Transaction System的并发访问；比如，在修改indexpage前，在Transaction system的header中写入一个undo log entry。
+    + Rollback segment mutex，Rollback segment header的并发访问，当需要在回滚段中添加一个新的undopage时，需要申请这个mutex。
 
-  > [pthread_rwlock_t](https://code.woboq.org/userspace/glibc/nptl/pthread_rwlock_common.c.html)是基于futex实现的blocking rwlock，适合于读多写少的场景。
++ rw_lock：rw_lock是InnoDB实现的读写锁，比起mutex，rwlock有两种模式，用在需要shared访问的场景中，比如：
 
-本文我们主要讨论rwlock，有两种模式S/X（5.7引入一个新模式SX）。三个模式的兼容关系如下：
+  > InnoDB的rw_lock不依赖[pthread_rwlock_t](https://code.woboq.org/userspace/glibc/nptl/pthread_rwlock_common.c.html)，其是基于futex实现的blocking rwlock，适合于读多写少的场景。
+
+  + buf_page_get_gen ->**hash_lock** = buf_page_hash_lock_get(buf_pool, page_id);
+  + buf_block_t中还有一个lock，这对应的是frame，这是page在内存的地址；Page的读写需要加rwlock，本文我们主要讨论rwlock，有两种模式S/X（5.7引入一个新模式SX）。三个模式的兼容关系如下：
 
 ```c
 /*
@@ -36,11 +43,15 @@ typora-root-url: ../../layamon.github.io
  */
 ```
 
-这个新加的SX锁，从功能上可以由一个S锁加一个X锁代替。但是这样需要额外的原子操作，因此将两个整个为一个SX锁。当持有SX锁时，申请X锁需要先`x-lock`，后`sx-unlock`;'。当持有X锁时，X锁可也降级为SX锁，而不需要先`sx-lock`，后`x-unlock`。
+![image-20200106154013692](/image/innodb-overview/ahi.png)
 
-InnoDB的rwlock的具体实现基于64bit的lock_word之上的原子操作或者mutex，一般来说是基于原子操作；如下实例代码：
+当我们访问BufferPool中的一个Page时，首先获取**hash_lock**，然后获取**buf_block_t->mutex**，进而修改元信息，然后释放**buf_block_t->mutex**，获取**buf_block_t->lock**，即rwlock，开始读写page。
 
-> 如果基于mutex，mutex的具体实现方式也很多种，这可以作为另一个话题了,详见`ib_mutex_t`的定义方式。
+# rw_lock与Btree
+
+InnoDB的rwlock的具体实现基于64bit的lock_word之上的原子操作，如下实例代码：
+
+> 也可基于mutex实现rwlock，这可以作为另一个话题了,详见`ib_mutex_t`的定义方式。
 
 ```cpp
 /** Two different implementations for decrementing the lock_word of a rw_lock:
@@ -53,31 +64,6 @@ ALWAYS_INLINE
 bool rw_lock_lock_word_decr(rw_lock_t *lock, /*!< in/out: rw-lock */
                             ulint amount,    /*!< in: amount to decrement */
                             lint threshold)  /*!< in: threshold of judgement */
-{
-#ifdef INNODB_RW_LOCKS_USE_ATOMICS
-  lint local_lock_word;
-
-  os_rmb;
-  local_lock_word = lock->lock_word;
-  while (local_lock_word > threshold) {
-    if (os_compare_and_swap_lint(&lock->lock_word, local_lock_word,
-                                 local_lock_word - amount)) {
-      return (true);
-    }
-    local_lock_word = lock->lock_word;
-  }
-  return (false);
-#else  /* INNODB_RW_LOCKS_USE_ATOMICS */
-  bool success = false;
-  mutex_enter(&(lock->mutex));
-  if (lock->lock_word > threshold) {
-    lock->lock_word -= amount;
-    success = true;
-  }
-  mutex_exit(&(lock->mutex));
-  return (success);
-#endif /* INNODB_RW_LOCKS_USE_ATOMICS */
-}
 ```
 
 为了避免writethread被多个readthread饿死，writethread可以通过排队的方式阻塞新的readthread，每排队一个writethread将lockword减X_LOCK_DECR（新的SX锁等待时，减X_LOCK_HALF_DECR）。在wl6363中，标明了加了SX锁后lock_word不同取值的意思；其中lock_word=0表示加了xlock；lock_word= 0x20000000没有加锁；
@@ -85,13 +71,6 @@ bool rw_lock_lock_word_decr(rw_lock_t *lock, /*!< in/out: rw-lock */
 另外，InnoDB中某些需要rwlock同步的function1可能还会调用其他需要同步的funtion2，如果恰好funtion1和function2对同一个对象加锁，这时就需要锁支持可重入（recursive），而InnoDB的rwlock同样是支持可重入。
 
 rw_lock可以用在需要并发读写的结构上，比如Btree索引，文件空间管理等；那么，本文主要描述Btree与rw_lock的互动。
-
-# Btree与rw_lock
-
-在InnoDB中，Btree有两类锁对象
-
-+ `dict_index_t`，索引在内存的元数据；
-+ `block`，数据页在内存的对象；
 
 在Btree扫描过程中，首先在`dict_index_t`上加相应模式的rwlock；然后初始化一个cursor，对btr进行搜索，最终cursor停在我们要求的位置；取决于加锁类型、扫描方式等条件，最终cursor**可能**会将扫描路径上的某些block加锁。
 
