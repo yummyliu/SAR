@@ -299,7 +299,7 @@ Query OK, 0 rows affected (13.10 sec)
 
       1. 若slave-preserve-commit-order打开，则要求applier线程有序进队列，保证提交顺序。
 
-   2. **FLUSH**：binlog event从THD cache转移到binlog，执行binlog write；engine此时会将事务日志刷盘，此时事务状态为prepare。调用栈
+   2. **FLUSH**：binlog event从THD cache转移到binlog，执行binlog write；**InnoDB此时会将事务日志刷盘**，此时事务状态为prepare。调用栈
 
       1. `ha_flush_logs`：引擎层sync；
 
@@ -309,16 +309,18 @@ Query OK, 0 rows affected (13.10 sec)
          --log_buffer_flush_to_disk
          ```
 
+         > 在5.6中，innodb在Prepare阶段就会将redolog刷盘；5.7中，将redolog的刷盘退后到group commit的flush阶段，这样redolog也可以实现类似组提交的优化。
+
       2. 对队列中每个事务生成GTID。
 
-      3. 取LOCK_log锁，并将IO_CACHE(session cache)中的内容复制到binlog中。
+      3. **取LOCK_log锁**，并将IO_CACHE(session cache)中的内容复制到binlog中。
 
       4. prepared XIDs的计数器递增
 
-   3. **SYNC**：取决于sync_binlog参数，将组内事务日志同步到磁盘中。执行binlog fsync。此时MySQL的事务可以认为是提交了。按照recovery逻辑，engine中prepare会前滚。
+   3. **SYNC**：由leader**取LOCK_sync锁**，取决于sync_binlog参数，将组内事务日志同步到磁盘中，执行binlog fsync。此时MySQL的事务可以认为是提交了。
 
-   4. **COMMIT**：由leader取LOCK_commit锁，并将所有事务在engine 按序提交（如果binlog_order_commits=0，那么该步骤并行执行，因此binlog的提交顺序和引擎层可能不一样；默认是1）；此处大概的执行逻辑：
-
+   4. **COMMIT**：由leader**取LOCK_commit锁**，并将所有事务在engine 按序提交（如果binlog_order_commits=0，那么该步骤并行执行，因此binlog的提交顺序和引擎层可能不一样；默认是1）；此处大概的执行逻辑：
+   
       1. 调用after_sync回调
       2. 更新dependency_tracker中的max_committed；（Logical Clock用）
       3. ha_commit_low
@@ -326,13 +328,23 @@ Query OK, 0 rows affected (13.10 sec)
       5. 更新gtids
       6. prepared XIDs递减
 
-以上，是笔者对MySQL事务提交过程的初步了解，有很多逻辑分支并没有深入去了解，如果读者有发现问题，希望能指正出来。
+以上的步骤转换过程都是通过change_stage进行加锁放锁：
+
+![image-20200603095424073](/image/mysql-binlog/image-20200603095424073.png)
+
+1. 先申请进入下一个阶段，并返回自己是否是leader（`bool leader= m_queue[stage].append(thd);`）；
+2. 释放上一阶段的锁
+3. 申请下一阶段的锁；
+
+**这样保证了事务提交的顺序（想想函数入口的名字：order_commit）。**
 
 > Q&A
 >
-> InnoDB的事务状态有个特殊的：TRX_STATE_COMMITTED_IN_MEMORY. 关于InnoDB如何在违反WAL的前提下，还能保证数据一致?
+> InnoDB的事务状态有个特殊的：**TRX_STATE_COMMITTED_IN_MEMORY**. InnoDB的commit可以不用刷盘。
 >
-> 基于recovery逻辑，已经不会产生数据丢失；这样，InnoDB的commit可以不用刷盘也可以。事实上确实是这样的，在引擎层提交时，调用`trx_commit_in_memory` 在内存中就将锁释放了，然后才基于参数**`innodb_flush_log_at_trx_commit`**判断是否进行刷redo（*trx_flush_log_if_needed*）。
+> 在引擎层提交时，调用`trx_commit_in_memory` 在内存中就将锁释放了，然后才基于参数**`innodb_flush_log_at_trx_commit`**判断是否进行刷redo（*trx_flush_log_if_needed*）。
+>
+> 可以看出InnoDB的redolog，似乎违反了WAL，那么如何保证数据一致？InnoDB可认为是与MySQL强绑定，事务的提交信息已经写入binlog了，recover的时候sql层先读取最后一个binlog文件（之前的保证已经提交）中的xid，构造一个`XID *const xid_list`，传入引擎层的ha_recover对应的函数——innobase_xa_recover（rocksdb_recover），innoDB中的recovery逻辑，会根据该list，判断是否提交事务保证不会产生数据丢失。
 
 ### BinLog Cache
 
