@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Binlog源码解析与思考
+title: MySQL5.7——不得不了解的Binlog
 date: 2019-06-11 18:28
 header-img: "img/head.jpg"
 categories: 

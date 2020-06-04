@@ -1,6 +1,6 @@
 ---
 layout: post
-title: InnoDB源码——LogBuffer与事务提交过程
+title: InnoDB——LogBuffer与事务提交过程
 date: 2019-06-19 16:49
 header-img: "img/head.jpg"
 categories: 

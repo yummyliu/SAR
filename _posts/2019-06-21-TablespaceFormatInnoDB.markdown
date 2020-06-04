@@ -1,6 +1,6 @@
 ---
 layout: post
-title: InnoDB的数据组织
+title: InnoDB——Data Layout
 date: 2019-06-21 09:47
 header-img: "img/head.jpg"
 categories: 

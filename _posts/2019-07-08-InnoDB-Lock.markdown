@@ -1,6 +1,6 @@
 ---
 layout: post
-title: InnoDB的Btree与rwlock互动解析
+title: InnoDB——Btree与rwlock的互动
 date: 2019-07-08 16:35
 header-img: "img/head.jpg"
 categories: 
@@ -79,6 +79,10 @@ rw_lock可以用在需要并发读写的结构上，比如Btree索引，文件�
 + 查询操作，基于该cursor，会根据一致性锁定读还是非锁定读，决定创建一个readview还是加意向锁；如果是一致性读的话，MySQL层通过可物化的cursor进行get_next，就是`row_search_mvcc`。
 
 + 修改操作，在扫描过程中该加的锁已经加好；在返回的cursor处进行操作即可。
+
+> 为保证Btree并发加锁访问时，不产生死锁，这里加锁采用Lock Coupling的方式。Lock Coupling严格保证顺序，避免死锁。
+>
+> retaining the latch on the parent node until the child node is latched. 
 
 ## 加锁入口
 

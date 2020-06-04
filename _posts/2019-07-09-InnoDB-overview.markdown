@@ -1,6 +1,6 @@
 ---
 layout: post
-title: InnoDB综述
+title: InnoDB——综述
 date: 2019-07-09 17:06
 header-img: "img/head.jpg"
 categories: 

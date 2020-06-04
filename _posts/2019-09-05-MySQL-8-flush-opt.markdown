@@ -1,6 +1,6 @@
 ---
 layout: post
-title: REDO(WAL)在MySQL8中无锁优化解析
+title: MySQL8——REDO无锁重构剖析
 date: 2019-08-05 20:45
 header-img: "img/head.jpg"
 categories: 

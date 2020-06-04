@@ -1,6 +1,6 @@
 ---
 layout: post
-title: MySQL并行复制（MTS）解析
+title: MySQL5.7——并行复制（MTS）解析
 date: 2020-01-29 13:40
 categories:
   - MySQL

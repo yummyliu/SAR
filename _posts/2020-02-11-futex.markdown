@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Concurrency in C++11
+title: C++11——Concurrency
 date: 2020-02-11 16:50
 categories:
   - Linux

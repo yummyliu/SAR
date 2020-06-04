@@ -1,6 +1,6 @@
 ---
 layout: post
-title: MySQL的TABLE_SHARE简析（5.7）
+title: MySQL5.7——TABLE_SHARE简析
 date: 2019-10-02 16:44
 categories:
   - MySQL
