@@ -10,6 +10,8 @@ typora-root-url: ../../layamon.github.io
 
 * TOC
 {:toc}
+本文结合本站另一个文章——《Btree与rwlock的互动》，一起看更好。
+
 # Mini-transaction
 
 ![image-20191226122700730](/image/innodb-mtr/mtr.png)
