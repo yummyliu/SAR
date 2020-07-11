@@ -26,7 +26,7 @@ typora-root-url: ../../layamon.github.io
 
 由此可以看出，write_commit方式的事务提交，MemTable中的都是提交的数据，判断事务可见性逻辑简单；但是commit阶段需要做的事情太多，成为系统吞吐瓶颈。因此，RocksDB提出了write_prepared的写入策略，带来的复杂性主要是判断数据记录（record）的可见性复杂了，原来MemTable中全是commit的数据，而现在既有Prepared也有commited。如下文。
 
-# write_prepared相关结构
+# write_prepared相关结构（5.18）
 
 要解决问题是：将写MemTable提前到Prepare阶段，带来的问题就是MemTable中数据上的seq，并不知道这些seq是否提交了？
 
@@ -171,7 +171,7 @@ RocksDB的非锁定读也是通过MVCC实现，在读取的时候开启一个快
 
 核心就是**判断prepared_seq对应的commited_seq是否小于snapshot_seq**，细节就不展开，网上有关于可见性详细的描述。
 
-> Question 2：关于"TODO(myabandeh): include delayed_prepared_ in min_uncommitted"
+> Question 2：关于"TODO(myabandeh): include delayed_prepared_ in min_uncommitted" (已经fix了)
 >
 > 在`IsInSnapshot`，判断一个prep_seq标记的Record对snapshot_seq标记的snapshot是否可见。
 >
