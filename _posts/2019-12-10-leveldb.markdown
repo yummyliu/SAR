@@ -9,9 +9,9 @@ typora-root-url: ../../layamon.github.io
 ---
 * TOC
 {:toc}
-TransactionManager / LockManager / LogManager / AccessMethod是事务型存储引擎中的四个重要组成部分。其中，AccessMethod表示数据组织，例如我们常说的Btree。Btree的设计是基于HDD的；如今，存储介质的差异越来越大，因此对新的AccessMethod的研究也在不断进行。在本文中，我尝试总结下一个和Btree不同的存储结构——LSM-tree，包括四个部分：
+我们常说的Btree的设计是基于HDD的；如今，存储介质的差异越来越大，因此对新的AccessMethod的研究也在不断进行。在本文中，我尝试总结下一个和Btree不同的存储结构——LSM-tree，包括四个部分：
 
-1. 介绍accessmethod设计的RUM猜想；
+1. 介绍AccessMethod设计的RUM猜想；
 2. 回顾了经典的访问方法——Btree；
 3. 分享了对新流行的（1996年问世也不算新）的LSM-tree的学习；
 4. 通过了解X-Engine对LSM-tree的优化，加深理解。
@@ -60,9 +60,7 @@ LSM-tree(Log Struct Merge tree) 其中的Log思想来源于Log Structured FileSy
 >
 > 在原论文中，有个有趣的结论——The Five Minute Rule，即，若某页的访问频率>5min/次，那么可考虑将该页放到内存中。这要求我们在设计存储引擎时，要充分利用内存和外存的存储特点。
 
-在LSM-tree结构的存储引擎中，每一层可看做是一个有序的树结构，外存中时一个类似Btree的特殊结构，其中leafnode是压实的（没有free space）；并且是按照multi-page block进行组织，加上page是4kb，multi-page block是256kb，那么一个block里可以放64个连续的page，范围查询时可以直接读multi-page block。
-
-不同层的树会由专门的后台进程执行rolling merge**，先从C1取一个multi-page block放到C1-buffer中，其中包含若干个C1的leafnode；然后从C0的leafnode中取entry进行合并，将合并结果追加到C1后面，如下图；新合并的节点不会覆盖原节点，旧节点可用来恢复数据。
+在经典论文中，LSM-tree结构的存储引擎的每一层可看做是一个有序的树结构——一个类似Btree的特殊结构，其中leafnode是压实的（没有free space）；并且是按照multi-page block进行组织，加上page是4kb，multi-page block是256kb，那么一个block里可以放64个连续的page，范围查询时可以直接读multi-page block。不同层的树会由专门的后台进程执行**rolling merge**，先从C1取一个multi-page block放到C1-buffer中，其中包含若干个C1的leafnode；然后从C0的leafnode中取entry进行合并，将合并结果追加到C1后面，如下图；新合并的节点不会覆盖原节点，旧节点可用来恢复数据。
 
 ![Alt](/image/lsm-tree/1212-rollmerge.png)
 
@@ -73,9 +71,11 @@ LSM-tree(Log Struct Merge tree) 其中的Log思想来源于Log Structured FileSy
 
 由于LSM-tree更多的是一个概念设计，在实际的实现中，LSM-tree有不同的实现方式，比如LevelDB，RockDB，Hbase，Cassandra等。本文中，通过LevelDB的实现来了解一下LSM-tree结构的存储引擎。
 
+> 目前有很多新的研究，融合和两者的特点，比如[append-only btree(couchDB)](https://stackoverflow.com/questions/20816698/why-does-couchdb-use-an-append-only-b-tree-and-not-a-hamt)
+
 ## LevelDB
 
-当我们向levelDB中写一个`(k,v)`时，先在redolog中写一个logrecord；然后，将其插入到MemTable，那么写入就完成了；由于数据不要求落盘，可以看出LevelDB在写入上比Btree更加高效；而Memtable中的`(k,v)`由Compaction过程将其合并到磁盘的SSTable（Sort Sequence Table）中；
+当我们向LevelDB中写一个`(k,v)`时，先在redolog中写一个logrecord；然后，将其插入到MemTable，那么写入就完成了；由于数据不要求落盘，可以看出LevelDB在写入上比Btree更加高效；而Memtable中的`(k,v)`由Compaction过程将其合并到磁盘的SSTable（Sort Sequence Table(**S**tatic **S**orted **T**able)）中；
 
 Compaction主要完成两件事：归并排序和垃圾收集。一般策略有两种：
 

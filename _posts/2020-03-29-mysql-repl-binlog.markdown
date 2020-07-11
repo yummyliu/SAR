@@ -98,6 +98,10 @@ typora-root-url: ../../layamon.github.io
 
 关于配置个人操作不是很熟练，这里有个[脚本](https://github.com/Layamon/mysql-bash/blob/master/rpl_conf.sh)。
 
+> 如果是基于rowbase，那么在从库开启general-log也看不到查询
+>
+> ![image-20200610100627076](/image/mysql-binlog/image-20200610100627076.png)
+
 ## 基本介绍
 
 MySQL的GTID是全局事务ID，每个事务由GTID标识，在master上跟踪事务状态并在slave上应用。GTID具体就是由冒号连接的两个ID的组合：
@@ -245,6 +249,8 @@ SET @@SESSION.GTID_NEXT= '5fde1f05-9ef2-11e9-ba63-6c92bf69212a:99002410374'/*!*/
 + sequence_number = Transaction_ctx.sequence_number - MYSQL_BIN_LOG.max_committed_transactions.offset
 
 最后，在GroupCommit的commit阶段，将该Group中Transaction_ctx.sequence_number最大的更新到MYSQL_BIN_LOG.max_committed_transactions中。
+
+> mysqlbinlog \    --start-datetime="2010-11-20 00:00:00" \    --stop-datetime="2010-11-21 00:00:00" \
 
 #### Slave
 

@@ -8,164 +8,6 @@ typora-root-url: ../../layamon.github.io
 ---
 * TOC
 {:toc}
-> 本文类似于一个杂乱的笔记，记录认识myrocks过程中的问题
-
-在[from btree to lsm-tree](http://liuyangming.tech/12-2019/leveldb.html)中，我们了解到写B+-tree时，写一条记录就意味着写一个页；不考虑bufferpool的合并写和dwbuffer的写放大，在InnoDB中，如果业务负载随机写N条记录，最坏的情况下，就意味着要写N个页；这带来很大的**写放大**。另外，每个页中都有一些碎片空间，这些无用空间会浪费IO带宽，而针对这个，InnoDB中设计了Compressed Page；Compressed Page同样是要对齐存储（0~4kb对齐到4kb，4~8kb对齐到8kb，8~16kb对齐到16kb），只要对齐就会存在空闲空间。这又带来了**空间放大**。
-
-基于B+-tree的弊端以及目前存储介质的演化（HDD->SSD，iops更快，但是如果每次写的放大严重，那么会浪费ssd的写性能？），数据库存储引擎也出现了变革。其中LSM-tree目前获得了很多目光，MySQL中也可以集成LSM-tree架构的存储引擎——RocksDB，叫MyRocks。本文是作者对MyRocks学习的总结，也会不断在此更新新的认识，希望对想了解这个产品的同学有所帮助。
-
-> 这里关于硬件设备，搞明白几个概念：**电气接口**、**存储协议**、**存储介质**。
->
-> 当我们有一个主机，现在要接入外接设备，设备要插到主板上，需要该设备能够满足主板上的**电气接口（总线规范）**；插上去后，操作系统上安装相应设备的驱动，驱动中有设备的**存储协议**；之后的IO就封装成相应存储协议的命令，写到外存的**存储介质**上去。电气接口主要有SATA、SAS、PCIe；存储协议有AHCI、SCSI、NVMe；存储介质有NAND、3D-Xpoint。
->
-> ![image-20200227141415425](/image/2020-0227-nand.png)
-
-# RocksDB
-
-RocksDb是一个多版本的KV存储引擎（versioned key-value store）；相比于传统数据库以块为最小单位进行IO存储，RocksDB可更细粒度的存储，可认为最小的粒度是kv pair（`(userkey,seq,type) => uservalue`）；
-
-下图中省去了Index、BloomFilter、Block Cache和Column Family（下称CF）的概念，描述了RocksDB的读写路径：
-
-> 通过CF将(k,v)进行了逻辑上的分区，这样不同分区可以分别写自己的MemTable和SSTTable，但是共享同一个WAL；但是RocksDB保证**跨CF的的原子写**和**一致性读**快照，以及可以分别对不同CF进行挂载、删除与配置。
-
-![image-20200227180548341](/image/2020-0227-rocksdb-overview.png)
-
-在RocksDB中，写事务提交时只需要保证Log Record落盘即可，Data只需要复制到Active MemTable中，后续的数据落盘由FLush/Compact操作进行。
-
-相比于B+-tree在写放大和空间放大上的不足，LSM-tree能够通过合并随机写减少写放大，以及通过高效的压缩减少空间放大（对每一层可以选用不同的压缩算法）。如下表，进行了简单的对比：
-
-|            | InnoDB                               | RocksDB                                  |
-| ---------- | ------------------------------------ | ---------------------------------------- |
-| 点查       | 从上到下按照某个分支进行定位。       | 逐层查找，可以基于bloom filter进行过滤。 |
-| range scan | 直接按照leafnode的next指针进行遍历。 | 需要合并不同层的数据。                   |
-| delete     | 标记删除                             | 标记删除，tombstone；singledelete优化。  |
-
-目前RocksDB提供了基本的KV操作，对应的Key中保存了操作类型：
-
-```cpp
-// <user key, sequence number, and entry type> tuple.
-struct FullKey {
-  Slice user_key;
-  SequenceNumber sequence;
-  EntryType type;
-  
-  ...
-}
-// User-oriented representation of internal key types.
-enum EntryType {
-  kEntryPut,
-  kEntryDelete,
-  kEntrySingleDelete,
-  kEntryMerge,
-  kEntryRangeDeletion,
-  kEntryValueIndex,
-  kEntryMergeIndex,
-  kEntryOther,
-};
-```
-
-每种操作的接口带有相应的Option，比如这些基本操作：
-
-```cpp
-DB* db;
-Options options;
-options.create_if_missing = true;
-Status s = DB::Open(options, kDBPath, &db);
-assert(s.ok());
-
-s = db->Put(WriteOptions(), "key1", "value");
-assert(s.ok());
-std::string value;
-s = db->Get(ReadOptions(), "key1", &value);
-assert(s.ok());
-
-// Atomically apply a set of updates
-{
-  WriteBatch batch;
-  batch.Delete("key1");
-  batch.Put("key2", value);
-  s = db->Write(WriteOptions(), &batch);
-}
-```
-
-> PinnableSlice:
->
-> 将get的获取的value，将string换成PinnableSlice；如果数据已经在block cache中，可免去一次memcpy。
-
-除了基本KV操作外，RocksDB提供了了一些额外操作，关键的有：Merge和Compact。
-
-## Merge
-
-> Merge可看作是一个升级版的Put，Put直接给出key的新值，Merge会根据当前Val得到新值。
-
-为了减少read-modify-write时的额外IO代价，引入了Merge Operator。这是用户自定义的回调操作，用户将**增量更新**语义抽象在Merge操作中；
-
-Merge操作的具体执行时机可能在Get的时候，也可能在Compact清理的时候；这时Merge的操作对象可能已经累积不少了。要计算到Merge记录的val，需要向前追溯，直到找到该key的一个Put或者Delete记录；将Put的val和merge的val进行合并，最后得到正确的值；（这叫FullMerge）
-
-但有可能merge的链很长，这个操作就很耗时；为避免这个问题，用户的使用场景中，如果Merge语义能够级联（即，Merge的输出可以作为另一个Merge的输入），那么可以定义`PartialMerge`接口，这样可以提前对多个Merge操作进行部分合并成一个merge；减少了最后`FullMerge`时的merge量。将IO代价进行均摊，这样得到一个线性扩展的性能曲线。
-
-> `PartialMerge`
->
-> it should be known that PartialMerge() is an optional function, used to combine two merge operations (operands) into a single operand. For example, combining OP(k-1) with OPk to produce some OP', which is also a merge-operation type. 
-
-用户一般继承子类`AssociativeMergeOperator实现自己的逻辑，`AssociativeMergeOperator`将`FullMerge`和`PartialMere`合并为一个Merge，比如下这些Operator都有增量更新的特点。
-
-```cpp
-storage/rocksdb/terarkdb/utilities/merge_operators/bytesxor.h <<GLOBAL>>
-             class BytesXOROperator : public AssociativeMergeOperator {
-storage/rocksdb/terarkdb/utilities/merge_operators/string_append/stringappend.h <<GLOBAL>>
-             class StringAppendOperator : public AssociativeMergeOperator {
-storage/rocksdb/terarkdb/utilities/merge_operators/uint64add.cc <<GLOBAL>>
-             class UInt64AddOperator : public AssociativeMergeOperator {
-```
-
-## Compact
-
-Compact是lsm-tree的一个关键操作，之前说过了。rocksdb默认的策略是Leveled Compaction，用在sst file compact中；但是不同层触发条件不同：
-
-+ level0：唯一一层允许sstfile的keyrange有overlap，基于该层文件个数level0_file_num_compaction_trigger。
-+ 其他：Total file size for other
-
-> Universal compaction(sized-tiered)可认为用在flush memtable中；多个overlap的memtable合并为一个ssttable。？
-
-其实我们可以发现，由于L0的key是重叠的，那么L0到L1的Compact不能并发进行；这里通过sub-compaction进行优化，即，先收集文件信息，将单个文件按offset进行分割，最后每个range交由一个subCompact进行处理。
-
-> 见`ShouldFormSubcompactions`决定是否将当前的compact划分成 Sub-Compaction。
-
-rocksdb相比Btree类型，正式因为不需要in-place-update才能有较好的写入速度；但是也正是因为不in-place-update，就存在空间膨胀的问题；就需要进行空间收缩；类似于Vacuum，Compaction主要作用也是回收旧版本并清理已删除的数据；注意，由于Merge 记录的存在，会影响原来[Compact对旧数据的回收](https://github.com/facebook/rocksdb/wiki/Merge-Operator-Implementation#compaction)。关于Compact更详细的逻辑，决定等后面专门整理一篇。
-
-在rocksdb的Compact中，值得一提的是——在过滤数据的时候，可以定义Compaction filter，按照用户定义的逻辑，进行数据整理，比如删除过期（过期时间自定义）数据，转换数据内容等等；Compact filter只对普通value类型（未标记上delete mark）调用，对于merge类型，会在执行merge operator前调用Compaction filter。
-
-> flush可看作是一种特殊的Compact，但flush不会调用Compaction filter。
->
-> Before release 6.0, if there is a snapshot taken later than the key/value pair, RocksDB always try to prevent the key/value pair from being filtered by compaction filter so that users can preserve the same view from a snapshot, unless the compaction filter returns `IgnoreSnapshots() = true`. However, this feature is deleted since 6.0, after realized that the feature has a bug which can't be easily fixed. Since release 6.0, with compaction filter enabled, RocksDB always invoke filtering for any key, even if it knows it will make a snapshot not repeatable.
->
-
-Compactfilter的实现主要有三个接口：
-
-+ Filter
-
-+ FilterMergeOperand
-
-+ FilterV2：返回Decision对象，允许更改value，前两者只是返回是否过滤的bool；
-
-  ```cpp
-    enum class Decision {
-      kKeep,
-      kRemove,
-      kChangeValue,
-      kRemoveAndSkipUntil,
-    };
-  ```
-
-## Q&A
-
-看代码时的一些小问题的自问自答😂：
-
-1. WAL按理说是顺序写的，每次只需要刷最后一个log就行了，为啥要foreach呢？
-
-![image-20200428141052855](/image/rocksdb/logs.png)
-
 # MyRocks 
 
 MyRocks最初是由FB开发的，目前存在三个主要分支：MariaDB、Percona、FB，略有不同，但大致相似。这里以Percona版本进行介绍，目前最新的MyRocks8+对应的RocksDB6+；
@@ -426,3 +268,19 @@ master failover相对复杂点，可能如果原master的gtid大于新master的g
 > slave_exec_mode：当从库回放时出现冲突的处理方式；
 
 以上，此文持续整理本人在折腾MyRocks过程中，对MyRocks的一些认识和理解，介于理解的深度是由浅入深的，可能目前的版本认识浅薄，甚至有错误，欢迎指正学习。
+
+### performance enhance
+
+concurrent_prepare (rename to two_queue_write)
+
+write_prepared
+
+
+
+### external_lock
+
+MySQL server层的表锁基于该api实现
+
+https://dev.mysql.com/doc/internals/en/external-lock.html
+
+https://github.com/facebook/mysql-5.6/pull/625/files

@@ -30,6 +30,8 @@ int main(void)
 
 这里是虚拟地址空间，地址由下向上变大；stack是向下增长，在stack之上是kernel space；实际上[heap，stack的起始地址是随机的](https://manybutfinite.com/post/anatomy-of-a-program-in-memory/)，因为一旦地址固定，容易被被不法人员利用；另外在Free部分，会包含mmap的地址空间，起始地址同样是随机的。
 
+> pmap -p PID可以看到运行时进程的内存布局
+
 ## data & bss
 
 > bss: block started by symbol
@@ -209,12 +211,14 @@ int main() {
 
 > 关于返回值，值得注意的是，编译器会默认进行返回值的优化（Return Value Optimization）：
 >
+> 优化的方式就是直接在callee需要返回的temp var直接使用caller func的栈中的对象，那么就不用拷贝了；但是要注意在某些case下RVO是用不了的，比如caller无法确定callee要返回哪个temp。
+>
 > ```cpp
->    -fno-elide-constructors
->        The C++ standard allows an implementation to omit creating a
->        temporary which is only used to initialize another object of the
->        same type.  Specifying this option disables that optimization, and
->        forces G++ to call the copy constructor in all cases.
+> -fno-elide-constructors
+>     The C++ standard allows an implementation to omit creating a
+>     temporary which is only used to initialize another object of the
+>     same type.  Specifying this option disables that optimization, and
+>     forces G++ to call the copy constructor in all cases.
 > ```
 
 ## **std::forward**
@@ -281,21 +285,42 @@ int main()
 
 ## **unique_ptr**
 
+> 前身是c++98中的auto_ptr，但是这个auto_ptr有很多问题
+
 可用在有限作用域（restricted scope）中动态分配的对象资源。不可复制（copy），但是可以转移（move），转移之后原来的指针无效。
 
+`unique_ptr`很强大，比起使用new创建一个对象，我们可以直接make_unique创建；之后不需要主动delete，当过了生命周期后，在unique_ptr的析构中自动delete目标对象（RAII)。
+
 ```cpp
-#include <iostream>
-#include <memory>
-#include <utility>
- 
-int main()
-{
-    std::unique_ptr<int> valuePtr(new int(15));
-    std::unique_ptr<int> valuePtrNow(std::move(valuePtr));
-}
+auto a = std::make_unique<MyClass>(); // C++14
+auto b = std::unique_ptr<MyClass>(new MyClass());
+std::unique_ptr<MyClass> c(new MyClass());
 ```
 
+那么make_unique有什么优点呢：
+
++ 首先就是简洁
+
++ make_unique是异常安全的，如下例，如果第一个new成功了，第二个new失败；那么还没来得及调用unique_ptr的构造，出现异常，新分配的内存泄漏了
+
+  > ```cpp
+  > MyFunction(std::unique_ptr<MyClass>(new MyClass()),
+  >            std::unique_ptr<MyClass>(new MyClass()));
+  > ```
+
+我这这里释放对象通常是指释放内存，然后有些对象有自己的释放逻辑，比如文件句柄，这是可以定义自己的release函数：
+
+```cpp
+FILE* file = fopen("...", "r");
+auto FILE_releaser = [](FILE* f) { fclose(f); };
+std::unique_ptr<FILE, decltype(FILE_releaser)> file_ptr(file, FILE_releaser);
+```
+
+最后，使用unique_ptr时，注意不要把一个对象赋给了两个unique_ptr；
+
 ## **shared_ptr**
+
+[参考](https://shaharmike.com/cpp/shared-ptr/)
 
 可以复制，维护一个引用计数，当最后一个引用该对象的引用退出，那么才销毁；通常用在私有（private）的类成员变量上，外部通过成员函数获取该成员的引用，如下：
 
@@ -347,6 +372,8 @@ boost::shared_ptr<Owner> p2 (new Owner());
 p1->other = p2; // p1 references p2
 p2->other = p1; // p2 references p1
 ```
+
+https://stackoverflow.com/questions/18301511/stdshared-ptr-initialization-make-sharedfoo-vs-shared-ptrtnew-foo
 
 ## **weak_ptr**
 
