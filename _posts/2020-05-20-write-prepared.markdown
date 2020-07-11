@@ -50,7 +50,7 @@ class WritePreparedTxnDB : public PessimisticTransactionDB {
 
 如下：
 
-<img src="/image/write-prepared/structures.png" alt="image-20200522141733505" style="zoom:50%;" />
+<img src="/image/write-prepared/structures.png" alt="image-20200711171439816" style="zoom: 50%;" />
 
 ## prepared_txns_[min heap]
 
