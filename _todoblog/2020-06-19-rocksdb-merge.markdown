@@ -1,13 +1,28 @@
 ---
 layout: post
-title: 
+title: RocksDB的Merge
 date: 2020-06-19 14:25
 categories:
-  -
+  - rocksdb
 typora-root-url: ../../layamon.github.io
 ---
 > * TOC
 {:toc}
+
+回收旧版本数据，需要注意是否有快照还在使用。对于某个Key有如下快照：
+
+```
+K:   OP1     OP2     OP3     OP4     OP5  ... OPn
+              ^               ^                ^
+              |               |                |
+           snapshot1       snapshot2       snapshot3
+```
+
+如果没有Merge类型，那么对于每个snapshot只需要保留最近的一个OP数据；有了Merge后，Compact和Get类似都是从new->old扫描数据，将扫过的merge操作暂存，直到可以执行FullMerge；
+
+但Compact和Get不同，Compact是针对某一个sst file操作，Get可以全局扫描；Compact如果遇到end-of-file还没结束，那么这次就不能执行FullMerge；
+
+另外，如果碰到有Supporting Operation的SnapShot，Supporting Operation暂时不可删除，那么清理到当前的栈后，可以从Supporting Operation开始继续compact。
 
 ## Merge
 

@@ -1,42 +1,67 @@
 ---
 layout: post
-title: 
+title: mmap与page cache
 date: 2020-04-23 15:04
 categories:
-  -
+  - Linux
 typora-root-url: ../../layamon.github.io
 ---
 > * TOC
 {:toc}
 
+# Page Cache
 
+四类page：
+
++ 读取mmap的文件时，发生page fault后加载的page；
++ 按Block读取块设备或filesys时，加载的buffer page；
++ page cache中的特别区域——swap cache的Anonymous page；
++ shared-memory中的page。
+
+Page Cache构成
+
++ **inode queue**：包含三个list，
+
+  + clean_pages
+  + dirty_pages
+  + locked_pages
+
++ **page cache hash table**：mm/filemap.c `struct page **page_hash_table`
+
++ **LRU lists**：包含两个list（mm/page_alloc.c）：
+
+  + (hot)active_list：
+  + (cold)inactive_list
+
+  有pagemap_lru_lock这个自旋锁控制并发；通过`refill_inactive`将active list中的page转移到inactive list中，保持active list是inactive list的2/3。
+
+  ![img](/image/mmap/inactive-active-lists.png)
+
+## 回收内存
+
+shrink_cache负责释放一些内存空间，区别于上面的shrink_cache，shink_caches包含若干步，shrink_cache只是其中一步：
+
+1. kmem_cache_reap
+2. refill_inactive
+3. shrink_cache
+   1. swap_out
+4. shrink_dcache_memory
+5. shrink_icache_memory: Instructions and data have different access patterns.
+6. shrink_dqcache_memory
+
+swap out交给专门的守护进程——kswapd执行，一旦系统的free page数量小于pages_low，该进程就开始swap out。
+
+> **kswapd**的换出是单线程的，可能成为buffer io写出的瓶颈。
+>
+> The limitation is there so that if **kswapd** schedules a large number of pages to be written to disk, it will sleep occasionally to allow the IO to take place. As pages are freed, `nr_pages` is decremented to keep count.
+>
+> 2.6之后，对于系统的[每个memory node都有一个kswapd]([https://www.kernel.org/doc/gorman/html/understand/understand005.html#new:%20Describing%20Physical%20Memory](https://www.kernel.org/doc/gorman/html/understand/understand005.html#new: Describing Physical Memory))
 
 # madvise
 
-![image-20200428112832621](/image/lsm-tree/image-20200428112832621.png)
 
 
 
-![image-20200428113318878](/image/lsm-tree/wasted-space.png)
-
-
-
-
-
-回收旧版本数据，需要注意是否有快照还在使用。对于某个Key有如下快照：
-
-```
-K:   OP1     OP2     OP3     OP4     OP5  ... OPn
-              ^               ^                ^
-              |               |                |
-           snapshot1       snapshot2       snapshot3
-```
-
-如果没有Merge类型，那么对于每个snapshot只需要保留最近的一个OP数据；有了Merge后，Compact和Get类似都是从new->old扫描数据，将扫过的merge操作暂存，直到可以执行FullMerge；
-
-但Compact和Get不同，Compact是针对某一个sst file操作，Get可以全局扫描；Compact如果遇到end-of-file还没结束，那么这次就不能执行FullMerge；
-
-另外，如果碰到有Supporting Operation的SnapShot，Supporting Operation暂时不可删除，那么清理到当前的栈后，可以从Supporting Operation开始继续compact。
 
 
 

@@ -24,6 +24,12 @@ typora-root-url: ../../layamon.github.io
    1. Commit：同样基于WriteImpl对象，此时日志中追加Commit(xid)标记，同时通过MemTableInserter将WriteBatch中的数据写入到对应CF的MemTable中。
    2. Rollback：此时清空WriteBatch中的数据，同时基于WriteImpl在日志中标记Rollback(xid)。
 
+> two_write_queues
+>
+> [原来叫concurrent_prepare](https://github.com/facebook/rocksdb/commit/857adf388fd1de81b8749bf1e5fe20edf6f8a8c8)，表示在prepare阶段可以并行写wal([见这](https://github.com/facebook/rocksdb/pull/2345#discussion_r122407559))，即调用[ConcurrentWriteWAL](https://github.com/facebook/rocksdb/pull/2345#discussion_r122474277)：该函数有点歧义。
+>
+> 主要就在这个提交中：https://github.com/facebook/rocksdb/pull/2345/files
+
 由此可以看出，write_commit方式的事务提交，MemTable中的都是提交的数据，判断事务可见性逻辑简单；但是commit阶段需要做的事情太多，成为系统吞吐瓶颈。因此，RocksDB提出了write_prepared的写入策略，带来的复杂性主要是判断数据记录（record）的可见性复杂了，原来MemTable中全是commit的数据，而现在既有Prepared也有commited。如下文。
 
 # write_prepared相关结构（5.18）
@@ -193,3 +199,7 @@ RocksDB的非锁定读也是通过MVCC实现，在读取的时候开启一个快
 > 那么，如果存在长事务（seqno = s1）在获取snapshot时未提交，并且已经被evict到delay中；那么**snapshot->min_uncommited = prepared_txn.top > s1**；
 >
 > 而后来在`IsInSnapshot`之前提交了，则移出delay；那么对于s1标记的record，满足**不在`delayed_prepared`\_中**且**s1 < min_uncommited**，则该snapshot误认为该record可见。
+
+**ref**
+
+[old_commit_map_mutex_ overhead](https://github.com/facebook/rocksdb/commit/2b5b7bc795e62a69251a158c0da03bb0c4a518da)

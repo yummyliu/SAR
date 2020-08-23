@@ -1,9 +1,9 @@
 ---
 layout: post
-title: 
+title: RocksDB的Compaction
 date: 2020-06-19 14:25
 categories:
-  -
+  - rocksdb
 typora-root-url: ../../layamon.github.io
 ---
 * TOC
@@ -29,11 +29,41 @@ rocksdb默认的策略是Leveled Compaction，用在sst file compact中；但是
 >
 > 见`ShouldFormSubcompactions`决定是否将当前的compact划分成 Sub-Compaction。
 
-## CompactionScore
+## Compaction Priority
+
+> Which file to pick to compact?
+
+```cpp
+// In Level-based compaction, it Determines which file from a level to be
+// picked to merge to the next level. We suggest people try
+// kMinOverlappingRatio first when you tune your database.
+enum CompactionPri : char {
+  // Slightly prioritize larger files by size compensated by #deletes
+  kByCompensatedSize = 0x0,
+  // First compact files whose data's latest update time is oldest.
+  // Try this if you only update some hot keys in small ranges.
+  kOldestLargestSeqFirst = 0x1,
+  // First compact files whose range hasn't been compacted to the next level
+  // for the longest. If your updates are random across the key space,
+  // write amplification is slightly better with this option.
+  kOldestSmallestSeqFirst = 0x2,
+  // First compact files whose ratio between overlapping size in next level
+  // and its size is the smallest. It in many cases can optimize write
+  // amplification.
+  kMinOverlappingRatio = 0x3,
+};
+```
+
+RocksDB常用的Compact方式是level Compact；这是基于LevelDB演变而来的。LevelDB只有一个Compact线程，并且采用简单的round-robin方式；RocksDB可以基于上述[四种策略](https://rocksdb.org/blog/2016/01/29/compaction_pri.html)进行选择，并构造对应的Job交给线程池执行。
+
++ kByCompensatedSize：（default）优先选择sst中delete marker更多的文件，更快的收缩空间。
++ kOldestLargestSeqFirst：工作集比较小，频繁更新一些hot key；
+
+### Score
 
 算出每层的分数，最后冒泡排序，将score大的放在前面；得到`compaction_score_`数组。
 
-### level0
+#### level0
 
 0层是基于文件数触发，首先统计文件数；得到备选score
 
@@ -49,13 +79,9 @@ static_cast<double>(total_size) / mutable_cf_options.max_bytes_for_level_base;
 
 于是最终的score是两者的max
 
-### other level
+#### other level
 
 根据参数`level_compaction_dynamic_level_bytes`，决定`level_max_bytes_[]`的大小；从而决定每层score的分母。
-
-## Merge
-
-注意，由于Merge 记录的存在，会影响原来[Compact对旧数据的回收](https://github.com/facebook/rocksdb/wiki/Merge-Operator-Implementation#compaction)。
 
 ## CompactFilter
 
@@ -79,3 +105,22 @@ static_cast<double>(total_size) / mutable_cf_options.max_bytes_for_level_base;
 Compact filter只对普通value类型（未标记上delete mark）调用，对于merge类型，会在执行merge operator前调用Compaction filter。flush可看作是一种特殊的Compact，但flush不会调用Compaction filter。
 
 https://github.com/facebook/rocksdb/wiki/Choose-Level-Compaction-Files
+
+## SubCompact
+
+将一个CompactJob切分为不同的subcompact，这样可以并发执行；
+
++ L0->L1的compact不能并行，只能通过subcompact的方式并行。
++ manual compact不能并行，只能通过subcompact的方式并行。
++ Universal Compact的合并类似于L0->L1，不能并行。那么除了L0->L0之外的Compact job采用subcompact的方式
+
+[这里](https://github.com/facebook/rocksdb/wiki/Sub-Compaction)对执行的方法有简单描述：
+
+1. 根据输入sst，确定各个区间边界
+2. 基于`Versions::ApproximateSize`计算每个区间的大小；
+3. 算出平均大小后，合并区间使每个区间的大小约等于平均值。
+
+
+
+## Dependence Map
+

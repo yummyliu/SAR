@@ -16,7 +16,7 @@ typora-root-url: ../../layamon.github.io
 >
 > [PostgreSQL综述](http://liuyangming.tech/07-2018/PostgreSQL-Overview.html)
 
-# 背景
+# RocksDB背景
 
 在[from btree to lsm-tree](http://liuyangming.tech/12-2019/leveldb.html)中，我们了解到写B+-tree时，写一条记录就意味着写一个页；在InnoDB中，不考虑bufferpool的合并写和dwbuffer的写放大，如果业务负载随机写N条记录，最坏的情况下，就意味着要写N个页；这带来很大的**写放大**。另外，每个页中都有一些碎片空间，这些无用空间会浪费IO带宽，而针对这个，InnoDB中设计了Compressed Page；Compressed Page同样是要对齐存储（0~4kb对齐到4kb，4~8kb对齐到8kb，8~16kb对齐到16kb），只要对齐就会存在空闲空间。这又带来了**空间放大**。
 
@@ -30,13 +30,21 @@ typora-root-url: ../../layamon.github.io
 >
 > <img src="/image/rocksdb-overview/ssd-overview.png" alt="image-20200621101610711" style="zoom: 50%;" />
 
-# RocksDB
+RocksDb是一个多版本的KV事务型存储引擎（versioned key-value store）；为了对RocksDB有一个整体的认识，这里还是基于《Architecture of DB》中对事务型存储引擎的划分进行讨论。本文是系列1——AccessMethod。
 
-RocksDb是一个多版本的KV事务型存储引擎（versioned key-value store）；为了对RocksDB有一个整体的认识，这里还是基于《Architecture of DB》中对事务型存储引擎的划分进行讨论。
+# Access Method
 
-## Access Method
+关于AccessMethod有个RUM猜想——《[from btree to lsmtree](http://liuyangming.tech/12-2019/leveldb.html)》；相比于B+-tree在写放大和空间放大上的不足，RocksDb基于的LSM-tree存储结构，能够通过合并随机写减少写放大，以及通过高效的压缩减少空间放大（对每一层可以选用不同的压缩算法）。如下表，进行了简单的对比：
 
-### Disk Layout
+|            | InnoDB                               | RocksDB                                  |
+| ---------- | ------------------------------------ | ---------------------------------------- |
+| 点查       | 从上到下按照某个分支进行定位。       | 逐层查找，可以基于bloom filter进行过滤。 |
+| range scan | 直接按照leafnode的next指针进行遍历。 | 需要合并不同层的数据。                   |
+| delete     | 标记删除                             | 标记删除，tombstone；singledelete优化。  |
+
+那么这里就对RocksDB的AccessMethod进行简单介绍。
+
+## Disk Layout
 
 RocksDB对应的文件共用一个FilteNumber，DB创建文件时将FileNumber加上特定的后缀作为文件名，FileNumber在内部是一个uint64_t类型，并且全局递增。不同类型的文件的拓展名不同，例如sstable文件是.sst，wal日志文件是.log。有以下文件类型：（`enum FileType`）：
 
@@ -72,7 +80,7 @@ RocksDB对应的文件共用一个FilteNumber，DB创建文件时将FileNumber�
 >
 > RocksDB的某一时间点的物理全量备份，需要提供目标目录，会将需要的文件拷贝过去。
 
-#### SST file layout
+## SST file layout
 
 首先在RocksDB（或者说任何LSM-tree）中SSTfile是不可变更的，不像Btree中的tablespace会inplace update。
 
@@ -84,67 +92,20 @@ RocksDB在BuildTable后，SST的数据就固定了，Compact会将若干个SST�
 
 除index block外，还有一些别的meta block分别对应不同的元数据。
 
-### Read&Write
+## key-format/value-format
 
-逻辑上，RocksDB最小的粒度是kv pair（`(userkey,seq,type) => uservalue`）；取决于SST Table的类型，kv的存储方式不同，默认是的BlockBasedTable。KV可逻辑上分成不同的ColumnFamily，这样不同分区可以分别写自己的MemTable和SST Table，但是共享同一个WAL；
+## Iterator
 
-> ColumnFamily对应的kv放在CF专属的MEMTable和SSTFile中，而Table与CF的关系维护在`Version`中。
->
-> RocksDB保证**跨CF的的原子写**和**一致性读**快照，以及可以分别对不同CF进行挂载、删除与配置。
+在RocksDB中，到处可见各种结构的[Iterator](https://github.com/facebook/rocksdb/wiki/Iterator-Implementation)；利用Iterator封装了内部细节，给外面提供了一个统计的访问接口。
 
-下图中省去了Index、BloomFilter、Block Cache和Column Family（下称CF）的概念，描述了RocksDB的读写路径：
-
-![image-20200227180548341](/image/2020-0227-rocksdb-overview.png)
-
-在RocksDB中，写事务提交时只需要保证Log Record落盘即可，Data只需要复制到Active MemTable中，后续的数据落盘由FLush/Compact操作进行。
-
-相比于B+-tree在写放大和空间放大上的不足，LSM-tree能够通过合并随机写减少写放大，以及通过高效的压缩减少空间放大（对每一层可以选用不同的压缩算法）。如下表，进行了简单的对比：
-
-|            | InnoDB                               | RocksDB                                  |
-| ---------- | ------------------------------------ | ---------------------------------------- |
-| 点查       | 从上到下按照某个分支进行定位。       | 逐层查找，可以基于bloom filter进行过滤。 |
-| range scan | 直接按照leafnode的next指针进行遍历。 | 需要合并不同层的数据。                   |
-| delete     | 标记删除                             | 标记删除，tombstone；singledelete优化。  |
-
-目前RocksDB提供了基本的KV操作，对应的Key中保存了操作类型：
-
-```cpp
-// <user key, sequence number, and entry type> tuple.
-struct FullKey {
-  Slice user_key;
-  SequenceNumber sequence;
-  EntryType type;
-  
-  ...
-}
-// User-oriented representation of internal key types.
-enum EntryType {
-  kEntryPut,
-  kEntryDelete,
-  kEntrySingleDelete,
-  kEntryMerge,
-  kEntryRangeDeletion,
-  kEntryValueIndex,
-  kEntryMergeIndex,
-  kEntryOther,
-};
-```
-
-每种操作的接口带有相应的Option；除了基本KV操作外，RocksDB提供了了一些额外操作，关键的有：Merge和Compact。
-
-#### Iterator
-
-https://github.com/facebook/rocksdb/wiki/Iterator-Implementation
-
-##### Fractional cascading
+### Fractional cascading
 
 预先将LSM-tree中的sst file的key range关系，保存在FileIndexer中。Version-Get()的时候来读。
 
 
 
-
-
-## Q&A
+# Q&A
 
 
 
+SST tables are immutable after being written and mem tables are lock-free data structures supporting single writer and multiple readers
