@@ -6,7 +6,7 @@ categories:
   - rocksdb
 typora-root-url: ../../layamon.github.io
 ---
-> * TOC
+* TOC
 {:toc}
 
 回收旧版本数据，需要注意是否有快照还在使用。对于某个Key有如下快照：
@@ -24,7 +24,7 @@ K:   OP1     OP2     OP3     OP4     OP5  ... OPn
 
 另外，如果碰到有Supporting Operation的SnapShot，Supporting Operation暂时不可删除，那么清理到当前的栈后，可以从Supporting Operation开始继续compact。
 
-## Merge
+## 
 
 > Merge可看作是一个升级版的Put，Put直接给出key的新值，Merge会根据当前Val得到新值。
 

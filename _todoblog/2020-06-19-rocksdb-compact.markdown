@@ -122,5 +122,18 @@ https://github.com/facebook/rocksdb/wiki/Choose-Level-Compaction-Files
 
 
 
-## Dependence Map
+Version类似于checkpoint的概念，不断向前推进，这样旧version可以安全删除。
 
+LogAndApply
+
+1. 基于传入的cfd和edit，构造ManifestWriter
+
+1. VersionSet::ProcessManifestWrite，传入ManifestWriter，逐个执行
+
+1. 1. 基于一堆ManifestWriter的cfd，构造一批BaseReferencedVersionBuilder（取出cfd的current，并引用，析构时释放）
+
+1. 1. 逐个调用BaseReferencedVersionBuilder::DoApplyAndSaveTo
+
+1. 1. 1. N次 version_builder->Apply
+
+1. 1. 1. 1次 version_builder->SaveTo

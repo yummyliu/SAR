@@ -12,7 +12,13 @@ typora-root-url: ../../layamon.github.io
 {:toc}
 了解C++运行时的内存管理，能深入的了解你的程序实际的操作，是定位问题所在以及进行调优基本。本文作者根据个人的了解简述c++运行时的内存布局，希望能有帮助。
 
-# 进程内存布局
+# Memory Layout
+
+> 地址分为三类：logical address，linear address（virtual address），physical address
+>
+> logical address是在类似汇编语言中用的，其中有segment信息，标识代码段，或内存段。
+>
+> linear address是虚拟内存地址，就是每个进程的page table的内的信息。
 
 如下一个简单的代码：
 

@@ -94,18 +94,81 @@ RocksDB在BuildTable后，SST的数据就固定了，Compact会将若干个SST�
 
 ## key-format/value-format
 
+```cpp
+static const SequenceNumber kMaxSequenceNumber = ((0x1ull << 56) - 1);
+AppendInternalKey()
+```
+
+<img src="/image/rocksdb-overview/kv-format.png" alt="image-20200827100410923" style="zoom: 50%;" />
+
+> To support memcomparable format, MyRocks restricts collations on indexed columns -- only binary, latin1_bin and utf8_bin collations are supported
+>
+> [memcomable format](https://github.com/facebook/mysql-5.6/wiki/MyRocks-record-format#memcomparable-format)
+
+get_pk_for_update
+
+-> pack_record 打包key，最后update_indexes中，调用convert_record_to_storage_format 打包value
+
 ## Iterator
 
 在RocksDB中，到处可见各种结构的[Iterator](https://github.com/facebook/rocksdb/wiki/Iterator-Implementation)；利用Iterator封装了内部细节，给外面提供了一个统计的访问接口。
 
+在打包key数据时，将ttl_pk_offset保存在row_info对象中，后续存储在value中。
+
+```cpp
+int ha_rocksdb::convert_record_to_storage_format(
+    const struct update_row_info &row_info, rocksdb::Slice *const packed_rec) {
+  bool has_ttl = m_pk_descr->has_ttl();
+  bool has_ttl_column = !m_pk_descr->m_ttl_column.empty();
+  bool ttl_in_pk = has_ttl_column && (row_info.ttl_pk_offset != UINT_MAX);
+    if (ttl_in_pk) {
+      Rdb_string_reader reader(&pk_packed_slice);
+      const char *ts;
+```
+
+
+
 ### Fractional cascading
 
-预先将LSM-tree中的sst file的key range关系，保存在FileIndexer中。Version-Get()的时候来读。
+![image-20200906102627843](/image/rocksdb-overview/version-cf.png)
 
-
-
-# Q&A
-
-
+预先将LSM-tree中的sst file的key range关系，保存在FileIndexer中。Version-Get()的时候来读
 
 SST tables are immutable after being written and mem tables are lock-free data structures supporting single writer and multiple readers
+
+
+
+rocksdb的wal MANIFEST 不支持direct io
+
+> 关于wiki的笑话：
+>
+> 本来是这样：
+>
+> use_direct_io_for_flush_and_compaction and use_direct_reads will only be applied to SST file I/O but not WAL I/O or MANIFEST I/O because the I/O pattern of these files are not suitable for direct I/O
+>
+> 然后很多人问这个问题，然后直接改了wiki：
+>
+> `use_direct_io_for_flush_and_compaction` and `use_direct_reads` will only be applied to SST file I/O but not WAL I/O or MANIFEST I/O. Direct I/O for WAL and Manifest files is not supported yet.
+
+
+
+VersionBuilder将newfile，通过PutSst递增Ref，
+
+```cpp
+  void DoApplyAndSaveTo(VersionStorageInfo* vstorage, VersionSet* vset) {
+    // in Apply, collect each blob wal's used_entries,
+    // in SaveTo, use num_entries - used_entries to get num_antiquation
+    version_builder_->SetContext(vset);
+    for (auto edit : edit_list_) {
+      version_builder_->Apply(edit);
+    }
+    version_builder_->SaveTo(vstorage);
+  }
+```
+
+1. VerSionSet::LogAndApply
+   1.  ProcessManifestWrites
+      1. VersionBuilder::DoApplyAndSaveTo：VersionBuilder将Apply若干个Edit，最后SaveTo一个storage
+         1. Apply : 将newfile，通过PutSst递增Ref，加到当前VersionBuilder的dependent_map中，
+         2. SaveTo: 保存到新的Version中
+

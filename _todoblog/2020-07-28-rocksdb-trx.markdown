@@ -17,7 +17,7 @@ enable_pipelined_write和concurrent_prepare(two write queu)不兼容
 
 
 
-SwitchMemtable：WAL与MemTable强绑定，MemTable执行flush后，就换一个新的WAL；wal没有上限，但是MemTable有上限。
+SwitchMemtable：WAL与MemTable强绑定，只要有一个MemTable执行flush后，就换一个新的WAL；之后的数据继续写其他MemTable和新的Wal，wal没有上限，但是MemTable有上限。
 
 
 
@@ -185,3 +185,24 @@ rebuilding_trx_是为了支持recovery的时候，WAL中有prepare的恢复[comm
 
 
 [cached_recoverable_state_](https://github.com/facebook/rocksdb/commit/17731a43a6e6a212097c1d83392f81d310ffe2fa) 在2pc中，记一些专门在recover需要的信息，比如在MyRocks中。。。
+
+
+
+LogAndApply
+
+1. 基于传入的cfd和edit，构造ManifestWriter
+
+1. VersionSet::ProcessManifestWrite，传入ManifestWriter，逐个执行
+
+1. 1. 基于一堆ManifestWriter的cfd，构造一批BaseReferencedVersionBuilder（取出cfd的current，并引用，析构时释放）
+
+1. 1. 逐个调用BaseReferencedVersionBuilder::DoApplyAndSaveTo
+
+1. 1. 1. N次 version_builder->Apply
+
+1. 1. 1. 1次 version_builder->SaveTo
+
+
+
+
+
