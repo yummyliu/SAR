@@ -169,6 +169,10 @@ processor.setHandlerFunc(
 
 ### Lambda是什么类型？
 
+1. Capture list – these are variables that are copied inside the lambda to be used in the code;
+2. Argument list – these are the arguments that are passed to the lambda at execution time;
+3. Code – well.. code.
+
 上面是通过auto 来接的Lambda，但是每个Lambda实现方式都是一个单独的类, 这似乎会产生很多类，
 
 但是在C++11中, 实现了一个方便的包装器，存储各种类型的function，包括--lambda function, functor, or function pointer: std::function.

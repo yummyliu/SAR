@@ -550,9 +550,9 @@ mysql> show global variables like '%innodb_log_file%';
 
 InnoDB中可以有专门的UNDO表空间（5.6之后可以启用独立undo表空间，之前是放在系统表空间ibdata0中）。在ibdata0中，存储一个trx_sys结构，其中维护了事务相关的信息，就包括了所有的128个回滚段，如下图。
 
-![image-20190718154613462](/image/innodb-overview/trx_sys.png)
+<img src="/image/innodb-overview/trx_sys.png" alt="image-20190718154613462" style="zoom: 67%;" />
 
-> 由`innodb_rollback_segments`定了了rollback segment的个数([1,128]），默认128个。每个rseg中，有1024个slot(用了存放undo log page)；
+> 由`innodb_rollback_segments`定了rollback segment的个数([1,128]），默认128个。每个rseg中，有1024个slot(用了存放undo log page)；
 >
 > 128个rseg只有后96个是给用户表使用的，并且每个undo log只能同时给一个事务使用，因此整体的事务并发上限为96*1024。
 >
@@ -563,15 +563,15 @@ InnoDB中可以有专门的UNDO表空间（5.6之后可以启用独立undo表空
 >
 > + [33,+)，如果没有开启独立表空间，那么用户回滚段都在ibdata1这个系统表空间中。
 
-![image-20200510095111559](/image/innodb-overview/undo-map.png)
+<img src="/image/innodb-overview/undo-map.png" alt="image-20200510095111559" style="zoom:50%;" />
 
 如上图，一个事务如果只对应一个UNDOpage（实际上可能不止），那么最多支持96*1024个事务并发。
 
 在InnoDB中，Undo日志记录了行的旧值，当需要找到旧版本的数据时，需要按照undo链进行寻找。有数据变更的事务都需要一个undo record，包含三项信息：
 
-- Primary_Key_Value：包括页号和物理位置。
-- Old_trx_id：更新该行的事务号
-- Old_values_on_that_row：更新前的数据值。
+- `Primary_Key_Value`：包括页号和物理位置。
+- `Old_trx_id`：更新该行的事务号
+- `Old_values_on_that_row`：更新前的数据值。
 
 在MySQL中，事务默认是只读事务；如果后期发现有临时表的写入，就分配**临时表的rseg**；若判断为读写事务，则开始分配事务ID和**普通rseg**。
 
@@ -593,29 +593,14 @@ InnoDB中可以有专门的UNDO表空间（5.6之后可以启用独立undo表空
 
 4. Undo：`dict_boot`初始化数据字典子系统；`trx_sys_init_at_db_start`初始化事务子系统，undo段的初始化在此完成；
 
-   ![image-20190529105306507](/image/innodb-overview/init-undo.png)
+   <img src="/image/innodb-overview/init-undo.png" alt="image-20190529105306507" style="zoom:150%;" />
 
    对于Active的事务，进行回滚；
    
    对于Prepare的事务，如果对应的binlog已经提交，那么提交，否则回滚。
 
-# 参考文章
-
-[Undo漫游](http://mysql.taobao.org/monthly/2015/04/01/)
-
-[binlog文档](https://dev.mysql.com/doc/internals/en/binary-log-overview.html)
+# Reference
 
 [worklog-mysql-5223](https://dev.mysql.com/worklog/task/?id=5223)
 
-[binlog-group-commit]([http://mysqlmusings.blogspot.com/2012/06/binary-log-group-commit-in-mysql-56.html](http://mysqlmusings.blogspot.com/2012/06/binary-log-group-commit-in-mysql-56.html))
-
 [InnoDB Page Merging and Page Splitting](https://www.percona.com/blog/2017/04/10/innodb-page-merging-and-page-splitting/)
-
-
-
-
-
-
-
-
-

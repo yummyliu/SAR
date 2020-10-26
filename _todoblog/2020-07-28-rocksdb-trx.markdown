@@ -206,3 +206,18 @@ LogAndApply
 
 
 
+1035
+
+mysql bugs: https://github.com/mysql/mysql-server/commit/cbd87693248cb4d2a217a8f1c13108e3eca1ecff
+
+如果称聚集索引的事务信息是行级的话（每一行都保存事务和回滚信息），那么，二级索引的事务信息就是页级的。数据页头中的PAGE_MAX_TRX_ID就是这个页级的事务ID，并且只有二级索引页有效。
+
+每当事务修改某条二级索引记录时，都会修改当前页面的PAGE_MAX_TRX_ID的值。当一个读事务某二级索引记录时，InnoDB根据一定的算法，使用PAGE_MAX_TRX_ID和当前读事务ID来判断该记录是否不可见。如果不可见，再定位对应聚集索引来判断真实的可见性。
+
+
+
+**索引键**：B+树的排序键，对于聚集索引就是主键，对于二级索引是二级索引键+主键
+
+
+
+当我们有两个写请求队列（two_write_queues=true），那么主写队列可以同时向WAL和memtable写，而第二写队列只能写WAL，这个会被用于在WritePrepared事务中写提交标记。在这个场景下，主队列（以及他的PreReleaseCallback回调）总是用于准备项，而第二队列（以及他的PreReleaseCallback回调）总是用于提交。这样 i)避免两个队列的竞争 ii)维护了PreparedHeap的顺序增加，以及 iii)简化代码，避免并发插入到CommitCache（以及从中淘汰数据的代码）。
