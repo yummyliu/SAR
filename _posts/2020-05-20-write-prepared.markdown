@@ -1,6 +1,6 @@
 ---
 layout: post
-title: RocksDB——Write Prepared
+title: RocksDB——WritePolicy
 date: 2020-05-20 15:20
 categories:
   - MyRocks
@@ -8,16 +8,34 @@ typora-root-url: ../../layamon.github.io
 ---
 * TOC
 {:toc}
+> 和TransactionDB数据相关的有两个变量，一个是seq和batch绑定，一个是batch和trx绑定。
+>
+> ```c++
+>   const bool use_seq_per_batch =
+>       txn_db_options.write_policy == WRITE_PREPARED ||
+>       txn_db_options.write_policy == WRITE_UNPREPARED;
+>   const bool use_batch_per_txn =
+>       txn_db_options.write_policy == WRITE_COMMITTED ||
+>       txn_db_options.write_policy == WRITE_PREPARED
+> ```
 
-# 2PC in RocksDB
+# WriteCommited
 
-在了解RocksDB的Write Prepared之前，还是得了解一下RocksDB的2PC。
+RocksDB通过SequenceNumber向上返回某个Key最新的数据，而RocksDB的TransactionDB同样基于SequenceNumber来做事务隔离。默认地，当WriteBatch的数据，写入Wal后（即Commit），才写入memtable，这样LSM-tree中都是已提交的数据。那么，事务的隔离级别就取决于何时获取SnapShot。
+
+如上流程，而我们发现，WAL的写入必须在MemTable之前，那么事务的提交路径就会成串行的，如下：
+
+1. 写WriteBatch
+2. WriteBatch执行Prepare
+3. WriteBatch执行Commit
 
 <img src="/image/write-prepared/2pc-rocksdb.png" alt="image-20200522101817407" style="zoom:50%;" />
 
-2PC只是针对PessimisticTransactionDB，通过Prepare(xid)/EndPrepare() 包含了xid事务的数据，最终Commit(xid)和Rollback(xid)标记了对应事务的状态。
+首先我们假设在use_batch_per_txn，为了支持2PC，在WriteBatch中，添加了事务相关的控制信息：Prepare(xid)/EndPrepare()/Commit(xid)/Rollback(xid)，标记了对应事务的状态。
 
-和其他引擎类似，RocksDB事务写数据包含两部分：写日志和写数据；RocksDB的2PC写入策略默认是write_commited：
+由于一个事物的写分成两阶段，那么会对应两个batch；并且进而事务相关的数据与batch的seq相关，取决于下面讨论的Writepolicy不同，数据的seq(下称data-seq)可能是commit-seq也可能是Prepare-seq。而判断可见性，需要比较的是 snapshot-seq与该事务的commit-seq的关系，即**判断data-seq对应的commited_seq是否小于snapshot_seq**。
+
+RocksDB的2PC写入策略默认是WriteCommited，此时data-seq就是commit-seq：
 
 1. Prepare：此时只写日志，WriteImpl会在日志中插入meta marker——Prepare(xid)和EndPrepare()；如上图淡蓝色部分（改数据不存在与WriteBatch中，只是在调用相关接口时才追加到log中）。
 2. 提交or回滚
@@ -30,154 +48,89 @@ typora-root-url: ../../layamon.github.io
 >
 > 主要就在这个提交中：https://github.com/facebook/rocksdb/pull/2345/files
 
-由此可以看出，write_commit方式的事务提交，MemTable中的都是提交的数据，判断事务可见性逻辑简单；但是commit阶段需要做的事情太多，成为系统吞吐瓶颈。因此，RocksDB提出了write_prepared的写入策略，带来的复杂性主要是判断数据记录（record）的可见性复杂了，原来MemTable中全是commit的数据，而现在既有Prepared也有commited。如下文。
+WriteCommited方式的事务提交，MemTable中的都是提交的数据，判断事务可见性逻辑简单；但是commit阶段需要做的事情太多，成为系统吞吐瓶颈。因此，RocksDB提出了WritePrepared的写入策略，带来的复杂性主要是判断数据记录（record）的可见性复杂了。
 
-# write_prepared相关结构（5.18）
+# WritePrepared
 
-要解决问题是：将写MemTable提前到Prepare阶段，带来的问题就是MemTable中数据上的seq，并不知道这些seq是否提交了？
+此时data-seq就是Prepare-seq，为了**判断prepare-seq对应的commited_seq是否小于snapshot_seq**。此时需要保存<prepare-seq，commit-seq>的信息，空间是有限的，不可能全部记录状态；因此基于不同的数据结构在有限空间下解决这个问题。(version 5.18)
 
-因此，需要额外的结构记录当前系统哪些seq已经提交了，而当前活跃的seq区间很大，不可能全部记录状态；因此基于不同的数据结构在有限空间下解决这个问题。
+- **PreparedHeap prepared_txns_**：暂存还uncommitted的Prepare-seq，事务提交时删除，见[WritePreparedTxnDB::RemovePrepared](https://github.com/Layamon/terarkdb/blob/668b7e5e83bdce27f863da59a13e2baacde48399/utilities/transactions/write_prepared_txn_db.cc#L444)。
 
-```cpp
-class WritePreparedTxnDB : public PessimisticTransactionDB {
-  PreparedHeap prepared_txns_;
-  std::unique_ptr<std::atomic<CommitEntry64b>[]> commit_cache_;
-  std::atomic<uint64_t> max_evicted_seq_ = {};
-  std::map<SequenceNumber, std::vector<SequenceNumber>> old_commit_map_;
-  std::set<uint64_t> delayed_prepared_;
+- **commit_cache_**：固定大小的数组，并且设计为[lock free commit cache](https://github.com/facebook/rocksdb/wiki/WritePrepared-Transactions#lock-free-commitcache)。事务提交时，将<prepare-seq, commited-seq>记录到该结构，见[AddCommited](https://github.com/Layamon/terarkdb/blob/668b7e5e83bdce27f863da59a13e2baacde48399/utilities/transactions/write_prepared_txn_db.cc#L406)。
 
-  mutable port::RWMutex prepared_mutex_;
-  mutable port::RWMutex old_commit_map_mutex_;
-  mutable port::RWMutex commit_cache_mutex_;
-  mutable port::RWMutex snapshots_mutex_;
-...
-};
-```
+  该结构可认为是一个滑动窗口，缓存该窗口下的<prepare-seq,commit-seq>信息。prepare-seq是通过取模的方式添加到cache中，如果放不进去，就需要推进`max_evicted_seq_`。
 
-如下：
+上面两个不是无限大的，对于一些不常发生的大事务，采用专门的结构单独存储，这样解决空间问题。
+
+- std::set<uint64_t> delayed_prepared_：对应prepareheap的溢出，通常应该是empty，除非有long running trx，此时会报**Warning**(prepared_mutex_ overhead)。
+
+  当`max_evicted_seq_`推进时，如果ps还在`prepared_txns_`中，将其从`prepared_txns_`转移到`delayed_prepared_`中，见[AdvanceMaxEvictedSeq](https://github.com/Layamon/terarkdb/blob/668b7e5e83bdce27f863da59a13e2baacde48399/utilities/transactions/write_prepared_txn_db.cc#L489)
+
+- old_commit_map_：对应commit_cache的溢出，一般这个情况很少发生，除非发起了一个较大的读事务，比如备份，这时日志里会有如下类似的**Warning** : old_commit_map_mutex；
+
+  因为`max_evicted_seq_`推进时，某个获取SnapShot的长事务持有了**从Commit cache中请出但未提交的prepare seq**，将相应<snapshot seq, prepared seq>加到map中，这样不会导致该SnapShot看见不该看见的东西，见函数[`CheckAgainstSnapshots`](https://github.com/Layamon/terarkdb/blob/668b7e5e83bdce27f863da59a13e2baacde48399/utilities/transactions/write_prepared_txn_db.cc#L672)。
 
 <img src="/image/write-prepared/structures.png" alt="image-20200711171439816" style="zoom: 50%;" />
 
-## prepared_txns_[min heap]
+# Write Unprepared
 
-```cpp
-PreparedHeap prepared_txns_;
-```
+WriteUnprepare与之前最大的不同就是use_batch_per_txn，在WriteUnprepared的事务中，会有多个batch；一个事务对应一批unprep_seq。
 
-事务Prepare时，即将Prepared seq插入到该堆中；Commit时从中删除。
+> 暂时该模式还未完成，这里只是基于Wiki简单了解一下。
 
-通过该结构，开启SnapShot时，可以得知当前未提交事务的最小seq——`min_uncommitted_`，即`prepared_txns.top()`（待议）。
+概述
 
-## commit_cache_[fixed-len array]
+- ReadCallback
+  - 对已经写入到Version内的key，进行snapshot check
+- RollBack Algo
+  - 将事务内修改的key的旧值与trx绑定，trx取消更方便
+  - 以提交的方式回滚事务，可重用现有的live snapshot的检查
 
-> like PostgreSQL clog
+- TransactionLockMgr
+  - 自动将集中的key lock，升级为range lock。
 
-其是固定大小的数组，数组元素是**CommitEntry(prep_seq, commit_seq)** （下简称ps,cs）并且设计为[lock free commit cache](https://github.com/facebook/rocksdb/wiki/WritePrepared-Transactions#lock-free-commitcache)。
+-------------
 
-```cpp
-struct CommitEntry {
-  uint64_t prep_seq;
-  uint64_t commit_seq;
-}
-std::unique_ptr<std::atomic<CommitEntry64b>[]> commit_cache_;
-```
+操作
 
-事务提交时：
+- Put：Transaction负责维护写到version中的unprepared_batch，并且也有一个类似prepare_head的unprepared_heap。
 
-1. 推进`max_evicted_seq_`
-2. 在`commit_cache_`中记下<ps,cs>（此结构只保留最近提交的`CommitEntry`足够应对大多数情况）。
+- Prepare：[BeginUnprepareXID]...[EndPrepare(XID)] ... [BeginUnprepareXID]...[EndPrepare(XID)] ... [**BeginPersistedPrepareXID**]...[EndPrepare(XID)] ... ...[**Commit**(XID)]
 
-## delayed_prepared_[set]
+  WriteUnprepared可以从WritePrepare生成的WAL的结构恢复，反之则否。
 
-```cpp
-std::set<uint64_t> delayed_prepared_;
-```
+- Commit：为了可见性判断，这里需要维护多个unprepare_seq->commit_seq的映射。同样cache驱逐的时候，需要全部删除
 
-当`max_evicted_seq_`推进时，要从Commit cache中清除entry，如果ps还在`prepared_txns_`中，将其从`prepared_txns_`转移到`delayed_prepared_`中，如下：
+- RollBack：WritePrepare的回滚流程就是，基于prepare-seq的快照，获取原来的数据，然后取一个新的rollback-seq，数据写到db中。
 
-```cpp
-while (!prepared_txns_.empty() && prepared_txns_.top() <= new_max) {
-  auto to_be_popped = prepared_txns_.top();
-  delayed_prepared_.insert(to_be_popped);
-  ROCKS_LOG_WARN(info_log_,
-                 "prepared_mutex_ overhead %" PRIu64 " (prep=%" PRIu64
-                 " new_max=%" PRIu64 " oldmax=%" PRIu64,
-                 static_cast<uint64_t>(delayed_prepared_.size()),
-                 to_be_popped, new_max, prev_max);
-  prepared_txns_.pop();
-  delayed_prepared_empty_.store(false, std::memory_order_release);
-}
-```
+  当需要回滚某个prepare-seq时，如果一个live snapshot seq持有prepare-seq，按理说Prepare-seq对snapshot-seq是不可见的。但是max_evict_seq的推进，如果prepare-seq没有提交，在删除commit-cache的同时、会向old_commit_map中记<snapshot-seq，prepare-seq>信息，这些不是原子的，见[AddCommitted](https://github.com/Layamon/terarkdb/blob/668b7e5e83bdce27f863da59a13e2baacde48399/utilities/transactions/write_prepared_txn_db.cc#L400)。如果此时有live-snapshot就会看到不一致的状态，即prepare-seq就变成对snapshot-seq可见的了；好在MyRocks只在Recovery的时候进行回滚操作，规避了这一问题。
 
-> Question_1：前面说到 `min_uncommitted_`由`prepared_txns_.top`得到，而由于`delayed_prepared_`的存在，`prepared_txns_.top`不能保证是当前最小未提交的seq，而实际的逻辑是：
+  而在WriteUnprepared的时候，运行时，就会对unprepare-batch进行rollback；这里的rollback，会写一个rollback marker的数据，将其commit到db中；这样假装提交了事务，这期间发起的snanshot，根据已有的逻辑，从commit-cache中取出提交信息，判断prepare-seq<snapshot-seq<commit-seq，发现不可见；而在Recover的时候，判断rollback marker来进行rollback。
+
+- Get：Get的不同就是在读取本事务自己的数据上，由于现在不止一个batch，而是一堆unprep-seq；
+- Recovery：需要收集同一个XID对应的unprepare-batch，知道找到EndPrepared(XID)标记；
+  - 没找到EndPrepared，那么该事务就隐式rollback了
+  - 找到EndPrepred，继续找之后的rollback marker/commited marker来处理事务。
+    - 没找到，事务状态为Prepared
+    - 找到rollback marker，Rollbacked
+    - 找到commited marker，Commited
+
+# Questions
+
+1. 进行可见性判断的时候，snapshot可能无效了：[snapshot release](https://github.com/facebook/rocksdb/commit/f3a99e8a4de2b0147df83344463eb844d94a6a35)
+
+2. include delayed_prepared_ in min_uncommitted
+
+> 关于"TODO(myabandeh): include delayed_prepared_ in min_uncommitted" (已经fix了)
+>
+> `prepared_txns_.top`不能保证是当前最小未提交的seq，`min_uncommitted_获取的实际的逻辑是：
 >
 > ```cpp
->       return std::min(prepared_txns_.top(),
->                       db_impl_->GetLatestSequenceNumber() + 1);
+>    return std::min(prepared_txns_.top(),
+>                    db_impl_->GetLatestSequenceNumber() + 1);
 > ```
-
-## old_commit_map_[map]
-
-```cpp
-std::map<SequenceNumber, std::vector<SequenceNumber>> old_commit_map_;
-```
-
-`max_evicted_seq_`推进时，某个获取SnapShot的长事务持有了**从Commit cache中请出但未提交的prepare seq**，将相应<snapshot seq, prepared seq>加到map中，见函数`CheckAgainstSnapshots`：
-
-```cpp
-  // then snapshot_seq < commit_seq
-  if (prep_seq <= snapshot_seq) {  // overlapping range
-    WPRecordTick(TXN_OLD_COMMIT_MAP_MUTEX_OVERHEAD);
-    ROCKS_LOG_WARN(info_log_,
-                   "old_commit_map_mutex_ overhead for %" PRIu64
-                   " commit entry: <%" PRIu64 ",%" PRIu64 ">",
-                   snapshot_seq, prep_seq, commit_seq);
-    WriteLock wl(&old_commit_map_mutex_);
-    old_commit_map_empty_.store(false, std::memory_order_release);
-    auto& vec = old_commit_map_[snapshot_seq];
-    vec.insert(std::upper_bound(vec.begin(), vec.end(), prep_seq), prep_seq);
-    // We need to store it once for each overlapping snapshot. Returning true to
-    // continue the search if there is more overlapping snapshot.
-    return true;
-  }
-```
-
-一般这个情况很少发生，除非发起了一个较大的读事务，比如备份，这时日志里会有如下类似的warning：
-
-> warning : old_commit_map_mutex_ overhead for 1798790 commit entry: <1798784,1798794>
-
-# 可见性判断：IsInSnapshot
-
-```cpp
-class SnapshotImpl : public Snapshot {
- public:
-  SequenceNumber number_;  // const after creation
-  // 用在WritePrepared中
-  SequenceNumber min_uncommitted_ = 0;
-}
-```
-
-RocksDB的非锁定读也是通过MVCC实现，在读取的时候开启一个快照，如上，其中有该快照获取时的seq和当时未提交事务的最小seq。
-
-> 类似于lock free commit_cache，snapshot同样将一部分snapshot信息，放在一个固定的cache中，做一个[lock free snapshot list](https://github.com/facebook/rocksdb/wiki/WritePrepared-Transactions#lock-free-snapshot-list)
 >
-> ```cpp
->   static const size_t DEF_SNAPSHOT_CACHE_BITS = static_cast<size_t>(7);
->   const size_t SNAPSHOT_CACHE_BITS;
->   const size_t SNAPSHOT_CACHE_SIZE;
->   std::unique_ptr<std::atomic<SequenceNumber>[]> snapshot_cache_;
->   ```
->   
-
-需要注意的时record中的seq是prepare_seq，最后比较也是比较prepare_seq与snapshot_seq的关系，commit信息存储在上面额外的结构中。
-
-那么现在问题是：如何判断某个Prepared Seq标记的record（ps），对某个SnapShot Seq （ss)标识的快照是否可见？这相关的逻辑在`IsInSnapshot`中。
-
-> 在判断可见性的过程中，可能对应的snapshot已经无效了，fix issue：[snap_released](https://github.com/facebook/rocksdb/commit/f3a99e8a4de2b0147df83344463eb844d94a6a35)
-
-核心就是**判断prepared_seq对应的commited_seq是否小于snapshot_seq**，细节就不展开，网上有关于可见性详细的描述。
-
-> Question 2：关于"TODO(myabandeh): include delayed_prepared_ in min_uncommitted" (已经fix了)
+> 并没有考虑delay_prepared_的数据，而是在后续IsInSnapShot进行可见性判断的时候再检查，见[IsInSnapShot](https://github.com/Layamon/terarkdb/blob/668b7e5e83bdce27f863da59a13e2baacde48399/utilities/transactions/write_prepared_txn_db.h#L161)。
 >
 > 在`IsInSnapshot`，判断一个prep_seq标记的Record对snapshot_seq标记的snapshot是否可见。
 >
@@ -199,7 +152,3 @@ RocksDB的非锁定读也是通过MVCC实现，在读取的时候开启一个快
 > 那么，如果存在长事务（seqno = s1）在获取snapshot时未提交，并且已经被evict到delay中；那么**snapshot->min_uncommited = prepared_txn.top > s1**；
 >
 > 而后来在`IsInSnapshot`之前提交了，则移出delay；那么对于s1标记的record，满足**不在`delayed_prepared`\_中**且**s1 < min_uncommited**，则该snapshot误认为该record可见。
-
-**ref**
-
-[old_commit_map_mutex_ overhead](https://github.com/facebook/rocksdb/commit/2b5b7bc795e62a69251a158c0da03bb0c4a518da)

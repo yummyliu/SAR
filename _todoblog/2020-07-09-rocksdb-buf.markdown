@@ -71,6 +71,10 @@ RocksDB的文件都是append的，通过配置参数`bytes_per_sync`(SST)和`wal
 
 <img src="/image/rocksdb-buf/rocksdb-log-writer.png" alt="image-20200725110752115" style="zoom:50%;" />
 
+> [atomic_flush与pipeline_write不兼容](https://github.com/facebook/rocksdb/pull/5860)
+>
+> 如果BatchA包含cf1和cf2的数据，atomic_flush要求这个Batch中的两个CF的数据保证能同时刷盘；在非pipeline的模式下，
+
 # Cache
 
 ## Row Cache

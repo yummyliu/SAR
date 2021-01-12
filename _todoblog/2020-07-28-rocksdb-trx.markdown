@@ -184,14 +184,13 @@ RocksDB的Lsm-tree中的Internalkey都带有一个SequenceNumber，这个Seq是�
 
 last_sequence <= last_published_sequence_ <=  last_allocated_sequence_
 
-- last_sequence: 用户可见的Sequence
-- 
+- **last_sequence**: 用户可见的Sequence
 
 rocksdb的write会通过queue将writer进行排队，队列中的`writer->batch`会写到wal和MemTable（都是可选的），为了优化写入速度，又加了一个额外的queue（通过参数`two_write_queue`打开），这个queue只写WalOnly的batch，走`WriteImplWALOnly`逻辑。这里分别称这两个queue为：main queue(下称mq)/walonly queue(下称wq)。
 
 > mq维护了last_sequence，wq维护了last_published_queue，
 
-last_publish_back只有在seq_per_batch=true，即使事务用WritePrepare的方式，并且打开two_write_queue时才有效，否则等于last_seq
+last_publish_queue只有在seq_per_batch=true，即使事务用WritePrepare的方式，并且打开two_write_queue时才有效，否则等于last_sequence
 
 ```
       // last_sequence_ is always maintained by the main queue that also writes
@@ -209,7 +208,7 @@ last_publish_back只有在seq_per_batch=true，即使事务用WritePrepare的方
 
 WritePrepares Txn通过PrereleaseCallBack，在写完Wal后，更新last_published_queue(见WriteWalOnly)，
 
-mq的逻辑是，先写wal，其中通过FetchAddLastAllocatedSequence递增`last_allocated_sequence_`，新的MemTable机遇`last_allocated_sequence_+1`写mem（等于MemTable对应的batch持久化到日志中的Sequence，这个如果是WriteCommit的事务，这个Batch就是commit_time_batch，将prepare_batch append到waltermpoint之后得到的）。这样确保Batch与MemTable的Sequence能对上。
+mq的逻辑是，先写wal，其中通过FetchAddLastAllocatedSequence递增`last_allocated_sequence_`，新的MemTable基于`last_allocated_sequence_+1`写mem（等于MemTable对应的batch持久化到日志中的Sequence，这个如果是WriteCommit的事务，这个Batch就是commit_time_batch，将prepare_batch append到waltermpoint之后得到的）。这样确保Batch与MemTable的Sequence能对上。
 
 在MemTableInserter中，如果是默认的seq_per_key，那么每个key自行递增seq；而如果开启了seq_per_batch，那么基于batch_boundary进行seq递增（但是这里需要处理duplicate key的问题，这里引入了一个sub-patch的概念，表示WritBatch的一个没有重复key subset）
 
