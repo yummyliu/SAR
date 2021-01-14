@@ -8,18 +8,11 @@ typora-root-url: ../../layamon.github.io
 ---
 * TOC
 {:toc}
-被写入的对象是WriteBatch，写入的对象是Wal+MemTable；在写入的过程中需要酌情为WriteBatch中的Key配上SequenceNumber。因此，本文主要解决两个问题：
-
-1. WriteBatch是如何写入到DB中？——WritePath
-2. WriteBatch中的Key怎么分配的SequenceNumber？——seq_per_batch or not?
-
-# WritePatch
-
-db_write_impl将write_batch写入到wal和memtable中。采用group commit的方式写。db中有一个writer_thread的队列，队列头部就是group leader，负责将队列中所有的batch写入到WAL和MemTable中；不管怎么写，writewal总是在memtableinsert之前，
-
 ![image-20200729095202413](/image/rocksdb-writeimpl/writebatch-dataflow.png)
 
+# WritePath
 
+db_write_impl将write_batch写入到wal和memtable中。采用group commit的方式写。db中有一个writer_thread的队列，队列头部就是group leader，负责将队列中所有的batch写入到WAL和MemTable中；不管怎么写，writewal总是在memtableinsert之前，
 
 SwitchMemtable：WAL与MemTable强绑定，只要有一个MemTable执行flush后，就换一个新的WAL；之后的数据继续写其他MemTable和新的Wal，wal没有上限，但是MemTable有上限。
 
@@ -163,96 +156,6 @@ LogAndApply中对于每个cfd，构造一个Manifest Writer；最终调用Proces
 4. 调callback
 
 
-
-
-
-# SequenceNumber Assign
-
-
-
-
-
-> ```
->   const bool use_batch_per_txn =
->       txn_db_options.write_policy == WRITE_COMMITTED ||
->       txn_db_options.write_policy == WRITE_PREPARED
-> ```
->
-> 这里假设`batch_per_trx=true`
-
-RocksDB的Lsm-tree中的Internalkey都带有一个SequenceNumber，这个Seq是由VersionSet生成的。但是在VersionSet中，有三个seq
-
-last_sequence <= last_published_sequence_ <=  last_allocated_sequence_
-
-- **last_sequence**: 用户可见的Sequence
-
-rocksdb的write会通过queue将writer进行排队，队列中的`writer->batch`会写到wal和MemTable（都是可选的），为了优化写入速度，又加了一个额外的queue（通过参数`two_write_queue`打开），这个queue只写WalOnly的batch，走`WriteImplWALOnly`逻辑。这里分别称这两个queue为：main queue(下称mq)/walonly queue(下称wq)。
-
-> mq维护了last_sequence，wq维护了last_published_queue，
-
-last_publish_queue只有在seq_per_batch=true，即使事务用WritePrepare的方式，并且打开two_write_queue时才有效，否则等于last_sequence
-
-```
-      // last_sequence_ is always maintained by the main queue that also writes
-      // to the memtable. When two_write_queues_ is disabled last seq in
-      // memtable is the same as last seq published to the readers. When it is
-      // enabled but seq_per_batch_ is disabled, last seq in memtable still
-      // indicates last published seq since wal-only writes that go to the 2nd
-      // queue do not consume a sequence number. Otherwise writes performed by
-      // the 2nd queue could change what is visible to the readers. In this
-      // cases, last_seq_same_as_publish_seq_==false, the 2nd queue maintains a
-      // separate variable to indicate the last published sequence.
-      last_seq_same_as_publish_seq_(
-          !(seq_per_batch && options.two_write_queues)),
-```
-
-WritePrepares Txn通过PrereleaseCallBack，在写完Wal后，更新last_published_queue(见WriteWalOnly)，
-
-mq的逻辑是，先写wal，其中通过FetchAddLastAllocatedSequence递增`last_allocated_sequence_`，新的MemTable基于`last_allocated_sequence_+1`写mem（等于MemTable对应的batch持久化到日志中的Sequence，这个如果是WriteCommit的事务，这个Batch就是commit_time_batch，将prepare_batch append到waltermpoint之后得到的）。这样确保Batch与MemTable的Sequence能对上。
-
-在MemTableInserter中，如果是默认的seq_per_key，那么每个key自行递增seq；而如果开启了seq_per_batch，那么基于batch_boundary进行seq递增（但是这里需要处理duplicate key的问题，这里引入了一个sub-patch的概念，表示WritBatch的一个没有重复key subset）
-
-```
-  // batch_cnt is expected to be non-zero in seq_per_batch mode and
-  // indicates the number of sub-patches. A sub-patch is a subset of the write
-  // batch that does not have duplicate keys.
-```
-
-
-
-l  // the individual batches. The approach is this: 1) Use the terminating
-  // markers to indicate the boundary (kTypeEndPrepareXID, kTypeCommitXID,
-  // kTypeRollbackXID) 2) Terminate a batch with kTypeNoop in the absence of a
-  // natural boundary marker
-
-
-
-```
-  // batch_cnt is expected to be non-zero in seq_per_batch mode and indicates
-  // the number of sub-patches. A sub-patch is a subset of the write batch that
-  // does not have duplicate keys.
-```
-
-
-
-```cpp
-// Note: the logic for advancing seq here must be consistent with the
-// logic in WriteBatchInternal::InsertInto(write_group...) as well as
-// with WriteBatchInternal::InsertInto(write_batch...) that is called on
-// the merged batch during recovery from the WAL.
-for (auto* writer : write_group) {
-  if (writer->CallbackFailed()) {
-    continue;
-  }
-  writer->sequence = next_sequence;
-  if (seq_per_batch_) {
-    assert(writer->batch_cnt);
-    next_sequence += writer->batch_cnt;
-  } else if (writer->ShouldWriteToMemtable()) {
-    next_sequence += WriteBatchInternal::Count(writer->batch);
-  }
-}
-```
 
 
 

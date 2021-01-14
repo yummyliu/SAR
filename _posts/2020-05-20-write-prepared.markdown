@@ -1,6 +1,6 @@
 ---
 layout: post
-title: RocksDB——WritePolicy
+title: RocksDB——Transaction
 date: 2020-05-20 15:20
 categories:
   - MyRocks
@@ -8,7 +8,7 @@ typora-root-url: ../../layamon.github.io
 ---
 * TOC
 {:toc}
-> 和TransactionDB数据相关的有两个变量，一个是seq和batch绑定，一个是batch和trx绑定。
+> 和TransactionDB数据相关的有两个变量，一个是seq和batch绑定，一个是batch和trx绑定。由于目前WriteUnprepare还不可用，暂时我们假设batch与trx有一一对应关系。
 >
 > ```c++
 >   const bool use_seq_per_batch =
@@ -19,7 +19,29 @@ typora-root-url: ../../layamon.github.io
 >       txn_db_options.write_policy == WRITE_PREPARED
 > ```
 
-# WriteCommited
+RocksDB的事务系统是在已有的KV引擎的基础上封装而来的，事务的隔离主要利用其本身的SequenceNumber来实现，因此在了解RocksDB的事务之前，有必要对SequenceNumber有一定的认识。（verion 5.18）
+
+# SequenceNumber
+
+RocksDB的Lsm-tree中的Internalkey都带有一个SequenceNumber，这个Seq是在VersionSet全局生成的，并记录在每个batch的头部，我们称这些batch为SequencedBatch。上面我们暂定trx与batch有一一对应关系，但是trx中的key与batch的seq并不一定是一一对应的，对于TransactionDB，WriteCommited的方式是seq_per_key，WritePrepared是seq_per_batch，参见[MaybeAdvanceSeq](https://github.com/facebook/rocksdb/blob/641fae60f63619ed5d0c9d9e4c4ea5a0ffa3e253/db/write_batch.cc#L1162)。
+
+但是在VersionSet中，有三个seq：*last_sequence <= last_published_sequence_ <=  last_allocated_sequence_*。
+
+一开始，写入MemTable的key都是用户可见，其Sequence就是**last_sequence**；后来引入了WritePrepared策略，MemTable中会存在只是Prepared的key，其Sequence对用户不可见；而当引入`two_write_queue`后，当Commit阶段的WALOnlyBatch写完后，WritePrepares Txn通过PrereleaseCallBack，更新**last_published_sequence**(见WriteWalOnly)，其Sequence用户就是可见的了。
+
+总结就是：*last_publish_queue只有在seq_per_batch=true，即使事务用WritePrepare的方式，并且打开`two_write_queue`时才有效，否则等于last_sequence，见[last_seq_same_as_publish_seq](https://github.com/facebook/rocksdb/blob/641fae60f63619ed5d0c9d9e4c4ea5a0ffa3e253/db/db_impl.cc#L212)。*
+
+## `two_write_queue`
+
+对于2PC的Transaction，rocksdb的write会通过queue将writer进行排队，队列中的`writer->batch`会写到wal和MemTable（都是可选的），为了优化写入速度，又加了一个额外的queue，这个queue只写WalOnly的batch，走`WriteImplWALOnly`逻辑。这里分别称这两个queue为：main queue(下称**mq**)/walonly queue(下称**wq**)。mq维护了**last_sequence**，wq维护了**last_published_queue**，
+
+mq的逻辑是，先写wal，其中通过FetchAddLastAllocatedSequence递增`last_allocated_sequence_`，新的MemTable基于`last_allocated_sequence_+1`写mem（等于MemTable对应的batch持久化到日志中的Sequence，这个如果是WriteCommit的事务，这个Batch就是commit_time_batch，将prepare_batch append到waltermpoint之后得到的）。这样确保Batch与MemTable的Sequence能对上。
+
+在MemTableInserter中，如果是默认的seq_per_key，那么每个key自行递增seq；而如果开启了seq_per_batch，那么基于batch_boundary进行seq递增（但是这里需要处理duplicate key的问题，这里引入了一个sub-patch的概念，表示WritBatch的一个没有重复key subset）。
+
+# WritePolicy
+
+## WriteCommited
 
 RocksDB通过SequenceNumber向上返回某个Key最新的数据，而RocksDB的TransactionDB同样基于SequenceNumber来做事务隔离。默认地，当WriteBatch的数据，写入Wal后（即Commit），才写入memtable，这样LSM-tree中都是已提交的数据。那么，事务的隔离级别就取决于何时获取SnapShot。
 
@@ -50,7 +72,7 @@ RocksDB的2PC写入策略默认是WriteCommited，此时data-seq就是commit-seq
 
 WriteCommited方式的事务提交，MemTable中的都是提交的数据，判断事务可见性逻辑简单；但是commit阶段需要做的事情太多，成为系统吞吐瓶颈。因此，RocksDB提出了WritePrepared的写入策略，带来的复杂性主要是判断数据记录（record）的可见性复杂了。
 
-# WritePrepared
+## WritePrepared
 
 此时data-seq就是Prepare-seq，为了**判断prepare-seq对应的commited_seq是否小于snapshot_seq**。此时需要保存<prepare-seq，commit-seq>的信息，空间是有限的，不可能全部记录状态；因此基于不同的数据结构在有限空间下解决这个问题。(version 5.18)
 
@@ -72,7 +94,7 @@ WriteCommited方式的事务提交，MemTable中的都是提交的数据，判�
 
 <img src="/image/write-prepared/structures.png" alt="image-20200711171439816" style="zoom: 50%;" />
 
-# Write Unprepared
+## Write Unprepared
 
 WriteUnprepare与之前最大的不同就是use_batch_per_txn，在WriteUnprepared的事务中，会有多个batch；一个事务对应一批unprep_seq。
 
