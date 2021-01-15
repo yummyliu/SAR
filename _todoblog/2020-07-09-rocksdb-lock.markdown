@@ -51,3 +51,28 @@ ReturnAndCleanupSuperVersion
 
 # Lock Of Thread
 
+SuperVersion
+
+compact结束 和 MemTableFlush时，会创建一个新的Version；Version-`current`表示最新LSM-tree中的文件。Get操作和Iterator的整个生命周期会基于current来读取数据。get/iter引用Version-current，每个version又引用各个文件；如果某个version没有被引用，就需要删除；如果某个文件没有被引用，也需要被删除。
+
+- create version：对所有该version的文件 ref++；反之ref--
+
+由于Version是共享的，ref变更需要加锁，为减少增减引用计数的锁代价，引入SuperVersion，这是thread local的变量。SuperVersion对MemTable和Sst都保持引用
+
+```cpp
+SuperVersion* s = thread_local_->Get();
+if (s->version_number != super_version_number_.load()) {
+  // slow path, cleanup of current super version is omitted
+  mutex_.Lock();
+  s = super_version_->Ref();
+  mutex_.Unlock();
+}
+```
+
+- create new MemTable
+- flush or Compact完成
+
+会创建新的SuperVersion；但这些事件的频率不高；在这之前get/iter引用thread local的sv进行查询。
+
+之前，一个查询需要对MemTable和version分别取mutex，然后加引用；现在只去一次mutex，对SuperVersion加引用，并拷贝为自己的local。
+
