@@ -52,7 +52,7 @@ typora-root-url: ../../layamon.github.io
 
 下面，本文针对对这几个方面做一个笼统的介绍，希望对刚开始了解分布式环境的同学有所帮助。
 
-#### 分布式时钟
+# 分布式时钟
 
 无法确定分布式环境中的不同服务的事件先后顺序，是造成分布式环境问题的根源所在。那么，首先需要能够确定事务的先后顺序（transaction ordering），常用的解决方式就是加一个时间戳。
 
@@ -62,7 +62,7 @@ typora-root-url: ../../layamon.github.io
 
 另外，还可以使用满足一定条件的物理时钟，目前采用这种方式的只是Google Spanner。
 
-#### 分布式锁
+# 分布式锁
 
 第二个问题就是分布式环境中，各个服务之间的操作同步；单机中可以通过**mutex**或**semaphore**进行同步，类似的在分布式环境中也有类似概念，但是复杂点，这里为了和事务锁进行区分，称其distributed rwlock。实现方式分为乐观锁和悲观锁两种，如下图：
 
@@ -84,11 +84,11 @@ typora-root-url: ../../layamon.github.io
 
 另外的方案就是基于下一节提到的共识（consensus）算法来解决这个问题。
 
-##### 分布式一致性
+## 分布式一致性
 
 在各个节点的数据的一致性，通过consensus算法保证，常用的有raft，paxos。raft的详细介绍，参见本站的另一篇blog。这里简单介绍一下CAP理论。
 
-###### CAP theorem
+### CAP theorem
 
 单机数据库通过本地事务来保证数据一致性。分布式系统的一致性是保证整个系统的各处的状态是相同的。对于无状态的分布式系统，系统间的协调几乎没有必要了；但是对于像数据库这种有状态的，为了对外表现的是一个整体，就需要在C/A/P之间权衡了（Principles of Distributed Computing ——Eric Brewer）。
 
@@ -115,7 +115,27 @@ typora-root-url: ../../layamon.github.io
 
 对于AP系统，比如一些NoSQL的分布式存储系统，这种系统可以通过raft等一致性协议对多个读写操作的顺序进行协调，保证每个节点上的数据操作顺序是相同的，那么就能做到**最终一致性**。而对于CP系统，比如一些NewSQL的分布式数据库，更加关注的是一致性，通常也会引入**分布式事务**确保数据的正确性。
 
-#### 分布式事务
+### 一致性模型
+
+> 1. More formally, we say that a consistency model is the **set of all allowed histories of operations**.
+> 2.  operations **take time**，what time should we use? invocation time? completion time? 
+> 3. operation take effect **atomically** at some point between is invocation and completion.
+
+- Linearizability：线性一致性，operations一个个的原子的变更状态。
+
+- Sequential consistency：顺序一致性，比Linearizabililty放松要求，同一个Process的operations保持顺序，但是不同Process的operations的顺序就是undefined；比如，一个Process发起若干个请求，这些请求都在queue中排队，等其他Process消费，这样同一个Process中的由queue保持顺序。
+
+- Causal consistency：因果一致性，人为定义某个operations的dependences，只有等Dependences都执行完，才能执行当前这个operation。
+
+- Serializable consistency：可串行化一致性，看起来需要保证可串行化，应该是一个很强的一致性约束；而可串行化并没有因果依赖的要求，可能打乱同一个Process的operations，在实际很难应用；
+
+  >  Most databases which claim to provide serializability actually provide *strong serializability*, which has the same time bounds as linearizability. To complicate matters further, what most SQL databases term the SERIALIZABLE consistency level [actually means something weaker](http://www.bailis.org/papers/hat-hotos2013.pdf), like repeatable read, cursor stability, or snapshot isolation.
+
+  。。。 。。。
+
+<img src="/image/dist-db/1217-consistency-family-tree.png" alt="family-tree.jpg" style="zoom:50%;" />
+
+# 分布式事务
 
 对于本地事务来说，逻辑上是一个整体的一系列读写操作。 事务比较细致地可以区分为五种状态：
 
@@ -127,11 +147,11 @@ typora-root-url: ../../layamon.github.io
 
 那么，一个分布式事务可以看做是多个本地事务的按照某个协议的协同操作；同样，也存在如上几种状态，也要满足ACID特性；讨论的比较多的是，如何保证在多个节点之间操作的原子性。
 
-##### 原子提交协议
+## 原子提交协议
 
 关于原子提交协议我们听得最多的就是2PC，PostgreSQL和MySQL的多机事务是采用两阶段提交的方式实现的，这种两阶段提交时阻塞的；OceanBase基于Paxos分布式一致性协议实现的无阻塞的两阶段提交，等等。这里就主要说一下这个原子性。
 
-###### 2PC
+### 2PC
 
 保证分布式事务的原子性，通常采用2PC协议。MySQL中也叫XA协议，这是X/Open提出的通用的分布式事务处理协议。
 
@@ -147,7 +167,7 @@ typora-root-url: ../../layamon.github.io
 >
 > 在MySQL内部的SQL层与存储层同样也是采用2PC的方式进行事务提交。
 
-###### 3PC
+### 3PC
 
 2PC的RM在返回Yes之后，处于阻塞的状态；如果此时TM挂了，那么系统就阻塞住了；Skeen和Stonebreaker 在1981年，提出了3PC的解决方案。相比于2PC，3PC是非阻塞的分布式事务原子提交协议，其将commit阶段分为两步，并引入了RM的超时处理，如下图（from Wikipedia）：
 
@@ -161,7 +181,7 @@ typora-root-url: ../../layamon.github.io
 >
 > 另外，还有一种Paxos Commit，就是基于共识算法进行关于commit/aborted的决策；这样RM就作为consensus cluster的client进行请求即可，但是前提是RM都已经处于Prepared的状态了（达到Prepared状态就需要一轮通信，所以这也并不是很高效）。
 
-##### 并发控制
+## 并发控制
 
 在多事务并行中，如果两个事务中的两个操作（这两个操作其中至少有一个是写）目标是同一个对象，那么会产生冲突。这里就要求并行调度保证事务前后的正确性，以及运行期间的隔离性。
 
@@ -191,5 +211,8 @@ typora-root-url: ../../layamon.github.io
 
 Links:
 
-https://martin.kleppmann.com/2016/02/08/how-to-do-distributed-locking.html
+[1. dist lock](https://martin.kleppmann.com/2016/02/08/how-to-do-distributed-locking.html)
 
+[2. consistency model](https://aphyr.com/posts/313-strong-consistency-models)
+
+[3. consistency model](https://projects.ics.forth.gr/tech-reports/2013/2013.TR439_Survey_on_Consistency_Conditions.pdf)
