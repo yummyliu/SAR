@@ -55,3 +55,59 @@ WAL和MANIFEST都是RocksDB的log；虽然记得是不同维度的东西，但�
 **后台任务GroupCommit**的具体方式是：由于这些Job修改的都是全局元信息，会获取db_mutex，进行互斥（比如，[FlushJob](https://github.com/facebook/rocksdb/blob/641fae60f63619ed5d0c9d9e4c4ea5a0ffa3e253/db/db_impl_compaction_flush.cc#L2050)在一开始的时候就需要加锁，CompactionJob则是在[Install](https://github.com/facebook/rocksdb/blob/641fae60f63619ed5d0c9d9e4c4ea5a0ffa3e253/db/db_impl_compaction_flush.cc#L960)的时候加锁）；等到LogAndApply的时候，首先将自己挂在全局的 [manifest_writers_](https://github.com/facebook/rocksdb/blob/641fae60f63619ed5d0c9d9e4c4ea5a0ffa3e253/db/version_set.h#L1062)队列中，只有当自己是front（即Leader）的时候才会继续执行；在执行[PreocessManifestWrites](https://github.com/facebook/rocksdb/blob/641fae60f63619ed5d0c9d9e4c4ea5a0ffa3e253/db/version_set.cc#L2869)的时候，会收集当前队列中的VersionEdit，组成batch_edits；由于这期间都是加锁的，[manifest_writers_](https://github.com/facebook/rocksdb/blob/641fae60f63619ed5d0c9d9e4c4ea5a0ffa3e253/db/version_set.h#L1062)的变更是安全的，只有在[真正写文件的时候](https://github.com/facebook/rocksdb/blob/641fae60f63619ed5d0c9d9e4c4ea5a0ffa3e253/db/version_set.cc#L3013)才会放锁。放锁后，这时后续的Job就可以继续追加到队列中，等待下次收割。
 
 总结一下，RocksDB作为一个经典的LSM-tree结构的事务型存储引擎，比起传统的Btree，在LogManager的组成上有一些不同；但是原理上类似，并且优化思路也是和相似的。
+
+### GroupCommit测试
+
+想知道GroupCommit相比于加锁顺序写，有多大的提升；写了个[测试代码](https://github.com/Layamon/GoofSQL/blob/goof/storage/goof/tools/group-commit/group_commit_bench.cc)，简单比较结果如下：
+
+```bash
+$ ./group_commit_bench -records=1000000 -enable_group_commit=false -writers=20
+cost: 74.6293seconds.
+FileSize: 14000266, actual records: 1000019
+$ rm -rf my.log
+$ ./group_commit_bench -records=1000000 -enable_group_commit=true -writers=20
+cost: 7.77685seconds.
+FileSize: 10400108, actual records: 1000004
+
+$ ./group_commit_bench -records=1000000 -enable_group_commit=false -writers=20 -enable_direct=true
+cost: 60.6797seconds.
+FileSize: 0, actual records: 1000019
+$ rm -rf my.log
+$ ./group_commit_bench -records=1000000 -enable_group_commit=true -writers=20 -enable_direct=true
+cost: 6.57397seconds.
+FileSize: 0, actual records: 1000000
+
+$ ./group_commit_bench -records=1000000 -enable_group_commit=true -writers=20 -enable_sync=false
+cost: 1.62861seconds.
+FileSize: 10626254, actual records: 1000005
+$ rm -rf my.log
+$ ./group_commit_bench -records=1000000 -enable_group_commit=false -writers=20 -enable_sync=false
+cost: 4.12527seconds.
+FileSize: 14000266, actual records: 1000019
+
+$ ./group_commit_bench -records=1000000 -enable_group_commit=false -writers=20 -enable_sync=false -enable_direct=true
+cost: 6.60778seconds.
+FileSize: 0, actual records: 1000019
+$ rm -rf my.log
+$ ./group_commit_bench -records=1000000 -enable_group_commit=true -writers=20 -enable_sync=false -enable_direct=true
+cost: 1.95627seconds.
+FileSize: 0, actual records: 1000004
+```
+
+| sync  | direct | group | time    |
+|:----- |:------:|:-----:| -------:|
+| TRUE  | FALSE  | TRUE  | 7.77685 |
+| TRUE  | FALSE  | FALSE | 74.6293 |
+| TRUE  | TRUE   | TRUE  | 6.57397 |
+| TRUE  | TRUE   | FALSE | 60.6797 |
+| FALSE | FALSE  | TRUE  | 1.62861 |
+| FALSE | FALSE  | FALSE | 4.12527 |
+| FALSE | TRUE   | TRUE  | 1.95627 |
+| FALSE | TRUE   | FALSE | 6.60778 |
+
+打开sync的时候差距相当明显，没有sync也有提升；这里测试代码和实际的group commit实现肯定又出入，但是还是能看出来group commit对于log类型的有序写提升效果很明显。
+
+
+
+
+

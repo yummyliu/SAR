@@ -204,7 +204,7 @@ select * from INFORMATION_SCHEMA.INNODB_METRICS where name = 'index_page_merge_s
 
 在InnoDB中，有如下一些缓冲区；大类上和PgSQL相似都有一个放数据页的BufferPool，和一个放日志记录的LogBuffer。在CHECKPOINT的调度下，进行BufferPool刷盘；每次事务commit进行LogBuffer刷盘。
 
-除了这两个之外，还有为了减小二级索引的写放大，引入的Change Buffer机制；为了避免数据部分写，引入的DoubleWrite Buffer，如下图：
+除了这两个之外，还有为了减小二级索引的写放大，引入的Change Buffer机制；为了避免数据部分写，引入的DoubleWrite Buffer等等，如下图：
 
 ![image-20190726110915433](/image/innodb-overview/InnoDB-caching.png)
 
