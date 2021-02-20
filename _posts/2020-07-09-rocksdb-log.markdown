@@ -1,6 +1,6 @@
 ---
 layout: post
-title: RocksDB——Log Manager
+title: RocksDB的Log Manager与GroupCommit优化
 date: 2020-07-09 21:00
 categories:
   - MyRocks
@@ -56,7 +56,7 @@ WAL和MANIFEST都是RocksDB的log；虽然记得是不同维度的东西，但�
 
 总结一下，RocksDB作为一个经典的LSM-tree结构的事务型存储引擎，比起传统的Btree，在LogManager的组成上有一些不同；但是原理上类似，并且优化思路也是和相似的。
 
-### GroupCommit测试
+### GroupCommit Bench测试
 
 想知道GroupCommit相比于加锁顺序写，有多大的提升；写了个[测试代码](https://github.com/Layamon/GoofSQL/blob/goof/storage/goof/tools/group-commit/group_commit_bench.cc)，简单比较结果如下：
 

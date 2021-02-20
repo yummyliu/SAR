@@ -1,6 +1,6 @@
 ---
 layout: post
-title: RocksDB——Transaction
+title: RocksDB的事务写策略
 date: 2020-05-20 15:20
 categories:
   - MyRocks
