@@ -25,28 +25,28 @@ AccessMethod可以理解为数据在外存的组织形式，也可以简单理�
 
 ## 文件组织
 
-了解Btree之前，那么我们首先了解一下InnoDB的外存文件组织，在外存中，按照表空间（space）进行组织；当启动了`innodb_file_per_table`参数后，每个数据表对应一个文件（参看系统表：`INFORMATION_SCHEMA.INNODB_SYS_DATAFILES`）。而对于全局共享的对象，需要放在共享的表空间ibdata1（全局变量：innodb_data_file_path，默认为ibdata1）中，ibdata1中除了每个表空间都有的对象——ibuf_bitmap、inode等之外，其中还有如下信息，其中每一部分都很重要，这里不做展开：
-
-+ Change buf
-+ Transaction sys
-+ Dictionary 
-+ Rollback seg
-+ Double write buf
-
-> 除了ibdata1是共享的以外，我们还可以通过create tablespace创建[General Tablespace](https://dev.mysql.com/doc/refman/5.7/en/general-tablespaces.html)，同样是全局共享的。
->
-> InnoDB Instrinsic Tables：InnoDB引擎内部的表，没有undo和redo，用户不可创建，只供引擎内部使用。
+首先了解一下InnoDB的外存文件组织，在外存中，按照表空间（tablespace）进行组织；当启动了`innodb_file_per_table`参数后，每个数据表对应一个文件（参看系统表：`INFORMATION_SCHEMA.INNODB_SYS_DATAFILES`）。
 
 ----------
 
 ![image-20190726103704241](/image/innodb-overview/InnoDB-macro.png)
 
-如上图：物理上，在每个space中，有若干个文件或者磁盘分区；每个file分为若干个segment，其中有LeafNodeSegment、NonLeafNodeSegment、rollbacksegment三种segment类型。每个segment是按照extent为单位进行伸缩，每个extent中又有若干个固定大小的page：
+如上图，**物理**上，在每个space中，有若干个文件或者磁盘分区；每个file分为若干个segment，其中有LeafNodeSegment、NonLeafNodeSegment、rollbacksegment三种segment类型。每个segment是按照extent为单位进行伸缩，每个extent中又有若干个固定大小的page：
 
 - 对于uncompressed的表空间，page是16Kb；
 - 对于compressed的表空间，page是1~16Kb。
 
-逻辑上，由若干page组织成一个Btree Index，分为聚簇(一级)索引和二级索引，二级索引的val为聚簇索引的key。
+> 除了ibdata1是共享的以外，我们还可以通过create tablespace创建[General Tablespace](https://dev.mysql.com/doc/refman/5.7/en/general-tablespaces.html)，同样是全局共享的。
+>
+> 而对于全局共享的对象，需要放在共享的表空间ibdata1（全局变量：innodb_data_file_path，默认为ibdata1）中，ibdata1中除了每个表空间都有的对象——ibuf_bitmap、inode等之外，其中还有如下信息，其中每一部分都很重要，这里不做展开：
+>
+> + Change buf：ChangeBuffer的持久化
+> + Transaction sys：事务信息
+> + Dictionary ：InnoDB维护的元数据
+> + Rollback seg：回滚段
+> + Double write buf
+>
+> InnoDB Instrinsic Tables：InnoDB引擎内部的表，没有undo和redo，用户不可创建，只供引擎内部使用。
 
 > 其他两个文件：
 >
@@ -60,6 +60,8 @@ AccessMethod可以理解为数据在外存的组织形式，也可以简单理�
 > ```
 >
 > **ibtmp1**: 由参数innodb_temp_data_file_path控制。临时表的独立表空间。
+
+**逻辑**上，由若干page组织成一个Btree Index，分为聚簇(一级)索引和二级索引，二级索引的val为聚簇索引的key。
 
 ### IO最小单元——Page
 
@@ -210,15 +212,15 @@ select * from INFORMATION_SCHEMA.INNODB_METRICS where name = 'index_page_merge_s
 
 本节对关键的几个buffer进行介绍：
 
-> 另外，还有存储元数据目录与其他内部结果的Memory Pool，由参数`innodb_additional_mem_pool_size`控制，默认8MB；这个如果不够就会动态申请，会在日志中写warning记录。
+> 另外，由于早期系统提供的内存分配器在多核场景下效果一般，InnoDB自己实现了一套内存分配器，有参数`innodb_use_sys_malloc`选择，使用参数`innodb_additional_mem_pool_size`控制大小，默认8MB；不过，现在随着系统的发展，系统提供的内存分配器在多核场景查能够提供更好的性能和扩展性。
 
 ## Change Buffer
 
 ![image-20190726111320366](/image/innodb-overview/change-buffer.png)
 
-Change Buffer是二级索引变更的缓存，其不仅仅是一个内存结构，内存中的changebuffer需要确保外存的changebuffer能够全部load进内存；因此，ChangeBuffer同样可通过Recovery恢复。
+Change Buffer是二级索引变更的缓存，避免更新二级索引带来的二级访问；
 
-ChangeBuffer也是一个Btree，Key为(spaceid,pageno,counter)三元组，其中counter在每个page有一次变更后加一。Value为该page上的操作，之前其中只有insert操作，后来也支持了delete/update/purge操作，成为ChangeBuffer；但是命名上没有改变，在代码中还是叫**InsertBuffer**；
+ChangeBuffer 其不仅仅是一个内存结构，系统表空间中有专门的ChangeBuffer的区域，也是一个Btree，Key为(spaceid,pageno,counter)三元组，其中counter在每个page有一次变更后加一。Value为该page上的操作，之前其中只有insert操作（叫 InsertBuffer，但是命名上没有改变，在代码中还是叫**InsertBuffer**），后来也支持了delete/update/purge操作，成为 ChangeBuffer；
 
 > 注意只是当**非唯一的二级索引**的块不在缓存中时，才会缓存相关操作。
 >
@@ -233,39 +235,30 @@ ChangeBuffer也是一个Btree，Key为(spaceid,pageno,counter)三元组，其中
 
 ## Buffer Pool
 
-存放表和索引的数据，由`innodb_buffer_pool_size`设置，默认是128MB；推荐配置为系统物理内存的80%。
+InnoDB的页面缓冲池，由`innodb_buffer_pool_size`配置，存放索引数据，默认是128MB，推荐配置为系统物理内存的80%。
 
-任何BufferPool都逃不过一个刷脏的问题；在数据库中，为了保证恢复及时；那么每间隔一段时间，会在日志中写入一个检查点。
+在数据库中，任何BufferPool都逃不过一个刷脏的问题；为了保证恢复及时；那么每间隔一段时间，会在日志中写入一个检查点。CHECKPOINT在DBMS是指一种操作，在InnoDB中也是指redo日志中的一条记录，记录的内容为CHECKPOINT_LSN。其表示在CHECKPOINT_LSN之前的脏页已经从缓冲区写入磁盘了。而完成CHECKPOINT操作的方式主要有两种类型：
 
-CHECKPOINT在DBMS是指一种操作，也是指redo日志中的一条记录，记录的内容为CHECKPOINT_LSN。其表示在CHECKPOINT_LSN之前的脏页已经从缓冲区写入磁盘了。而完成CHECKPOINT操作的方式主要有两种类型：
+- **sharp checkpoint**: 只将commited的事务修改的页进行刷盘，并且记下最新Commited的事务的LSN。这样恢复的时候，redo日志从CHECKPOINT发生的LSN开始恢复即可。由于所有刷盘的数据都是在同一个点(CHECKPOINT LSN)之后，所以称之为sharp。
 
-+ **sharp checkpoint**: 只将commited的事务修改的页进行刷盘，并且记下最新Commited的事务的LSN。这样恢复的时候，redo日志从CHECKPOINT发生的LSN开始恢复即可。由于所有刷盘的数据都是在同一个点(CHECKPOINT LSN)之后，所以称之为sharp。
+- **fuzzy checkpoint** ：如果脏页滞留到一定时间，就可能会刷盘。
 
-+ **fuzzy checkpoint** ：如果脏页滞留到一定时间，就可能会刷盘。
+在InnoDB中，除了 shutdown 的时候，正常时候都是fuzzy CHECKPOINT。刷盘前，同一个脏页可能合并了多次修改，这样省去了很多IO。在BufferPool中的页由三个list维护，分别是：free_list（可用的页）、LRU_list（最近使用的页）、flush_list（按照LSN的顺序组织的脏页，即，最近修改的页）。
 
-在InnoDB中，除了shutdown的时候，正常时候都是fuzzy CHECKPOINT。刷盘前，能够合并多次修改，这样省去了很多IO。
-
-BufferPool中的页由三个list维护，分别是：
-
-+ free_list：可用的页
-+ LRU_list：最近使用的页
-+ flush_list：按照LSN的顺序组织的脏页（即，最近修改的页）。
-
-由于bufferpool是有限的，不能只是等满了才进行页换出；所以，InnoDB会持续地进行Page Clean，InnoDB中的换出有两种情况。
+由于Bufferpool是有限的，不能只是等满了才进行页换出；所以，InnoDB会持续地进行Page Clean，InnoDB中的换出有两种情况：
 
 - BufferPool满了之后，基于LRU_list，进行页面置换。
 
 - 基于flush_list，其中按照修改的先后顺序排列，选择最早更改的脏页(LSN)进行换出。
 
-  > 为了避免将热数据换出，所以选择了最早更改的脏页。
-  >
-  > 另外，由于事务日志（即，redo/wal日志）是固定大小的，redo日志是循环使用的。当最早的日志记录相应的页一直没有刷盘，如果此时发生了日志重用，那么更改就没有持久化(违反D)；因此，当这种情况发生时，InnoDB需要夯住，进行刷盘（同样这也是为什么选择最早更改的脏页的一个原因）。
+  为了避免将热数据换出，所以选择了最早更改的脏页。另外，由于REDO日志是固定大小且循环使用的。当最早的日志记录对应的页没有刷盘，如果此时发生了日志重用，那么更改就没有持久化；因此，当这种情况发生时，InnoDB需要夯住，等待刷盘（同样这也是为什么选择最早更改的脏页的一个原因）。
+  
 
-为了避免checkpoint的频繁刷脏，pagecleaner和用户线程会按照一些阈值点，进行提前刷脏。和这相关是一个Page Cleaner线程组，其分为两个角色协调者和工作者，如下：
+为了避免CHECKPOINT的频繁刷脏，pagecleaner 和用户线程会按照一些阈值点，进行提前刷脏。和这相关是一个Page Cleaner线程组，其分为两个角色协调者和工作者，如下：
 
-![image-20190726113541342](/image/innodb-overview/page-cleaner.png)
+<img src="/image/innodb-overview/page-cleaner.png" alt="image-20190726113541342" style="zoom: 50%;" />
 
-coordinator持续设置标记位触发worker进行刷盘，自己触发后也会参与刷盘；各自认领不同bufferpool对应的list进行清理。worker结束后，设置标记位通知coordinator该轮清理完成。
+Coordinator 持续设置标记位触发 worker 进行刷盘，自己触发后也会参与刷盘；各自认领不同 Bufferpool 对应的 list 进行清理。worker结束后，设置标记位通知coordinator该轮清理完成。
 
 综上，当InnoDB执行fuzzy CHECKPOINT的时候，其会找到flush_list中的最早更改的脏页的LSN，将其作为CHECKPOINT的start，写入事务日志头中(参见源码：`log_checkpoint_margin`和`log_checkpoint`)。
 
