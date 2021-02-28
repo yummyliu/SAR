@@ -1,6 +1,6 @@
 ---
 layout: post
-title: MyRocks Internals
+title: MyRocks Overview
 date: 2020-02-27 10:51
 categories:
   - MyRocks
@@ -10,38 +10,33 @@ typora-root-url: ../../layamon.github.io
 {:toc}
 # MyRocks 
 
-MyRocks最初是由FB开发的，目前存在三个主要分支：MariaDB、Percona、FB，[略有不同](https://mariadb.com/kb/en/differences-between-myrocks-variants/)，但大致相似。这里以Percona版本进行介绍，主要feature是：写优化、高压缩的事务型存储引擎（事务隔离级别：RC, RR）。
+MyRocks最初是由FB开发的，为了解决User DB的大容量存储问题；当时的目标是在CPU和IO不退化的前提下，节约磁盘空间（正是由于磁盘空间节省了，这样一个实例可以部署多个MyRocks，这样就要求CPU和IO不能退化）。
+
+目前存在三个主要分支：MariaDB、Percona、FB，[略有不同](https://mariadb.com/kb/en/differences-between-myrocks-variants/)，但大致相似。主要feature是：写优化、高压缩的事务型存储引擎（事务隔离级别：RC, RR）。
 
 ## Layout
 
-MyRocks的一二级索引是按照KV的方式存储在RocksDB中，其中索引的KV内容如下图：
+MyRocks中的数据基于Prefix Encoding的Internal Index ID将不同数据聚合存储，如下图，Key的前面都有一个单调递增的公共前缀——INDEX ID；具体索引是按照KV的方式存储在RocksDB中，其中索引的KV内容如下图：
 
-> checksum位于value的尾部，是一个可选的选项，通过参数打开：
+![image-20210228152350094](/image/myrocks-overview/key-format.png)
+
+- NULL-flag的值就是0，占一个字节；按照MemComparable有序的排序，NULL值物理上排在SK的前面；PrimaryKey不可为NULL，没有NULL-flag。
+
+- 当没有TTL和restore_data时，SK的Value字段是空的。
+
+- restore data：当MemComparable编码的时候，需要一些额外信息才能恢复出原来的值时，这些额外的信息位于restore data中，又叫[unpack_info](https://github.com/facebook/mysql-5.6/blob/bd3bd34c94b71f66ab393d5e8baf19cb2716b267/storage/rocksdb/rdb_datadic.cc#L3133)。
+- checksum位于value的尾部，是一个可选的选项，通过参数打开。
+- TimeStamp：如果MyRocks的表开启了TTL特性，并且没有显式指定TTL列，那么在索引记录中会有隐式的TTL列的信息，位于value的前8个byte。
+
+> 当使用BlockBasedTable，由于其RestartPoint特性，Prefix Encoding的Internal Index ID不会存在空间代价。另外，相比于InnoDB的事务ID和回滚段指针的存储，myrocks的Sequence可以压缩，并且满足条件可以清除。
 >
-> ```
-> set GLOBAL rocksdb_store_row_debug_checksums = 1; 
-> set GLOBAL rocksdb_verify_row_debug_checksums = 1;
-> ```
-
-![image-20210202171113003](/image/myrocks-overview/key-format.png)
-
-每个Key由Internal Index ID作为prefix，索引号内部单调递增，维护在系统表`ROCKSDB_GLOBAL_INFO`中；
-
-当使用BlockBasedTable，由于其RestartPoint特性，Prefix Encoding的Internal Index ID不会存在空间代价。另外，相比于InnoDB的事务ID和回滚段指针的存储，myrocks的Sequence可以压缩，并且满足条件可以清除。
-
 > 在InnoDB的record上，有事务ID（6 bytes）和回滚段指针（7 bytes），但是不可压缩；RocksDB中每个KV上有一个sequence id（7 bytes）和操作符标识（1 bytes），是可以压缩的，并且如果sequence id在MVCC中用不到，即record落到bottomlevel，那么可以置零。
-
-另外，如果MyRocks的表开启了TTL特性，并且没有显式指定TTL列，那么在索引记录中会有隐式的TTL列的信息；在PrimaryKey中，位于value的前8个byte。
-
-最后，在创建表和索引时，可在INDEX COMMENT中指定CF，CF与index是1：N的关系，如果没有指定CF，将放在default-CF中，可以分别配置每个CF的属性，在系统表information_schema.ROCKSDB_CF_OPTIONS中查看。
 
 ### Meta
 
-上面提到默认数据放在default CF中，而MyRocks的元信息单独放在system CF中，每一类元信息由DATA_DICT_TYPE作为前缀存储在rocksdb中，可认为是system cf中的system cf的INDEX ID。
+我们知道RocksDB是按照CF来组织数据的，在MyRocks中，用户数据默认都放在 default CF中；而MyRocks的系统元数据单独放在system CF中，每一类元数据由DATA_DICT_TYPE作为前缀存储在rocksdb中，可认为是system cf中的system cf的INDEX ID；有如下几类：
 
-```
-__system__
-// Data dictionary types
+```c++
   enum DATA_DICT_TYPE {
     DDL_ENTRY_INDEX_START_NUMBER = 1,
     INDEX_INFO = 2,
@@ -56,7 +51,7 @@ __system__
   };
 ```
 
-- DDL_ENTRY_INDEX_START_NUMBER: create table是创建一条，对应的ddl_manager更新，在重启的时候ddlmanger也会读取该信息更新，在该INDEX中存了每个Table的CF与Index的对于关系（table-defination -> key_definations）
+- DDL_ENTRY_INDEX_START_NUMBER: ddl manager创建新Table时创建一条，存了每个Table的CF与Index的对于关系（table-defination -> key_definations）。在创建表和索引时，可在INDEX COMMENT中指定每个索引的CF（不指定就放在default中，CF与index是1：N的关系）；
 
   <img src="file:///Users/bytedance/layamon.github.io/image/myrocks-overview/ddl_entry.png?lastModify=1612248680" alt="image-20210202140308171" style="zoom:50%;" />
 
@@ -68,7 +63,7 @@ __system__
 
   <img src="file:///Users/bytedance/layamon.github.io/image/myrocks-overview/cf_def.png?lastModify=1612248680" alt="image-20210202141621899" style="zoom:50%;" />
 
-- BINLOG_INFO_INDEX_NUMBER，每次commit的时候更新binlog的信息，只有一条记录≈
+- BINLOG_INFO_INDEX_NUMBER，每次commit的时候更新binlog的信息，只有一条记录；用来实现Crash Safe Slave；但是在Percona中已经不用了。
 
   <img src="file:///Users/bytedance/layamon.github.io/image/myrocks-overview/binlog_info.png?lastModify=1612248680" alt="image-20210202141806897" style="zoom:50%;" />
 
@@ -78,13 +73,17 @@ __system__
 
 - INDEX_STATISTICS：有PropertiesCollector收集的IndexStats，见Rdb_index_stats::materialize
 
-- MAX_INDEX_ID：只有一条记录，记录当前的index_id
+- MAX_INDEX_ID：内部单调递增的INDEX ID；
 
 - DDL_CREATE_INDEX_ONGOING：顾名思义，和DDL_DROP_INDEX_ONGOING相似。
 
 - AUTO_INC，每个index的自增号，在事务提交的时候会持久化。
 
   <img src="file:///Users/bytedance/layamon.github.io/image/myrocks-overview/auto_inc.png?lastModify=1612248680" alt="image-20210202145028128" style="zoom:50%;" />
+
+### Encode
+
+相比于Btree，在LSM-tree需要更多次的比较才能定位到一个Key，因此在LSM-tree中对Key的比较操作的性能更加敏感；并且在数据库中，有时候Key的比较需要对Key进行转换（比如case insensitive的比较，先统一转成小写，再比较），这更增加了key compare的代价；因此，在MyRocks直接[将Key编码成bytewise comparable的内容](https://github.com/facebook/mysql-5.6/wiki/MyRocks-record-format#memcomparable-format)，这样可以直接用memcpy比较。
 
 ## CRUD
 
@@ -235,6 +234,8 @@ TTL的实现基于CompactionFilter，由Compaction来顺带将过期数据删除
 3. **Skip Unique Checks**特性，也是类似的道理。由参数`unique_checks`控制，同样要求从库没有其他变更请求。
 
 Links：
+
+[0. MyRocks VLDB](http://www.vldb.org/pvldb/vol13/p3217-matsunobu.pdf)
 
 [1. MyRocks Limitations](MyRocks的局限：https://www.percona.com/doc/percona-server/LATEST/myrocks/limitations.html)
 
