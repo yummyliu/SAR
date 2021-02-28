@@ -12,26 +12,17 @@ typora-root-url: ../../layamon.github.io
 
 - 时机
 
-Merge操作的具体执行时机可能在Get的时候，也可能在Compact清理的时候；这时Merge的操作对象可能已经累积不少了。要计算到Merge记录的val，需要向前追溯，直到找到该key的一个Put或者Delete记录；将Put的val和merge的val进行合并，最后得到正确的值；（这叫FullMerge）
+Merge操作的具体执行时机可能在Get的时候，也可能在Compact清理的时候；Get的时候要执行FullMerge，Compact的时候视情况而定，可能是FullMerge也可能是PartialMerge，或者什么也不做。
 
 - PartialMerge
 
-但有可能merge的链很长，这个操作就很耗时；为避免这个问题，用户的使用场景中，如果Merge语义能够级联（即，Merge的输出可以作为另一个Merge的输入），那么可以定义`PartialMerge`接口，这样可以提前对多个Merge操作进行部分合并成一个merge；减少了最后`FullMerge`时的merge量。将IO代价进行均摊，这样得到一个线性扩展的性能曲线。
+如果Merge语义能够级联（即，Merge的输出可以作为另一个Merge的输入），那么可以定义`PartialMerge`接口，这样可以提前对多个Merge操作进行部分合并成一个merge；减少了最后`FullMerge`时的merge量。将IO代价进行均摊，这样得到一个线性扩展的性能曲线。
+
+主要用在Compaction过程中，此时对于存在Snapshot的情况；
 
 - 数据回收
 
-回收旧版本数据，需要注意是否有快照还在使用。对于某个Key有如下快照：
-
-```
-K:   OP1     OP2     OP3     OP4     OP5  ... OPn
-              ^               ^                ^
-              |               |                |
-           snapshot1       snapshot2       snapshot3
-```
-
-如果没有Merge类型，那么对于每个snapshot只需要保留最近的一个OP数据；有了Merge后，Compact和Get类似都是从new->old扫描数据，将扫过的merge操作暂存，直到可以执行FullMerge；
-
-但Compact和Get不同，Compact是针对某一个sst file操作，Get可以全局扫描；Compact如果遇到end-of-file还没结束，那么这次就不能执行FullMerge；
+Compact回收旧版本数据，需要注意是否有快照还在使用。Compact和Get不同，Compact是针对某一个sst file操作，Get可以全局扫描；Compact如果遇到end-of-file还没结束，那么这次就不能执行FullMerge；
 
 - 使用方式
 
@@ -45,3 +36,4 @@ storage/rocksdb/terarkdb/utilities/merge_operators/string_append/stringappend.h 
 storage/rocksdb/terarkdb/utilities/merge_operators/uint64add.cc <<GLOBAL>>
              class UInt64AddOperator : public AssociativeMergeOperator {
 ```
+

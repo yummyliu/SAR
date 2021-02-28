@@ -56,7 +56,7 @@ __system__
   };
 ```
 
-- DDL_ENTRY_INDEX_START_NUMBER: create table是创建一条，对应的ddl_manager更新，在重启的时候ddlmanger也会读取该信息更新，（table-defination -> key_definations）
+- DDL_ENTRY_INDEX_START_NUMBER: create table是创建一条，对应的ddl_manager更新，在重启的时候ddlmanger也会读取该信息更新，在该INDEX中存了每个Table的CF与Index的对于关系（table-defination -> key_definations）
 
   <img src="file:///Users/bytedance/layamon.github.io/image/myrocks-overview/ddl_entry.png?lastModify=1612248680" alt="image-20210202140308171" style="zoom:50%;" />
 
@@ -90,21 +90,38 @@ __system__
 
 ### DDL
 
-> Online DDL只支持创建删除二级索引。Instant DDL只支持一些简单的元数据变更，比如默认值，Char(N)等
-
 Create/Drop Table 会更新system中的dict index；
 
-Create/Drop Index会发起专门的Job来创建，并且Inplace Alter（HA_ALTER_INPLACE_SHARED_LOCK_AFTER_PREPARE）。
+Create/Drop Index会发起专门的Job来创建，但是这里不是Online，会阻塞写（见`check_if_supported_inplace_alter`，其返回HA_ALTER_INPLACE_SHARED_LOCK_AFTER_PREPARE，需要在倒腾数据阶段加共享锁）；
 
-> h->check_if_supported_inplace_alter() // = **HA_ALTER_INPLACE_SHARED_LOCK_AFTER_PREPARE**
-> h->prepare_inplace_alter_table()
-> ...
-> h->commit_inplace_alter_table
+> MySQL的存储引擎实现Alter Table，一般有如下几步：
+>
+> h->check_if_supported_inplace_alter() ：SQL层向存储层确认是否支持inplace，支持到什么程度；
+> h->prepare_inplace_alter_table()：一般进行元数据变更，以及一些准备工作。
+> h->inplace_alter_table()：具体的数据变更。
+> h->commit_inplace_alter_table：完成阶段。
 
-- Create Index: 创建元数据，读取primary key，按照sk进行外部排序（超过RDB_MERGE_BUF_SIZE放在临时文件中）；最后利用SstFileWriter直接写sst文件，并[Ingest](https://github.com/facebook/rocksdb/wiki/Creating-and-Ingesting-SST-files)进LSM-tree。最后提交。
-- Drop Index：先把元数据删了，然后注册一个全局drop index ongoing的任务；后面又单独的Rdb_drop_index_thread来处理，处理流程是
-  - 先DeleteFileInRanges，将可以直接删除的文件删除；
-  - 发起一个CompactRange，通过Filter将头尾部分过滤掉。
+- Create Index: 
+
+  - Prepare：准备工作，记一些元数据；
+  - 执行阶段：读取primary key，按照sk进行外部排序（超过RDB_MERGE_BUF_SIZE放在临时文件中）；最后利用SstFileWriter直接写sst文件，并[Ingest](https://github.com/facebook/rocksdb/wiki/Creating-and-Ingesting-SST-files)进LSM-tree。
+  - Commit：在system中提交索引信息。
+
+- Drop Index：
+
+  - Prepare：收集DropIndex信息；
+
+  - 执行阶段：没做什么关于DropIndex 的事；
+
+  - Commit：在system删除索引信息，然后注册一个全局drop index ongoing的任务；后面又单独的Rdb_drop_index_thread来处理，处理流程是
+
+    ```c++
+          /* Mark indexes to be dropped */
+          dict_manager.add_drop_index(ctx->m_dropped_index_ids, batch);
+    ```
+
+    - 先DeleteFileInRanges，将可以直接删除的文件删除；
+    - 发起一个CompactRange，通过Filter将头尾部分过滤掉。
 
 ### Read
 

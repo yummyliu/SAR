@@ -84,25 +84,31 @@ WriteCommited方式的事务提交，MemTable中的都是提交的数据，判�
 
 ### 三个SequenceNumber
 
-一开始，写入MemTable的key都是用户可见，其Sequence就是**last_sequence**；后来引入了WritePrepared策略，MemTable中会存在只是Prepared的key，其Sequence对用户不可见；而当引入`two_write_queue`后，当Commit阶段的WALOnlyBatch写完后，WritePrepares Txn通过PrereleaseCallBack，更新**last_published_sequence**(见WriteWalOnly)，其Sequence用户就是可见的了。
-
-总结就是：
-
-+ last_sequence_：不使用two write queue的
-
-+ last_allocated_sequence_：在wal中的记录，会分配seq，但是这些seq不会出现在memtable中。
-
-+ last_published_sequence\_：*last_publish_queue只有在seq_per_batch=true，即使事务用WritePrepare的方式，并且打开`two_write_queue`时才有效，此时>last_sequence，否则等于last_sequence，见[last_seq_same_as_publish_seq](https://github.com/facebook/rocksdb/blob/641fae60f63619ed5d0c9d9e4c4ea5a0ffa3e253/db/db_impl.cc#L212)。*
+一开始，写入MemTable的key都是用户可见，其Sequence就是**last_sequence**；后来引入了WritePrepared策略，MemTable中会存在只是Prepared的key，其Sequence对用户不可见；并且为了优化WritePrepare，加了一个参数two_write_queue。
 
 ### `two_write_queue`
 
-> two write queue，原名叫 [concurrent_prepare](https://github.com/facebook/mysql-5.6/pull/763)，主要是针对writePrepared的事务的优化，在prepare阶段可以[ConcurrentWriteToWAL](https://github.com/facebook/rocksdb/commit/63822eb761a1c45d255e5676512153d213698b7c) 
+> two write queue，原名叫 [concurrent_prepare](https://github.com/facebook/mysql-5.6/pull/763)，主要是针对writePrepared的事务的优化，在prepare阶段写MemTable的同时，可以[ConcurrentWriteToWAL](https://github.com/facebook/rocksdb/commit/63822eb761a1c45d255e5676512153d213698b7c)的写WalOnlyBatch
 
-对于2PC的Transaction，rocksdb的write会通过queue将writer进行排队，队列中的`writer->batch`会写到wal和MemTable（都是可选的），为了优化写入速度，又加了一个额外的queue，这个queue只写WalOnly的batch，走`WriteImplWALOnly`逻辑。这里分别称这两个queue为：main queue(下称**mq**)/walonly queue(下称**wq**)。mq维护了**last_sequence**，wq维护了**last_published_queue**，
+rocksdb的write会通过queue将writer进行排队，队列中的`writer->batch`会写到wal和MemTable。对于2PC的Transaction，为了优化写入速度，又加了一个额外的queue，这个queue只写WalOnly的batch，走`WriteImplWALOnly`逻辑。这里分别称这两个queue为：main queue(下称**mq**)/walonly queue(下称**wq**)。mq维护了**last_sequence**，wq维护了**last_published_queue**，
 
 mq的逻辑是，先写wal，其中通过FetchAddLastAllocatedSequence递增`last_allocated_sequence_`，新的MemTable基于`last_allocated_sequence_+1`写mem（等于MemTable对应的batch持久化到日志中的Sequence，这个如果是WriteCommit的事务，这个Batch就是commit_time_batch，将prepare_batch append到waltermpoint之后得到的）。这样确保Batch与MemTable的Sequence能对上。
 
-在MemTableInserter中，如果是默认的seq_per_key，那么每个key自行递增seq；而如果开启了seq_per_batch，那么基于batch_boundary进行seq递增（但是这里需要处理duplicate key的问题，这里引入了一个sub-patch的概念，表示WritBatch的一个没有重复key subset）。
+而当引入`two_write_queue`后，Prepare阶段将数据写入MemTable后，Commit阶段就是WALOnlyBatch；WalOnlyBatch写完后，WritePrepares Txn通过PrereleaseCallBack，更新**last_published_sequence**，其Sequence用户就是可见的了。
+
+> 在MemTableInserter中，如果是默认的seq_per_key，那么每个key自行递增seq；而如果开启了seq_per_batch，那么基于batch_boundary进行seq递增（但是这里需要处理duplicate key的问题，这里引入了一个sub-patch的概念，表示WritBatch的一个没有重复key subset）。
+
+三个Sequence的总结就是：
+
++ last_sequence_：一般情况的用户可见的Sequence
+
++ last_published_sequence_：
+
+  在seq_per_batch=true，即事务用WritePrepare的方式，并且打开two_write_queue时才有效，见
+
+  [last_seq_same_as_publish_seq](https://github.com/facebook/rocksdb/blob/641fae60f63619ed5d0c9d9e4c4ea5a0ffa3e253/db/db_impl.cc#L212)
+
+  - 此时也会启用 last_allocated_sequence_，在WAL中的记录都会有一个Sequence，但这些Seq不一定在MemTable中。
 
 ## Write Unprepared
 
