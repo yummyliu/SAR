@@ -58,16 +58,14 @@ FragmentTombstones(unfrag_ranges):
 		cur_end_keys.emplace(range.end, range.seqno, kTypeRangeDelete)		
 ```
 
-最终得到每个Sst的FragmentedRangeTombstoneList
+最终得到每个Sst的FragmentedRangeTombstoneList。
 
 ```
-​```
 tombstones_:     [a, b) [c, e) [h, k)
                    | \   /  \   /  |
                    |  \ /    \ /   |
                    v   v      v    v
 tombstone_seqs_: [ 5 3 10 7 2 8 6  ]
-​```
 ```
 
 ## RangeDelAggregator
