@@ -83,9 +83,13 @@ active_seq_set：[2 3 5 6 7 8 10]
 
 **SnapShotStripe -> beginKey -> TombStone**
 
-在多个Input的merge output过程中，同样将多个input的TombStone维护在堆（具体实现包含一个ActiveHeap，一个InactiveHeap和一个按Sequence排序的ActiveOrderedSet）中，这样始终维护了覆盖当前Iter.Key的TombStone对象。判断ShouldDelete时，通过ActiveOrderedSet的Begin.seq与Key.Seq关系即可知道是否需要Delete，即包含Iter.Key的且Sequence最新的TombStone，
+在多个Input的merge output过程中，同样将多个input的TombStone维护在堆（具体实现包含一个ActiveHeap，一个InactiveHeap和一个按Sequence排序的ActiveOrderedSet）中，这样始终维护了覆盖当前Iter.Key的TombStone对象。判断ShouldDelete时，通过ActiveOrderedSet的Begin.seq与Key.Seq关系即可知道是否需要Delete，即包含Iter.Key的且Sequence最新的TombStone。
 
-Links
+FinishCompactionOutputFile时，在RangeDelAggrefator::NewIterator中，构造一个FragmentedRangeTombStoneIterator；[直接取Fragmented的TombStone作为输出](https://github.com/facebook/rocksdb/blob/8c78348c77940d8441d51bf2558bd9bd36c37f07/db/compaction_job.cc#L1213)（Sequence取RangeTombStoneStack的Top），这样在Compaction的转移过程中，将重叠部分的TombStone进行合并，保留最新的即可。
+
+
+
+**Links**
 
 [DeleteRangeImpl](https://github.com/facebook/rocksdb/wiki/DeleteRange-Implementation)
 
