@@ -83,7 +83,7 @@ MyRocks中的数据基于Prefix Encoding的Internal Index ID将不同数据聚�
 
 ### Encode
 
-相比于Btree，在LSM-tree需要更多次的比较才能定位到一个Key，因此在LSM-tree中对Key的比较操作的性能更加敏感；并且在数据库中，有时候Key的比较需要对Key进行转换（比如case insensitive的比较，先统一转成小写，再比较），这更增加了key compare的代价；因此，在MyRocks直接[将Key编码成bytewise comparable的内容](https://github.com/facebook/mysql-5.6/wiki/MyRocks-record-format#memcomparable-format)，这样可以直接用memcpy比较。
+相比于Btree，在LSM-tree需要更多次的比较才能定位到一个Key，因此在LSM-tree中对Key的比较操作的性能更加敏感；并且在数据库中，有时候Key的比较需要对Key进行转换（比如case insensitive的比较，先统一转成小写，再比较），这更增加了key compare的代价；因此，在MyRocks直接[将Key编码成bytewise comparable的内容](https://github.com/facebook/mysql-5.6/wiki/MyRocks-record-format#memcomparable-format)，这样可以直接用memcpy比较，进而节省了CPU的开销。
 
 ## CRUD
 
@@ -129,11 +129,17 @@ Create/Drop Index会发起专门的Job来创建，但是这里不是Online，会
   - rnd_pos：按照position信息读取整行。MyRocks基于主键的查询可以一步到位，并且也是聚集的（sst都是有序的，where a=1相关记录都在一起）；基于二级索引的查询，同样可以通过Covering Index避免对主键的二次查询。
 - Sequential Scan：利用RocksDB的Iterator
   1. rnd_init：创建Iterator
-  2. info：获取统计信息，Optimizer或者系统表；对应的就是RocksDB的`GetApproximateSizes`。
+  2. info：获取统计信息，Optimizer或者系统表；对应的就是RocksDB的`GetApproximateSizes`；
   3. extra：上层给下层的hint，比如是否只需要读key （HA_EXTRA_KEYREAD），这样读取secondary index的时候就不需要再查primary index。
   4. rnd_next：Iterator向后遍历，知道满足条件，或者没有数据。
 
-RocksDB有个弊端：前向扫描快，ORDER BY DESC慢，这里可以在CF上加**rev:**标记，是表示创建一个Reversed Column Family，用于优化此类查询。在MyRocks中，直接通过判断"rev:"前缀，[决定CF使用哪个比较器](https://github.com/facebook/mysql-5.6/blob/bd3bd34c94b71f66ab393d5e8baf19cb2716b267/storage/rocksdb/rdb_cf_options.cc#L317)。
+选择查询计划的代价在数据库中有时是不可忽略的，在MyRocks中，可以通过Hint的方式force use index；另外，RocksDB提供了GetApproximateSize接口，返回一个Range的估计物理大小；
+
+另外，在RangeScan场景中，MyRocks通过Prefix Bloom Filter，可以优化带有Equal predicate的查询。
+
+#### Reverse Seek
+
+RocksDB有个弊端：前向扫描快，ORDER BY DESC慢，这里可以在CF上加**rev:**标记，是表示创建一个Reversed Column Family，用于优化此类查询。Reversed CF的创建只需要在名字前加上rev，MyRocks直接通过判断"rev:"前缀，[决定CF是否使用Reverse Key Comparator](https://github.com/facebook/mysql-5.6/blob/bd3bd34c94b71f66ab393d5e8baf19cb2716b267/storage/rocksdb/rdb_cf_options.cc#L317)，减少了CPU的开销。
 
 > DESC为什么慢？
 >
@@ -145,7 +151,11 @@ RocksDB有个弊端：前向扫描快，ORDER BY DESC慢，这里可以在CF上�
 
 关于DML就是 Insert/Delete/Update，就是RocksDB的Put/Delete/Merge。
 
-在 MyRocks  中，Insert 和 Update 对应的都是**Put**；而 Delete 会根据不同情况，判断是否是 SingleDelete ， 详见 can_use_single_delete （SK的信息全在key中，不存在overwrite value的情况，因此都是SingleDelete）。Merge用在auto_increment中。
+在 MyRocks  中，Insert 和 Update 对应的都是**Put**；在MyRocks场景中，一个表可能有多个二级索引，这意味着PrimaryKey的更新/删除，会发起多个二级索引的更新/删除。由于二级索引有很多，这样LSMTree中，会存在很多DeleteType，Delete只有在最后一层才能删除，这带来很大的RangeScan代价。为了优化这一点，基于**二级索引直接将PrimaryKey拼在SecondaryKey的Key部分后面**的前提，SecondaryKey的删除可以直接用SingleDelete， 详见 can_use_single_delete （SK的信息全在key中，不存在overwrite value的情况，因此都是SingleDelete），这样可以及时的删除DeleteType，带来RangeScan性能的提升。
+
+> If the secondary key changes, MyRocks issues SingleDelete(old_secondary_key) and Put(new_secondary_key). Multiple Puts to the same secondary_key without SingleDelete never occurs.
+
+Merge用在auto_increment中。
 
 一般**DB:GET**会传入一个string类型的指正来接受value值，为优化value的memcpy的代价，RocksDB设计了`PinnableSlice`结构，这样如果RocksDB从block cache中返回value，那么可以减少一次内存拷贝，直接从block cache中返回。直到改PinnableSlice析构或Reset才释放block cache对应数据的引用。
 

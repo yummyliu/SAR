@@ -24,7 +24,17 @@ typora-root-url: ../../layamon.github.io
 
 # Merge Implement
 
-- MergeOperator：
-- MergeContext：Get和Iter会维护一个merge_context_；这样在具体的
-- MergeHelper：
+涉及到的类主要有以下三个：
+
+- MergeOperator：用户定义的自己的MergeOperator。
+- MergeContext：暂存MergeOperands，在GetContext/DBIter/MergeHelper中，会维护一个merge_context_，再具体的Merge执行过程中，暂存遇到的MergeType的value。
+- MergeHelper：辅助类，执行具体的Merge逻辑。包括收集操作数过程（MergeUntil，有且只有CompactionIterator使用）和最终的调用MergeOperator::FullMergeV2的封装（TimedFullMerge，注意这是个static函数）。
+
+在RocksDB内，只要需要读数据的地方都需要维护一个MergeContext；当遇到一个MergeType时，通MergeContext::PushOperand暂存mergeoperand，最后执行TimedFullMerge。
+
+PushOperand可以通过MergeHelper代理执行（有且只有CompactionIterator），也可以自己来；只要有MergeContext就行。最终一般是通过TimeFullMerge间接调用MergeOperator::FullMergeV2。
+
+## CompactionIterator与MergeHelper
+
+上面提高MergeHelper::MergeUntil有且只有在CompactionIterator中使用，用在NextFromInput的调用中。并且在Compaction场景中，可能此次Merge的执行不了FullMerge。因此在[MergeUntil的最后](https://github.com/facebook/rocksdb/blob/1f11d07f242e4c135cd0da1125ee3a1ec16aeecb/db/merge_helper.cc#L318)，确认是否存在找到beginning，没找到的话，尝试调用[PartialMergeMulti](https://github.com/facebook/rocksdb/blob/1f11d07f242e4c135cd0da1125ee3a1ec16aeecb/db/merge_helper.cc#L352)。
 

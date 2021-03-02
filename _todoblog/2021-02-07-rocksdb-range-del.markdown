@@ -40,7 +40,11 @@ Mem中使用单独的MemTable存储RangeDeletion信息，并且没有Fregment；
 
 ## Fragmented RangeTombstone
 
-MemTable和Sst中的TombStone都是没有Fragment的，在查询的时候需要遍历全部集合；为了提高Key查询TombStone的效率，有了FragmentRangeTombStone，这样对于每个Key，可以通过binary search找到对应的fragment TombStone。
+MemTable和Sst中的TombStone都是没有Fragment的，在查询的时候需要遍历全部集合；为了提高Key查询TombStone的效率，在读取MemTable/构建SSTReader的时候，会创建FragmentRangeTombStoneList。
+
+FragmentedRangeTombStoneList存储了划分后的每个Fragment的Start、End和该Fragment对应的实际TombStone的SequenceNumber；这样基于FragmentedRangeTombStoneList可以构建一个FragmentedRangeTombStoneIterator。这样对于每个Key，可以通过binary search找到对应的fragment TombStone。
+
+构建的大致过程如下：
 
 ```
 FragmentTombstones(unfrag_ranges):
@@ -58,7 +62,9 @@ FragmentTombstones(unfrag_ranges):
 		cur_end_keys.emplace(range.end, range.seqno, kTypeRangeDelete)		
 ```
 
-最终得到每个Sst的FragmentedRangeTombstoneList。
+最终得到每个Sst的FragmentedRangeTombstoneList；实际存储是基于两个Vector，每个Fragment对应的TombStoneStack存储在单独的vector中。
+
+另外还有一个单独的Set，在构建FragmentTombStoneList时，在flush_range_between_curstart_and_next_start一步中，将TombStoneSequenceNumber存储在该Set中。当在Compaction场景中，需要结合SnapShot构建FragmentRangeTombStoneIterator时，只能基于一部分可见的TombStone构建，因此该Set存储了对SnapShot可见的TombStone。
 
 ```
 tombstones_:     [a, b) [c, e) [h, k)
@@ -66,15 +72,18 @@ tombstones_:     [a, b) [c, e) [h, k)
                    |  \ /    \ /   |
                    v   v      v    v
 tombstone_seqs_: [ 5 3 10 7 2 8 6  ]
+active_seq_set：[2 3 5 6 7 8 10]
 ```
 
 ## RangeDelAggregator
 
 扫描场景（Compact、MergeOperator）中，通过构建一个MergeIterator，在多个Input之上迭代，那么对于每个Key，此时并不知道对于哪个有序对象，无法得知FragmentRangeTombStone，此时在全局维护一个RangeDelAggregator。
 
-当存在多个SnapShot，根据TombStone对于每个SnapShot的可见性，构建每个SnapShot的Aggregator，因此RangeDelAggregator是一个两层索引：
+当然，考虑到存在SnapShot，Aggregator中只能查询自己可见的TombStone；因此，在具体RangDelAggregator中，当存在多个SnapShot，根据TombStone对于每个SnapShot的可见性，构建每个SnapShot的Aggregator，因此RangeDelAggregator是一个两层索引：
 
 **SnapShotStripe -> beginKey -> TombStone**
+
+在多个Input的merge output过程中，同样将多个input的TombStone维护在堆（具体实现包含一个ActiveHeap，一个InactiveHeap和一个按Sequence排序的ActiveOrderedSet）中，这样始终维护了覆盖当前Iter.Key的TombStone对象。判断ShouldDelete时，通过ActiveOrderedSet的Begin.seq与Key.Seq关系即可知道是否需要Delete，即包含Iter.Key的且Sequence最新的TombStone，
 
 Links
 
