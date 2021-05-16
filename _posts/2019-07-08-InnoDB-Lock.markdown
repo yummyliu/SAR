@@ -1,6 +1,6 @@
 ---
 layout: post
-title: InnoDB——Btree与rwlock的互动
+title: InnoDB——latch coupling on Btree
 date: 2019-07-08 16:35
 header-img: "img/head.jpg"
 categories: 
@@ -11,66 +11,40 @@ typora-root-url: ../../layamon.github.io
 {:toc}
 > 本文基于5.7版本代码
 
-# InnoDB的线程锁简述
+# InnoDB的latch
 
-线程锁的对象是程序运行过程中bufferPool中的page，或其他cache中的对象；有两种类型：mutex和rw_lock。
+在数据库中，latch是指用户不可见的，数据库内部结构并发访问用到的锁，有两种类型：mutex和rw_lock。InnoDB也不例外
 
 + mutex：基于系统提供的原子操作，用在内存共享结构的串行访问上，比如：
 
-  > 关于Mutex具体的实现方式有很多种，见文件ut0mutex.h；想了解更多这里有一篇好文章——[InnoDB mutex 变化历程](http://baotiao.github.io/2020/03/29/innodb-mutex/)。
+  + free、LRU、flush List的互斥；
+  + buf_block_t的mutex，该结构是page在内存的元信息，包括io_fix、state、buf_fix_count等；
+  + 全局共享的对象：lock_sys_mutex、trx_sys_mutex、trx_mutex等；
 
-  + free、LRU、flush List的互斥
-  + buf_block_t的mutex，该结构是page在内存的元信息，包括io_fix、state、buf_fix_count等，更新这些信息，需要互斥；
-  + 一些共享的对象：lock_sys_mutex、trx_sys_mutex、trx_mutex等等：
-    + Dictionary Cache
-    + Transaction System的并发访问；比如，在修改indexpage前，在Transaction system的header中写入一个undo log entry。
-    + Rollback segment mutex，Rollback segment header的并发访问，当需要在回滚段中添加一个新的undopage时，需要申请这个mutex。
+  > 关于InnoDB中Mutex具体的实现方式有很多种，见文件ut0mutex.h；想了解更多这里有一篇好文章——[InnoDB mutex 变化历程](http://baotiao.github.io/2020/03/29/innodb-mutex/)。
 
-+ rw_lock：rw_lock是InnoDB实现的读写锁，比起mutex，rwlock有两种模式，用在需要shared访问的场景中，比如：
-
-  > InnoDB的rw_lock不依赖[pthread_rwlock_t](https://code.woboq.org/userspace/glibc/nptl/pthread_rwlock_common.c.html)，其是基于futex实现的blocking rwlock，适合于读多写少的场景。
++ rw_lock：InnoDB实现的读写锁，比起mutex，rwlock有两种模式，用在需要共享访问的场景中，比如：
 
   + buf_page_get_gen ->**hash_lock** = buf_page_hash_lock_get(buf_pool, page_id);
-  + buf_block_t中还有一个lock，这对应的是frame，这是page在内存的地址；Page的读写需要加rwlock，本文我们主要讨论rwlock，有两种模式S/X（5.7引入一个新模式SX）。三个模式的兼容关系如下：
-
-```c
-/*
- LOCK COMPATIBILITY MATRIX
-    S SX  X
- S  +  +  -
- SX +  -  -
- X  -  -  -
- */
-```
-
-![image-20200106154013692](/image/innodb-overview/ahi.png)
++ buf_block_t中还有一个lock，这对应的是frame，这是page在内存的地址；Page的读写需要加rwlock，本文我们主要讨论rwlock，有两种模式S/X（5.7引入一个新模式SX）。
+  
+  > InnoDB的rw_lock不依赖[pthread_rwlock_t](https://code.woboq.org/userspace/glibc/nptl/pthread_rwlock_common.c.html)，其是基于futex实现的blocking rwlock，适合于读多写少的场景。
 
 当我们访问BufferPool中的一个Page时，首先获取**hash_lock**，然后获取**buf_block_t->mutex**，进而修改元信息，然后释放**buf_block_t->mutex**，获取**buf_block_t->lock**，即rwlock，开始读写page。
 
-# rw_lock与Btree
+![image-20200106154013692](/image/innodb-overview/ahi.png)
 
-InnoDB的rwlock的具体实现基于64bit的lock_word之上的原子操作，如下实例代码：
+本文主要描述InnoDB中的Btree索引如何基于rw_lock实现Btree的并发访问（rwlock不只是用在Btree，在其他的地方，比如文件空间管理同样用到）。
 
-> 也可基于mutex实现rwlock，这可以作为另一个话题了,详见`ib_mutex_t`的定义方式。
+## InnoDB 的 rw_lock
 
-```cpp
-/** Two different implementations for decrementing the lock_word of a rw_lock:
- one for systems supporting atomic operations, one for others. This does
- does not support recusive x-locks: they should be handled by the caller and
- need not be atomic since they are performed by the current lock holder.
- Returns true if the decrement was made, false if not.
- @return true if decr occurs */
-ALWAYS_INLINE
-bool rw_lock_lock_word_decr(rw_lock_t *lock, /*!< in/out: rw-lock */
-                            ulint amount,    /*!< in: amount to decrement */
-                            lint threshold)  /*!< in: threshold of judgement */
-```
+InnoDB的rwlock的[具体实现](https://github.com/Layamon/GoofSQL/blob/addb5e1e6d99379116ec9d127ce1f89c12c35761/storage/innobase/include/sync0rw.ic#L226)有两种：基于64bit的lock_word之上的原子操作与基于mutex。当gcc版本小于GCC 4.1.2时，不支持原子操作，这样[性能会退化](http://www.markleith.co.uk/2011/04/12/what-a-difference-atomics-can-make/)。
 
-为了避免writethread被多个readthread饿死，writethread可以通过排队的方式阻塞新的readthread，每排队一个writethread将lockword减X_LOCK_DECR（新的SX锁等待时，减X_LOCK_HALF_DECR）。在wl6363中，标明了加了SX锁后lock_word不同取值的意思；其中lock_word=0表示加了xlock；lock_word= 0x20000000没有加锁；
+为了避免writethread被多个readthread饿死，writethread可以通过排队的方式阻塞新的readthread，每排队一个writethread将lockword减X_LOCK_DECR（新的SX锁等待时，减X_LOCK_HALF_DECR）。
+
+> 在[wl6363](https://dev.mysql.com/worklog/task/?id=6363)中，标明了加了SX锁后lock_word不同取值的意思；其中lock_word=0表示加了xlock；lock_word= 0x20000000没有加锁；
 
 另外，InnoDB中某些需要rwlock同步的function1可能还会调用其他需要同步的funtion2，如果恰好funtion1和function2对同一个对象加锁，这时就需要锁支持可重入（recursive），而InnoDB的rwlock同样是支持可重入。
-
-rw_lock可以用在需要并发读写的结构上，比如Btree索引，文件空间管理等；那么，本文主要描述Btree与rw_lock的互动。
 
 在Btree扫描过程中，首先在`dict_index_t`上加相应模式的rwlock；然后初始化一个cursor，对btr进行搜索，最终cursor停在我们要求的位置；取决于加锁类型、扫描方式等条件，最终cursor**可能**会将扫描路径上的某些block加锁。
 
@@ -80,43 +54,17 @@ rw_lock可以用在需要并发读写的结构上，比如Btree索引，文件�
 
 + 修改操作，在扫描过程中该加的锁已经加好；在返回的cursor处进行操作即可。
 
-> 为保证Btree并发加锁访问时，不产生死锁，这里加锁采用Lock Coupling的方式。Lock Coupling严格保证顺序，避免死锁。
->
-> retaining the latch on the parent node until the child node is latched. 
+# InnoDB 的 Latch Coupling
 
-## 加锁入口
+InnoDB的Btree的并发访问基于经典的latch coupling的方式进行访问，当子节点认为是Safe的时候，即，不会触发父节点的SMO，可以释放父节点的latch。保证严格的访问顺序，确保不会产生死锁。
 
-在对Btree的搜索入口为`btr_cur_search_to_nth_level`，其参数`latch_mode`分为两部分，低字节为如下的基本操作模式：
+## Read
 
-```c
-/** Latching modes for btr_cur_search_to_nth_level(). */
-enum btr_latch_mode {
-	/** Search a record on a leaf page and S-latch it. */
-	BTR_SEARCH_LEAF = RW_S_LATCH,
-	/** (Prepare to) modify a record on a leaf page and X-latch it. */
-	BTR_MODIFY_LEAF	= RW_X_LATCH,
-	/** Obtain no latches. */
-	BTR_NO_LATCHES = RW_NO_LATCH,
-	/** Start modifying the entire B-tree. */
-	BTR_MODIFY_TREE = 33,
-	/** Continue modifying the entire B-tree. */
-	BTR_CONT_MODIFY_TREE = 34,
-	/** Search the previous record. */
-	BTR_SEARCH_PREV = 35,
-	/** Modify the previous record. */
-	BTR_MODIFY_PREV = 36,
-	/** Start searching the entire B-tree. */
-	BTR_SEARCH_TREE = 37,
-	/** Continue searching the entire B-tree. */
-	BTR_CONT_SEARCH_TREE = 38
-};
-```
-
-而高字节放一些标记位，用来判断rwlock的类型；如下是该函数的大体逻辑：
+在对Btree的搜索入口为`btr_cur_search_to_nth_level`，其参数`latch_mode`分为两部分，低字节为[btr_latch_mode](https://github.com/Layamon/GoofSQL/blob/addb5e1e6d99379116ec9d127ce1f89c12c35761/storage/innobase/include/btr0btr.h#L61)定义的具体访问操作,而高字节放一些标记位，用来判断rwlock的类型；如下是该函数的大体逻辑：
 
 ![image-20191227175829430](/image/btr-rwlock/btr_cur_search_to_nth_level.png)
 
-### **1. 初始化扫描指令**；
+**1. 初始化扫描指令**；
 
 函数一开始，识别高位的标记得到如下信息，之后通过(`BTR_LATCH_MODE_WITHOUT_FLAGS`)，将高位信息抹除。
 
@@ -128,7 +76,7 @@ enum btr_latch_mode {
 
 + 是否需要修改外部存储的数据：，modify_external，用在BTR_MODIFY_LEAF模式中。
 
-### 2. 查找AHI信息
+**2. 查找AHI信息**
 
 ![image-20191226172027826](/image/btr-rwlock/ahi-search.png)
 
@@ -144,7 +92,7 @@ Adaptive Hash Index作为Btree寻路的缓存，提高Btree寻路的开销；在
 
 > 关于Adaptive Hash Index的逻辑，都在BTR_CUR_HASH_ADAPT BTR_CUR_ADAPT之内；如果想禁掉AHI，那么将这两个宏去掉即可。
 
-### 3. 解析扫描的指令
+**3. 解析扫描的指令**
 
 1. `dict_index_t`加锁：（btr0cur.cc:959）基于latch_mode和第一步得到的信息加rw_lock，同时设置变量`upper_rw_latch`（rw_lock_type_t ），后续给block加锁会参考。
 
@@ -154,7 +102,7 @@ Adaptive Hash Index作为Btree寻路的缓存，提高Btree寻路的开销；在
    >
    > InnoDB的Btree的branch_page上存放的是node_ptr，node_ptr的key是对应page的最小值；那么，我们如果按照PAGE_CUR_G和PAGE_CUR_GE的方式查找branch_page时，需要换成PAGE_CUR_L和PAGE_CUR_LE；举例，如果要找8，8位于page[3,5,78,9]中，那么有两个node_ptr：[3,<page_id1>]，[10,<page_id2>]，那么8是在3，而不是10中。
 
-### 4. (search_loop)递归查找
+**4. (search_loop)递归查找**
 
 迭代多次，直到到达指定level（不一定level=0，在节点分裂中需要向branch_page中插入node_ptr）;我们都知道mtr.m_memo存有进行原子变更的锁，在搜索之前，先取得当前的**savepoint**，即，m_memo当前的size，这样我们就知道搜索过程中加了多少锁。
 
@@ -178,27 +126,27 @@ Adaptive Hash Index作为Btree寻路的缓存，提高Btree寻路的开销；在
    	}
    ```
    
-5. 1487，如果不是最终的level；height—;
+5. 如果不是最终的level；height—;
 
-6. 1780，迭代到该节点的子节点；n_blocks++；在查找过程中维护了一个路径block数组。
+6. 迭代到该节点的子节点；n_blocks++；在查找过程中维护了一个路径block数组。
 
 7. height!=0，继续迭代search_loop，返回1；height==0（1306），结束
 
 8. 这时根据latch_mode，释放tree_savepoints和tree_blocks，以及对page也加锁。
 
-### 5. 设置cursor
+**5. 设置cursor**
 
-(1862)找到后设置cursor的low_match和up_match等参数；
+找到后设置cursor的low_match和up_match等参数；
 
-### 6. 函数退出
+**6. 函数退出**
 
 因为调用`btr_cur_search_to_nth_level`的调用者可能已经在外面加锁了，那么退出还是对index加s锁 。（由参数has_search_latch判断，该参数只能为0或者`RW_S_LATCH`；）。
 
-## Btree变更操作
+## Write
+
+基于latch coupling，一般对任何更新来说，先对Btree的Root加X lock；而更好的方式，是先对加S lock，即，假设target leaf是safe的，如果不是safe的，再加X lock进行写入；InnoDB中称之为为乐观与悲观的操作，乐观的操作与上述读取操作类似。下面以悲观为例来了解InnoDB中的Btree的更新。
 
 ### INSERT的rwlock
-
-以悲观Insert为例
 
 **1. 按BTR_MODIFY_TREE模式，定位cursor，并对index和page加锁。**
 
