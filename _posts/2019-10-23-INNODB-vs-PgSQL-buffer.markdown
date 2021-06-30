@@ -142,7 +142,7 @@ AIO需要文件按照**O_DIRECT**的方式打开，AIO的接口有两种：
 
 讨论数据的文件读写，主要针对两类数据：数据页和日志记录。作为对比，这里罗列了一下MySQL的相关机制；从图中可以看出，PostgreSQL的wal根据配置的不同，可能是direct io也可能是bufferio；但是shared_buffers中只有一种方式，就是buffer io。
 
-而在mysql中，数据页和redo日志都是可以通过不同的配置，选择direct io和buffer io；但是一般配置为使用direct io；因为direct io相对buffer io来说高效些。
+而在mysql中，数据页和redo日志都是可以通过不同的配置，选择direct io和buffer io；但是一般配置为使用direct io；因为direct io相对buffer io来说高效些，并且DirectIO不会污染page cache，这对于pg依赖page cache作为二级缓存的db，避免了无效的cache占用。
 
 那么为什么PostgreSQL采用buffer io呢？这里是我自己的观点。
 

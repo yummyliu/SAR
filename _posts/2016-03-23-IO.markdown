@@ -15,6 +15,8 @@ typora-root-url: ../../layamon.github.io
 
 在Linux中，目前所知有三种异步的思路：signal，MSG_ERRQUEUE和io_getevents。io_getevents就是Linux的异步IO（**A**sync **IO**），本文从blocking概念开始说起，希望读到这篇文章的同学能对Linux的IO有个大致的了解。
 
+
+
 # VFS
 
 > 注意：VFS是Virtual Filesystem Switch 的缩写。
@@ -110,7 +112,9 @@ ET模式在很大程度上减少了epoll事件被重复触发的次数，因此�
 
 有些操作系统并没有真正在内核层面支持异步IO，只是对该逻辑在系统库中进行了封装；在Linux中内核层面支持了，见下节。
 
-# Linux AIO介绍
+
+
+# AIO
 
 Linux在2.6版的内核中支持了AIO特性，启用AIO特性需要以下前提：
 
