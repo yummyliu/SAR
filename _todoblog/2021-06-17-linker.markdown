@@ -11,5 +11,6 @@ typora-root-url: ../../layamon.github.io
 
 - 
 - --no-as-needed
-- -Wl,--whole-archive，Cmake如何指定某个static lib使用这个option
+- -Wl,--whole-archive：Cmake如何指定某个static lib使用这个option
+- __attribute__((constructor(priority))) : 在main函数执行之前，进行的构造函数的执行顺序定义；
 
